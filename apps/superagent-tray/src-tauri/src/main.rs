@@ -39,6 +39,7 @@ mod shutdown_manager;
 mod lifecycle_console;
 mod release_updates;
 mod tray_notification_center;
+mod tray_navigation_receipt;
 
 /// Samples only independently verified local process owners reported by Core.
 #[tauri::command]
@@ -268,6 +269,58 @@ fn tray_notification_center_action(
         return Err("Focus the native Tray to change notifications".into());
     }
     tray_notification_center::perform(&config_dir()?, &action, id.as_deref())
+}
+
+/// A navigation ticket is valid only for an existing, active native incident.
+/// It carries no approval action, arbitrary URL, screenshot or file access.
+#[tauri::command]
+fn tray_notification_center_begin_navigation(
+    window: tauri::WebviewWindow, incident_id: String,
+) -> Result<Value,String> {
+    if window.label()!="main" || !window.is_visible().unwrap_or(false) ||
+       !window.is_focused().unwrap_or(false) || window.is_minimized().unwrap_or(true) {
+        return Err("NAVIGATION_TRAY_FOREGROUND_REQUIRED".into());
+    }
+    tray_navigation_receipt::issue(&config_dir()?,&incident_id)
+}
+
+/// Return a single-use receipt only after comparing current native item,
+/// allowed route, and (for pending approvals) fresh authenticated Core inventory.
+/// The WebView's claimed row focus is never itself an approval credential.
+#[tauri::command]
+async fn tray_notification_center_ack_navigation(
+    window: tauri::WebviewWindow, incident_id:String, nonce:String,
+    route:String, target_found:bool,
+) -> Result<Value,String> {
+    if window.label()!="main" || !window.is_visible().unwrap_or(false) ||
+       !window.is_focused().unwrap_or(false) || window.is_minimized().unwrap_or(true) {
+        return Err("NAVIGATION_TRAY_FOREGROUND_REQUIRED".into());
+    }
+    let dir=config_dir()?;
+    let Some(ticket)=tray_navigation_receipt::consume(
+        &dir,&incident_id,&nonce,&route,target_found)? else {
+        return Ok(tray_navigation_receipt::receipt(
+            &incident_id,&route,"NOT_DELIVERED"));
+    };
+    if let Some((request_id,tab))=ticket.pending {
+        let payload=match core_request(Method::GET,"/api/desktop/access/requests",None).await {
+            Ok(body)=>body,
+            Err(_)=>return Ok(tray_navigation_receipt::receipt(
+                &incident_id,&route,"BACKEND_UNAVAILABLE")),
+        };
+        let valid=payload.get("success")==Some(&Value::Bool(true)) &&
+            payload.get("requests").and_then(Value::as_array).is_some_and(|requests|
+                requests.iter().any(|req|
+                    req.get("requestId").and_then(Value::as_str)==Some(request_id.as_str()) &&
+                    req.get("status").and_then(Value::as_str)==Some("pending") &&
+                    (req.get("projectId").and_then(Value::as_str)==Some("mcp-connection")) ==
+                    (tab=="connections")));
+        if !valid { return Ok(tray_navigation_receipt::receipt(
+            &incident_id,&route,"TARGET_EXPIRED")); }
+    }
+    // Native read persistence is a distinct transition after navigation.
+    tray_notification_center::perform(&dir,"read",Some(&incident_id))?;
+    Ok(tray_navigation_receipt::receipt(&incident_id,&route,"DELIVERED"))
 }
 
 /// Foreground refresh of the exact same authenticated security projection used
@@ -4175,6 +4228,8 @@ fn main() {
             regenerate_token,
             get_tray_settings,
             tray_notification_center_action,
+            tray_notification_center_begin_navigation,
+            tray_notification_center_ack_navigation,
             tray_notification_center_refresh_security,
             tray_notification_center_ui_alert,
             tray_notification_center_preferences,

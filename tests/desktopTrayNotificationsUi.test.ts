@@ -9,6 +9,27 @@ const js = fs.readFileSync(path.join(base, "ui/notifications.js"), "utf8");
 const rust = fs.readFileSync(path.join(base, "src-tauri/src/main.rs"), "utf8");
 const store = fs.readFileSync(path.join(base, "src-tauri/src/tray_notification_center.rs"), "utf8");
 
+function routeForFixture(id: string, items: Record<string, unknown>[]) {
+  const item = items.find((row) => row.id === id);
+  const src = item?.source;
+  const named = { "health:muse":"runtime:muse", "health:telegram":"settings:muse",
+    "health:channel-hosts":"runtime:hosts", "health:delegate-listener":"delegate:diagnostics" };
+  if (Object.hasOwn(named,id)) return named[id as keyof typeof named];
+  if (src === "reminder" && id.startsWith("reminder:")) return "history";
+  if (src === "jobs" && id.startsWith("daemon-run:") &&
+      (id.endsWith(":Scheduled run needs attention") ||
+       id.endsWith(":Scheduled notification delivery failed"))) return "history";
+  const routes: Record<string,string> = {
+    core:"runtime:core",security:"security",mcp:"runtime:mcp",
+    tunnel:"runtime:cloudflare",delegate:"delegate:connection",
+    runtime:"runtime:core","desktop-live":"desktop-live",terminal:"terminal",
+    "lan-devices":"lan-devices:devices",reminder:"jobs",jobs:"jobs",
+    updates:"updates",shutdown:"overview",settings:"settings:general",
+    "muse-files":"muse-files",overview:"overview",logs:"logs",
+  };
+  return routes[String(src)] || null;
+}
+
 function mount(items: Record<string, unknown>[] = []) {
   const elements = new Map<string, any>();
   const domEvents = new Map<string, (...args: any[]) => any>();
@@ -54,8 +75,24 @@ function mount(items: Record<string, unknown>[] = []) {
     window: {
       __TAURI__: {
         core: { invoke: vi.fn(async (name: string, args: any) => {
-          expect(name).toMatch(/^tray_notification_center_(action|ui_alert|refresh_security)$/);
+          expect(name).toMatch(/^tray_notification_center_(action|ui_alert|refresh_security|begin_navigation|ack_navigation)$/);
           if (name.endsWith("ui_alert")) return {};
+          if (name.endsWith("begin_navigation")) {
+            mockInvocations.push({action:"navigation-begin",id:args.incidentId});
+            return {status:"ISSUED",nonce:"mock-nonce",route:
+              args.incidentId.startsWith("mcp-pending:connections:")?"security:connections":
+              args.incidentId.startsWith("mcp-pending:mcp:")?"security:mcp":
+              args.incidentId.startsWith("mcp-pending:")?"security":
+              routeForFixture(args.incidentId,items)};
+          }
+          if (name.endsWith("ack_navigation")) {
+            mockInvocations.push({action:"navigation-ack",id:args.incidentId});
+            if (!args.targetFound) return {status:"NOT_DELIVERED",route:args.route};
+            items = items.map((item) => item.id === args.incidentId
+              ? { ...item, readAt:1700000000100 } : item);
+            mockInvocations.push({action:"read",id:args.incidentId});
+            return {status:"DELIVERED",route:args.route};
+          }
           if (name.endsWith("refresh_security")) {
             mockInvocations.push({action: "sync-security"});
             return {items, unreadCount: items.filter((item) => !item.readAt).length, securitySync: "ok"};
@@ -316,6 +353,27 @@ describe("Tray Notification Manager", () => {
     });
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(mounted.mockInvocations.some((call) => call.action === "read")).toBe(false);
+  });
+
+  it("only marks navigation read after the native one-use receipt", async () => {
+    const mounted = mount([{id:"health:core", source:"core", severity:"warning",
+      title:"Core offline",body:"Inspect runtime", createdAt:Date.now(),
+      readAt:null,archivedAt:null}]);
+    await new Promise<void>((resolve)=>setImmediate(resolve));
+    const card=mounted.get("tray-notification-recent").children[0];
+    card.trigger("click",{target:{closest:()=>null}});
+    await new Promise<void>((resolve)=>setImmediate(resolve));
+    expect(mounted.mockInvocations.map(v=>v.action)).toContain("navigation-begin");
+    expect(mounted.mockInvocations.map(v=>v.action)).toContain("navigation-ack");
+    expect(mounted.mockInvocations.map(v=>v.action)).toContain("read");
+    expect(rust).toContain("tray_notification_center_ack_navigation,");
+    expect(rust).toContain("tray_navigation_receipt::consume(");
+  });
+  it("does not use a JS scheduleRead shortcut after navigation", () => {
+    const opened=js.slice(js.indexOf("function openDestination("),
+      js.indexOf("function noteCard("));
+    expect(opened).not.toContain("scheduleRead(item)");
+    expect(opened).toContain('receipt?.status === "DELIVERED"');
   });
 
   it("uses allowlisted deep links for every supported tabbed Tray page", () => {

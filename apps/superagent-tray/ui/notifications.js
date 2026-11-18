@@ -198,21 +198,33 @@
     } catch { delivered = false; }
     if (!delivered) return; // Failed navigation must not silently mark read.
     close();
-    if (pending) {
-      // An exact pending approval stays unread until the authenticated request
-      // list contains and focuses its row. Parent-tab navigation is insufficient.
-      const focus = window.__superagentAccessManagerFocusRequest;
-      if (typeof focus === "function") {
-        void Promise.resolve().then(() => focus(pending.requestId, pending.tab))
-          .then((receipt) => {
-            if (receipt?.targetFound === true) scheduleRead(item);
-          }).catch(() => {});
+    // Native-owned, single-use receipt: JavaScript cannot mark an opened
+    // incident read by claiming navigation alone. Old Tray builds fail closed.
+    const call = window.__TAURI__?.core?.invoke;
+    if (typeof call !== "function") return;
+    void Promise.resolve().then(async () => {
+      const ticket = await call("tray_notification_center_begin_navigation",
+        { incidentId: item.id });
+      if (!ticket || ticket.status !== "ISSUED" || ticket.route !== route ||
+          typeof ticket.nonce !== "string") return;
+      let targetFound = true;
+      if (pending) {
+        const focus = window.__superagentAccessManagerFocusRequest;
+        if (typeof focus !== "function") return;
+        const focused = await focus(pending.requestId, pending.tab);
+        targetFound = focused?.targetFound === true;
       }
-    } else {
-      // Other module links use existing synchronous in-app navigation. Native
-      // owner/build attestations are a separate, still-open acceptance gate.
-      scheduleRead(item);
-    }
+      if (!targetFound) return;
+      const receipt = await call("tray_notification_center_ack_navigation", {
+        incidentId: item.id, nonce: ticket.nonce, route, targetFound,
+      });
+      if (receipt?.status === "DELIVERED" && receipt.route === route) {
+        void refresh();
+      }
+    }).catch(() => {
+      state.error = "Native notification receipt unavailable. Incident remains unread.";
+      render();
+    });
   }
   function noteCard(item, compact) {
     const wrapper = element("article",

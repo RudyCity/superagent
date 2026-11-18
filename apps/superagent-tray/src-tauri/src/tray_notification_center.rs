@@ -266,6 +266,18 @@ pub fn resolve_missing(
     if changed > 0 { write(dir, &mut ledger)?; }
     Ok(changed)
 }
+/// Only native-published, currently active inbox items are eligible for a
+/// bounded navigation ticket. This never exposes title/body or file paths.
+pub fn navigation_source(dir: &Path, id: &str) -> Result<Option<String>, String> {
+    if id.is_empty() || id.len() > 180 || id.chars().any(char::is_control) {
+        return Ok(None);
+    }
+    let _guard=LEDGER_LOCK.lock().map_err(|_| "Notification store locked")?;
+    let ledger=read(dir)?;
+    Ok(ledger.items.iter().find(|entry|
+        entry.id == id && entry.archived_at.is_none() && entry.resolved_at.is_none())
+        .map(|entry|entry.source.clone()))
+}
 pub fn should_notify_os(dir: &Path, source: &str, severity: &str) -> Result<bool, String> {
     let _guard = LEDGER_LOCK.lock().map_err(|_| "Notification store locked")?;
     Ok(read(dir)?.preferences.os_enabled(source, severity))
