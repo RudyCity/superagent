@@ -3674,10 +3674,20 @@ async fn poll_pending_security_requests(app: &tauri::AppHandle) -> Result<(), St
         if id.is_empty() || id.len() > 150 || id.chars().any(char::is_control) { continue; }
         let key = format!("mcp-pending:{id}");
         active.insert(key.clone());
+        // Informational only. The label was bound to a verified OAuth token
+        // after owner consent; it is NEVER an approval or client identity.
+        let approved_name = request.get("ownerConnectionName")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty() && value.len() <= 64 &&
+                !value.chars().any(char::is_control));
+        let details = match approved_name {
+            Some(name) => format!("{name} requested MCP permission. Review Security Approval."),
+            None => "An MCP connection requested access. Review Security Approval.".to_owned(),
+        };
         record_operational_incident(
             app, "security", "critical", &key,
             "Security approval pending",
-            "An MCP connection requested access. Review Security Approval.",
+            &details,
         )?;
     }
     // The API is unpaginated; avoid false resolves if a future revision
