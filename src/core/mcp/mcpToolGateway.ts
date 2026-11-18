@@ -77,10 +77,14 @@ export const MCP_GATEWAY_TOOL_DEFS = [
   },
   {
     name: MCP_GATEWAY_TOOL_NAMES.describe,
-    description: "Read the input schema and parameter requirements for one authorized SuperAgent MCP tool discovered via search (e.g. 'superagent_delegate_list_chats', 'superagent_delegate_send_message'). Call before executing an unadvertised tool.",
+    description: "Read the input schema and layered permission requirements for an authorized tool. For superagent_desktop_ui, supply optional checkArguments to preflight the exact command against current host file-policy and connection approval without executing it or requesting new grants. The result is advisory and permissions are rechecked at execution.",
     inputSchema: {
       type: "object",
-      properties: { name: { type: "string", description: "Exact target tool name from superagent_tool_search." } },
+      properties: {
+        name: { type: "string", description: "Exact target tool name from superagent_tool_search." },
+        checkArguments: { type: "object", additionalProperties: true,
+          description: "Optional, non-executing Desktop UI command preflight. Only supported for superagent_desktop_ui; never submits approval or performs window input." },
+      },
       required: ["name"],
     },
   },
