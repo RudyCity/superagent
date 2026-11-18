@@ -26,6 +26,8 @@ const receipt = (id: string): LanTerminalSnapshot => ({
 });
 const deps = (override: Partial<LanTerminalFleetDeps> = {}): LanTerminalFleetDeps => ({
   list: () => devices,
+  open: async (id) => ({ ...devices.find(device => device.id === id)!, connected: true }),
+  close: async () => {},
   start: async (id) => receipt(id),
   read: async (id) => receipt(id),
   input: async (id) => receipt(id),
@@ -63,6 +65,41 @@ describe("LAN terminal fleet: multi-device isolation and concurrency", () => {
     expect(done.results[0]).toMatchObject({ platform: "windows", ok: true, terminal: { jobId: jA } });
     expect(done.results[1]).toMatchObject({ platform: "windows", ok: true, terminal: { jobId: jB } });
     expect(done.results[2]).toMatchObject({ platform: "android", ok: true, shell: { stdout: "PHONE" } });
+  });
+
+  it("opens two separately approved sessions concurrently and closes only selected handles", async () => {
+    const unconnected = devices.map(device => ({ ...device, connected: false }));
+    const opened: string[] = [];
+    const release: Record<string, (device: LanDevice) => void> = {};
+    const close = vi.fn(async (_id: string) => {});
+    const fleet = new LanTerminalFleet(deps({
+      list: () => unconnected,
+      open: id => {
+        opened.push(id);
+        return new Promise(resolve => { release[id] = resolve; });
+      },
+      close,
+    }));
+    const pending = fleet.execute("open", [{ deviceId: a }, { deviceId: c }]);
+    expect(opened).toEqual([a, c]);
+    release[c]({ ...android, connected: true });
+    release[a]({ ...devices[0], connected: true });
+    const result = await pending;
+    expect(result).toMatchObject({ action: "open", requested: 2, succeeded: 2, failed: 0 });
+    expect(result.results[0]).toMatchObject({ deviceId: a, session: { connected: true } });
+    expect(result.results[1]).toMatchObject({ deviceId: c, session: { connected: true } });
+    const closed = await fleet.execute("close", [{ deviceId: a }, { deviceId: c }]);
+    expect(closed.succeeded).toBe(2);
+    expect(close).toHaveBeenCalledWith(a);
+    expect(close).toHaveBeenCalledWith(c);
+  });
+
+  it("does not send an open prompt if any receiver is already connected", async () => {
+    const open = vi.fn(async (id: string) => devices.find(device => device.id === id)!);
+    const fleet = new LanTerminalFleet(deps({ open }));
+    await expect(fleet.execute("open", [{ deviceId: a }, { deviceId: b }]))
+      .rejects.toThrow(/already has an approved support session/);
+    expect(open).not.toHaveBeenCalled();
   });
 
   it("returns per-device failures without cancelling successful targets", async () => {
