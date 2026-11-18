@@ -2588,11 +2588,6 @@ async fn start_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<V
             } else {
                 format!("SuperAgent Core server started on port {}", target)
             };
-            let _ = app.notification()
-                .builder()
-                .title("SuperAgent Core")
-                .body(&message)
-                .show();
             record_core_notification(&app, "info", "Core started", "The selected Core server was started or is already active.");
             Ok(json!({
                 "success": true,
@@ -2603,11 +2598,6 @@ async fn start_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<V
             }))
         }
         Err(e) => {
-            let _ = app.notification()
-                .builder()
-                .title("SuperAgent Core Error")
-                .body("Core start failed. Open SuperAgent Tray Runtime for details.")
-                .show();
             record_core_notification(&app, "critical", "Core start failed", "Core could not start. Review Runtime Detection.");
             Err(e)
         }
@@ -2620,20 +2610,12 @@ async fn stop_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<Va
     match stop_core_server_inner(target).await {
         Ok(val) => {
             let msg = val.get("message").and_then(Value::as_str).unwrap_or("Core server stopped");
-            let _ = app.notification()
-                .builder()
-                .title("SuperAgent Core")
-                .body(msg)
-                .show();
+            // Do not copy untrusted Core HTTP text into a desktop banner.
+            let _ = msg;
             record_core_notification(&app, "warning", "Core stopped", "The selected Core server was stopped.");
             Ok(val)
         }
         Err(e) => {
-            let _ = app.notification()
-                .builder()
-                .title("SuperAgent Core Error")
-                .body("Core stop failed. Open SuperAgent Tray Runtime for details.")
-                .show();
             record_core_notification(&app, "critical", "Core stop failed", "Core shutdown did not complete. Inspect the verified owner state.");
             Err(e)
         }
@@ -2648,11 +2630,6 @@ async fn restart_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result
     match launch_server_process(target).await {
         Ok(pid) => {
             let message = format!("SuperAgent Core server restarted on port {}", target);
-            let _ = app.notification()
-                .builder()
-                .title("SuperAgent Core")
-                .body(&message)
-                .show();
             record_core_notification(&app, "info", "Core restarted", "The selected Core server was restarted.");
             Ok(json!({
                 "success": true,
@@ -2662,11 +2639,6 @@ async fn restart_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result
             }))
         }
         Err(e) => {
-            let _ = app.notification()
-                .builder()
-                .title("SuperAgent Core Error")
-                .body("Core restart failed. Open SuperAgent Tray Runtime for details.")
-                .show();
             record_core_notification(&app, "critical", "Core restart failed", "Core restart failed. Inspect Runtime Detection.");
             Err(e)
         }
@@ -3701,20 +3673,23 @@ async fn poll_reminders(
         }
         // Commit the private inbox before OS delivery or the legacy "seen"
         // cursor. A persistence error leaves this run eligible for retry.
+        let incident_id=format!("reminder:{id}");
         record_operational_incident(
-            app, "reminder", "info", &format!("reminder:{id}"),
+            app, "reminder", "info", &incident_id,
             "Reminder completed",
             "A scheduled reminder completed. Review its execution in History.",
         )?;
-        // Native notification on Windows requires an installed app.
-        // Failed deliveries are not marked as seen; a later poll can retry.
+        // A delivered reminder has a private, bounded OS click ticket. It
+        // opens the matching History run, never a caller-supplied URL or shell.
+        // Failed OS delivery keeps the run eligible for retry.
         if notifications_enabled {
-            app.notification()
-                .builder()
-                .title(name)
-                .body(message)
-                .show()
-                .map_err(|e| format!("OS notification delivery failed: {}", e))?;
+            let ticket=tray_os_action::issue(&config_dir()?,&incident_id).ok();
+            let mut builder=app.notification().builder().title(name).body(message);
+            if let Some(id)=ticket{builder=builder.id(id);}
+            if let Err(e)=builder.show(){
+                if let Some(id)=ticket{tray_os_action::cancel(id);}
+                return Err(format!("OS notification delivery failed: {e}"));
+            }
             delivered += 1;
         }
         known.insert(id.to_owned());
