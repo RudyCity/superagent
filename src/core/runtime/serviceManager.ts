@@ -48,9 +48,10 @@ import {planLegacyVisionRecycle,executeLegacyVisionRecycle} from "./visionLegacy
 import {planGlobalLifecycleRecycle,executeGlobalLifecycleRecycle,reconcileGlobalLifecycleRecycle} from "./globalLifecycleRecycle.js";
 
 import { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
+import { summarizeServiceOwnerAttestation } from "./serviceOwnerAttestation.js";
 export { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
 export type ServiceAction =
-  "inventory"|"status"|"plan"|"restart"|"rollback"|"drain"|"reload"|"start"|"stop"|"doctor"
+  "inventory"|"status"|"owner_status"|"plan"|"restart"|"rollback"|"drain"|"reload"|"start"|"stop"|"doctor"
   |"health"|"dashboard"|"logs"|"profile"|"configure"|"reconcile"|"upgrade"|"watchdog"|"recycle";
 export type ManageServicesArgs = {
   action:ServiceAction; service?:ManagedServiceName|"all"; port?:number;
@@ -125,7 +126,7 @@ export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
     "expectedReleaseRevision","expectedCurrentDigest",
     "expectedProcessIdentity","expectedLegacyCommandDigest","clientMode","expectedExecutablePath"]);
   if(Object.keys(v).some(k=>!allowed.has(k)))throw new Error("SERVICE_UNEXPECTED_ARGUMENT");
-  if(!["inventory","status","plan","restart","rollback","drain","reload","start","stop","doctor",
+  if(!["inventory","status","owner_status","plan","restart","rollback","drain","reload","start","stop","doctor",
     "health","dashboard","logs","profile","configure","reconcile","upgrade","watchdog","recycle"].includes(String(v.action)))
     throw new Error("SERVICE_UNKNOWN_ACTION");
   if(v.service!==undefined&&v.service!=="all"&&
@@ -541,6 +542,8 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
   if(action==="status"||action==="inventory")
     return {action,readOnly:true,services:await inspectServices(service,port),
       note:"Owner-scoped status; no process/tunnel mutation."};
+  if(action==="owner_status")return summarizeServiceOwnerAttestation(
+    await inspectServices(service,port));
   if(action==="watchdog"){
     const {runLifecycleWatchdog}=await import("./lifecycleWatchdog.js");
     return runLifecycleWatchdog({
