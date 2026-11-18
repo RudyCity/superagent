@@ -17,6 +17,27 @@ describe("dashboard mouse lifecycle and keyboard responsiveness", () => {
     vi.restoreAllMocks();
   });
 
+  it("supports keyboard-only recovery without registering terminal mouse hooks", async () => {
+    const oldFlag = process.env.SUPERAGENT_CLI_DISABLE_MOUSE;
+    process.env.SUPERAGENT_CLI_DISABLE_MOUSE = "1";
+    const onSpy = vi.spyOn(process.stdin, "on").mockImplementation(() => process.stdin);
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const Test = () => {
+      useDashboardMouse({ query: "test", terminalSize: { width: 80, height: 30 } } as any);
+      return React.createElement(ink.Text, null, "keyboard-only");
+    };
+    const view = ink.render(React.createElement(Test));
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(onSpy.mock.calls.filter(([event]) => event === "data")).toHaveLength(0);
+      expect(writeSpy.mock.calls.filter(([data]) => String(data).includes("\x1b[?1000h"))).toHaveLength(0);
+    } finally {
+      view.unmount();
+      if (oldFlag === undefined) delete process.env.SUPERAGENT_CLI_DISABLE_MOUSE;
+      else process.env.SUPERAGENT_CLI_DISABLE_MOUSE = oldFlag;
+    }
+  });
+
   it("keeps a single mouse listener when query and layout change", async () => {
     const onSpy = vi.spyOn(process.stdin, "on").mockImplementation(() => process.stdin);
     const offSpy = vi.spyOn(process.stdin, "off").mockImplementation(() => process.stdin);
