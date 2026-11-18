@@ -175,6 +175,9 @@ export function reconcileVerifiedMcpConnections(
     sessionIds.add(session.sessionHandle);
     const reportedClientName = safeName(session.claimedClientName, 64);
     const ownerConnectionName = safeName(session.ownerConnectionName ?? null, 64);
+    if (session.ownerConnectionName != null &&
+        ownerConnectionName !== session.ownerConnectionName)
+      throw new Error("Invalid owner MCP connection label");
     const reportedClientVersion = safeName(session.claimedClientVersion, 32);
     const prior = grouped.get(session.principalHandle);
     if (prior && prior.entry.authMode !== session.authMode) {
