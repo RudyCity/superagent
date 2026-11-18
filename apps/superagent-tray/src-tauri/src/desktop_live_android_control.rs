@@ -98,10 +98,6 @@ pub fn approve(id: &str, fp: &str, kind: &str, token: &str) -> Result<(), String
     gate().lock().map_err(|_|"ANDROID_CONTROLLER_GATE_UNAVAILABLE")?
         .approve(id,fp,kind,token,Instant::now())
 }
-pub fn check(id: &str, fp: &str, kind: &str, connected: bool) -> Result<u64, String> {
-    gate().lock().map_err(|_|"ANDROID_CONTROLLER_GATE_UNAVAILABLE")?
-        .check(id,fp,kind,connected,Instant::now())
-}
 pub fn credential(id: &str, fp: &str, kind: &str, connected: bool) -> Result<String, String> {
     gate().lock().map_err(|_|"ANDROID_CONTROLLER_GATE_UNAVAILABLE")?
         .credential(id,fp,kind,connected,Instant::now())
