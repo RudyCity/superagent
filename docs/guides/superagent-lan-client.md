@@ -58,6 +58,51 @@ The Windows camera scanner uses the browser BarcodeDetector capability (current 
 
 Dangerous tools require locally enabled **Full YOLO**, existing MCP permission checks, OAuth write scopes when applicable, plus physical target approval for pairing and sessions. Avoid including passwords or credentials in commands. The controller stores temporary pairing/session secrets **only in process memory**; the target generates an ephemeral TLS private key in memory. No background access or persisted approval.
 
+## Attended Windows terminal tasks (source implementation, 2026-11-18)
+
+The receiver now exposes a separate, **opt-in piped task** API in addition
+to its legacy bounded `exec` operation. Updated Core, Tray and Windows
+receiver must all come from compatible builds; an older installed executable
+does not gain these operations merely because the repository was updated.
+
+- Select an authenticated Windows device, get an approved support session,
+  then use **LAN Devices → Terminal → Long-running task** in Tray.
+- Enter the complete PowerShell command and choose **Start task**. The Windows
+  receiver displays the command and requires **fresh physical approval**.
+- Use **Read output** or MCP `superagent_device_terminal_read` with the
+  returned `jobId` and incremental `nextCursor`. Output is retained in a
+  bounded in-memory 64-KiB ring, with at most 8 KiB per read; if the ring
+  overwrites old output, `truncated=true` is reported.
+- Send short stdin text with **Send input**, or
+  `superagent_device_terminal_input`; **every input requires fresh physical
+  approval**. Input is capped at 1024 characters with bounded pipe buffering.
+- Choose **Stop task** or `superagent_device_terminal_stop` to request
+  termination of the exact owned process and children. The receiver reports
+  **stopping** until process closure has been observed, not an optimistic
+  completed state. Closing/revoking the support session terminates its task.
+- New task names also exist as `superagent_lan_terminal_start/read/input/stop`
+  for legacy MCP clients. `lan_support` exposes the same four actions.
+
+Task lifespan is at most 10 minutes, with a two-minute idle timeout if
+the authorized controller stops reading/sending input. The output cursor
+allows reconnect **inside the same still-approved session**. Device restart,
+re-pairing or a new session invalidates the old task; commands must never be
+automatically replayed after uncertain network failures.
+
+This uses regular stdin/stdout/stderr **pipes**, **not Windows ConPTY**.
+Interactive full-screen applications, terminal escape sequences, shell line
+editing, terminal-size changes, privilege elevation, durable resumption and
+production-grade PTY behavior are **not supported/certified**. Do not send
+passwords through task input. Same explicit target-side approval rules and
+Core/MCP dangerous-tool permissions continue to apply.
+
+Verification gates: typecheck; `tests/lanTerminalTasks.test.ts`,
+`tests/lanTerminalMcpContract.test.ts`,
+`tests/lanTerminalTrayUi.test.ts`; Windows receiver compilation; and a
+physical two-PC session with approval/input/stop/disconnect. Source and
+automated test presence alone do not establish that a released installer
+or APK has been physically verified.
+
 ## Security and current limitations
 
 - The app binds a **specific verified private IPv4 adapter**, and checks peer source address and interface/subnet on each connection. TLS 1.3 server fingerprint must match out-of-band text from the target before a code is sent. This is authenticated fingerprint-based pairing, **not PAKE**; a full PAKE implementation is still a release requirement in the original master plan.
