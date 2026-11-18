@@ -84,6 +84,18 @@ describe("Managed Chrome CDP Tray",()=>{
     expect(ui.calls.find(c=>c.action==="stop")?.payload)
       .toMatchObject({port:9222,expectedPid:44123,recordId:"owned-record-1"});
   });
+  it("shows a verified owned PID as stoppable when CDP is offline",async()=>{
+    const ui=mount();
+    ui.replies.status={
+      success:true,port:9222,occupied:false,owned:true,canStop:true,
+      status:"stopped",pid:44123,recordId:"owned-record-1",
+    };
+    await ui.refresh();await flush();
+    expect(ui.byId("managed-chrome-status").textContent).toContain("CDP offline");
+    expect(ui.byId("managed-chrome-stop").disabled).toBe(false);
+    ui.byId("managed-chrome-stop").trigger("click");await flush();
+    expect(ui.calls.some(c=>c.action==="stop" && c.payload.expectedPid===44123)).toBe(true);
+  });
   it("does not permit stop of foreign ports or unsafe startup URLs",async()=>{
     const ui=mount();
     ui.replies.status={success:true,port:9222,occupied:true,owned:false,status:"healthy"};
