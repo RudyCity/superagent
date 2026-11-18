@@ -54,7 +54,7 @@ jobs:
       - name: Check TypeScript
         run: bun --bun x tsc --noEmit --pretty false
       - name: Check Windows GUI and remote access regressions
-        run: bun x vitest run tests/desktopLanWindowsGui.test.ts tests/deviceDisplayQrClient.test.ts tests/windowsQrConnect.test.ts tests/deviceTunnelHttp.test.ts tests/deviceTunnelBroker.test.ts tests/lanRemote.test.ts tests/lanTerminalTasks.test.ts tests/lanTerminalIntegration.test.ts tests/lanTerminalFleet.test.ts tests/lanTerminalFleetIntegration.test.ts tests/lanTerminalFleetMcp.test.ts tests/lanTerminalMcpContract.test.ts tests/lanTerminalTrayUi.test.ts
+        run: bun x vitest run tests/desktopLanWindowsGui.test.ts tests/deviceDisplayQrClient.test.ts tests/windowsQrConnect.test.ts tests/deviceTunnelHttp.test.ts tests/deviceTunnelBroker.test.ts tests/lanRemote.test.ts tests/lanTerminalTasks.test.ts tests/lanTerminalIntegration.test.ts tests/lanTerminalFleet.test.ts tests/lanTerminalFleetIntegration.test.ts tests/lanTerminalFleetMcp.test.ts tests/lanSessionOpenCancellation.test.ts tests/lanTerminalMcpContract.test.ts tests/lanTerminalTrayUi.test.ts
       - name: Verify real native Bun ConPTY interactive input and stop
         run: bun scripts/verify-windows-conpty.ts
       - name: Build standalone Tauri receiver and bundled executable
