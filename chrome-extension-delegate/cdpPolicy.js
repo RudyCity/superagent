@@ -54,7 +54,7 @@
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
       fail("DELEGATE_WEB_TARGET_NOT_PUBLIC_HTTP", "Certified web action requires HTTP(S).");
     }
-    const host = parsed.hostname.toLowerCase().replace(/\\.$/, "");
+    const host = parsed.hostname.toLowerCase().replace(/\.$/, "");
     if (parsed.username || parsed.password || !host.includes(".") || host.includes(":") ||
         /^[0-9.]+$/.test(host) || host === "localhost" ||
         host.endsWith(".localhost") || host.endsWith(".local") ||
