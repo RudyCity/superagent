@@ -48,10 +48,11 @@
     const status = $("managed-chrome-status");
     const running = current?.owned === true && current?.status === "healthy";
     const occupied = current?.occupied === true;
+    const ownedOffline = current?.owned === true && !running;
     if (status) {
-      status.textContent = running ? "Owned · Healthy" :
+      status.textContent = running ? "Owned · Healthy" : ownedOffline ? "Owned · CDP offline" :
         occupied ? "Port occupied" : current?.status === "stopped" ? "Port available" : "Unavailable";
-      status.dataset.state = running ? "healthy" : occupied ? "occupied" : "stopped";
+      status.dataset.state = running ? "healthy" : ownedOffline || occupied ? "occupied" : "stopped";
     }
     const endpoint = $("managed-chrome-endpoint");
     if (endpoint) endpoint.textContent = "127.0.0.1:" + (current?.port || $("managed-chrome-port")?.value || "9222");
@@ -66,6 +67,8 @@
       feedback("The port belongs to an unverified process. Choose a free port; SuperAgent will not adopt or stop it.", true);
     else if (running)
       feedback("Ready. This Chrome is owned by SuperAgent. Stop will request native approval.");
+    else if (ownedOffline)
+      feedback("Owned Chrome PID is verified, but its CDP endpoint is offline. Stop can close only this verified PID after native approval.", true);
     else if (!busy)
       feedback("Port is available. Launch opens a separate Chrome profile; your personal Chrome stays open.");
   }
