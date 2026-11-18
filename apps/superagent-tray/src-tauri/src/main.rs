@@ -3678,7 +3678,7 @@ async fn poll_pending_security_requests(app: &tauri::AppHandle) -> Result<(), St
         // after owner consent; it is NEVER an approval or client identity.
         let approved_name = request.get("ownerConnectionName")
             .and_then(Value::as_str)
-            .filter(|value| !value.is_empty() && value.len() <= 64 &&
+            .filter(|value| !value.is_empty() && value.chars().count() <= 64 &&
                 !value.chars().any(char::is_control));
         let details = match approved_name {
             Some(name) => format!("{name} requested MCP permission. Review Security Approval."),
