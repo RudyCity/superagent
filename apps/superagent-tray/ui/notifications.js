@@ -526,6 +526,16 @@
     window.setInterval(refresh, 15000);
     void refresh();
   }
+  // Reuse the same fixed source-to-tab registry for ephemeral Tray feedback.
+  // This has no incident ID, so it never guesses an exact request or process.
+  window.__superagentNotificationDefaultRoute = (source) =>
+    typeof source === "string" && Object.hasOwn(destination, source) ? destination[source] : null;
+  window.__superagentNotificationOpenScope = (source) => {
+    const route = window.__superagentNotificationDefaultRoute(source);
+    if (!route || typeof window.navigateToPage !== "function") return false;
+    window.navigateToPage(route);
+    return true;
+  };
   window.__superagentNotificationsRefresh = () => refresh(true);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
