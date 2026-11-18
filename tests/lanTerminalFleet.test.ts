@@ -105,6 +105,31 @@ describe("LAN terminal fleet: multi-device isolation and concurrency", () => {
     expect(open).not.toHaveBeenCalled();
   });
 
+  it("handles eight independent receivers in one bounded concurrent batch", async () => {
+    const targets = Array.from({ length: LAN_TERMINAL_FLEET_MAX_DEVICES }, (_, index) => ({
+      id: String(index + 1).padStart(8, "0") + "-1111-4111-8111-111111111111",
+      fingerprint: String(index + 1).padStart(2, "0").repeat(32),
+      ip: "192.168.1." + (20 + index),
+    }));
+    const triggered: string[] = [];
+    const receivers = targets.map(t => ({
+      ...windows(t.id, t.ip), fingerprint: t.fingerprint,
+    }));
+    const service = new LanTerminalFleet(deps({
+      list: () => receivers,
+      start: async (deviceId) => {
+        triggered.push(deviceId);
+        return receipt(deviceId);
+      },
+    }));
+    const done = await service.execute("start", targets.map(t => ({
+      deviceId: t.id, command: "Get-Date",
+    })));
+    expect(triggered).toEqual(targets.map(t => t.id));
+    expect(done).toMatchObject({ requested: 8, succeeded: 8, failed: 0 });
+    expect(done.results.map(r => r.deviceId)).toEqual(targets.map(t => t.id));
+  });
+
   it("returns per-device failures without cancelling successful targets", async () => {
     const service = new LanTerminalFleet(deps({
       start: async (deviceId) => {
