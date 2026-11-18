@@ -413,7 +413,9 @@ export function registeredFileToolGate(
     for(const operation of operations){
       const decision=evaluatePersistentAccess(policy,{kind:"file",app:identity,path:actual,operation});
       if(decision.effect!=="allow"){
-        return "Permanent file access denies "+operation+" for "+actual+".";
+        // An external MCP denial must never disclose a resolved host path,
+        // including paths obtained after canonicalization or native aliases.
+        return "Permanent file access denies "+operation+" for the selected target.";
       }
     }
   }
