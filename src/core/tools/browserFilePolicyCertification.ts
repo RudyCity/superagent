@@ -37,7 +37,7 @@ export function certifiedRemoteWebUrl(raw:unknown):boolean {
    const url=new URL(raw);
    if(url.protocol!=="http:"&&url.protocol!=="https:")return false;
    if(url.username||url.password)return false;
-   const host=url.hostname.toLowerCase().replace(/\\.$/,"");
+   const host=url.hostname.toLowerCase().replace(/\.$/,"");
    if(!host||host==="localhost"||host.endsWith(".localhost")||
       host.endsWith(".local")||host.endsWith(".internal")||
       host.endsWith(".test")||host.endsWith(".invalid"))return false;
