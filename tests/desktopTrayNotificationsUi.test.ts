@@ -67,7 +67,21 @@ function mount(items: Record<string, unknown>[] = []) {
           if (args.action === "read-all") {
             items = items.map((item) => ({ ...item, readAt: 1700000000100 }));
           }
-          return { items, unreadCount: items.filter((item) => !item.readAt).length };
+          if (args.id && ["archive", "restore", "acknowledge", "resolve", "reopen"].includes(args.action)) {
+            items = items.map((item) => item.id === args.id ? {
+              ...item,
+              readAt: item.readAt ?? 1700000000100,
+              archivedAt: args.action === "archive" ? 1700000000100
+                : args.action === "restore" ? null : item.archivedAt,
+              resolvedAt: args.action === "resolve" ? 1700000000100
+                : args.action === "reopen" ? null : item.resolvedAt,
+              acknowledgedAt: args.action === "acknowledge" ? 1700000000100 : item.acknowledgedAt,
+            } : item);
+          }
+          if (args.action === "unread" && args.id) {
+            items = items.map((item) => item.id === args.id ? { ...item, readAt: null } : item);
+          }
+          return { items, unreadCount: items.filter((item) => !item.readAt && !item.archivedAt).length };
         }) },
         event: { listen: vi.fn(async () => () => {}) },
       },
@@ -332,43 +346,46 @@ describe("Tray Notification Manager", () => {
     expect(rust).toContain('Review its execution in History.');
   });
 
-  it("uses generic OS alerts and explicit policy instead of leaking Core errors", () => {
-    expect(rust).toContain('static OS_ALERT_BUDGET:');
-    expect(rust).toContain('os_alert_budget_available()');
-    expect(rust).toContain('tray_notification_center::should_notify_os(&dir, source, severity)?');
-    expect(rust).toContain('.title("SuperAgent needs attention")');
-    expect(rust).not.toContain('.body(format!("Failed to start Core: {}", e))');
-    expect(rust).not.toContain('.body(format!("Failed to restart Core: {}", e))');
-    expect(rust).not.toContain('.body(format!("Failed to stop Core: {}", e))');
+
+  it("marks card and View clicks read while keeping navigation synchronous", async () => {
+    for (const mode of ["card", "view"]) {
+      const mounted = mount([{
+        id: "mcp-pending:connections:request-42", source: "security", severity: "critical",
+        title: "MCP permission pending", body: "Review connection",
+        createdAt: Date.now(), readAt: null, archivedAt: null,
+      }]);
+      await Promise.resolve(); await Promise.resolve();
+      const card = mounted.get("tray-notification-recent").children[0];
+      const open = card.children[1].children[3].children[0];
+      if (mode === "card") card.trigger("click", { target: { closest: () => null } });
+      else open.trigger("click");
+      expect(mounted.nav).toHaveBeenCalledWith("security:connections");
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+      expect(mounted.mockInvocations.filter(call =>
+        call.action === "read" && call.id === "mcp-pending:connections:request-42")).toHaveLength(1);
+      expect(mounted.get("tray-notification-count").hidden).toBe(true);
+    }
   });
-  it("native API only acknowledges and archives; UI error summaries are redacted", () => {
-    expect(store).toContain('["list", "read", "unread", "archive", "restore", "read-all"');
-    expect(store).toContain('const MAX_ITEMS: usize = 300;');
-    expect(store).toContain('id.chars().any(char::is_control)');
-    expect(rust).toContain("tray_notification_center_action,");
-    expect(rust).toContain("tray_notification_center_ui_alert,");
-    expect(rust).toContain("tray_notification_center::publish(");
-    expect(rust).toContain("An operation reported an issue.");
-    expect(rust).not.toContain('tray_notification_center::publish(\n        &config_dir()?, &scope, severity, &id, &title,\n        error');
+
+  it("marks a clicked lifecycle action read without navigating to a different tab", async () => {
+    const mounted = mount([{
+      id: "incident-1", source: "runtime", severity: "warning",
+      title: "Runtime incident", body: "Inspect runtime",
+      createdAt: Date.now(), readAt: null, archivedAt: null,
+    }]);
+    await Promise.resolve(); await Promise.resolve();
+    const card = mounted.get("notification-inbox-list").children[0];
+    const actions = card.children[1].children[3].children;
+    const resolve = actions.find((button: any) => button.textContent === "Resolve");
+    expect(resolve).toBeDefined();
+    resolve.trigger("click");
+    await Promise.resolve(); await Promise.resolve();
+    expect(mounted.mockInvocations.some(call =>
+      call.action === "resolve" && call.id === "incident-1")).toBe(true);
+    expect(mounted.nav).not.toHaveBeenCalled();
+    expect(mounted.get("tray-notification-count").hidden).toBe(true);
   });
-});
-);
-    expect(app).toContain('const route = securityTab ? "security:" + securityTab : target;');
-    expect(app).toContain("window.__superagentAccessManagerOpenTab?.(securityTab)");
-    expect(access).toContain('const pendingNotificationTab = window.__superagentPendingAccessNotificationTab;');
-    expect(access).toContain('setActiveTab(tab || "mcp");');
-    expect(access).toContain('const tab = target.projectId === "mcp-connection" ? "connections" : "mcp";');
-    expect(access).not.toContain('/[\\\\x00-\\\\x1f]/.test(requestId)');
-  });
-  it("deep-links to an exact MCP approval without invoking approve/deny", () => {
-    const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
-    expect(js).toContain("window.__superagentAccessManagerFocusRequest(");
-    expect(access).toContain("window.__superagentAccessManagerFocusRequest = async (requestId, tabHint = null)");
-    expect(access).toContain("card.dataset.requestId = String(req.requestId ||");
-    expect(access).toContain("row.dataset.requestId = String(req.requestId ||");
-    expect(access).toContain("entry.classList.add(\"access-mcp-request-highlight\")");
-    expect(js).not.toContain('mcp_project_access_action');
-  });
+
   it("uses generic OS alerts and explicit policy instead of leaking Core errors", () => {
     expect(rust).toContain('static OS_ALERT_BUDGET:');
     expect(rust).toContain('os_alert_budget_available()');
