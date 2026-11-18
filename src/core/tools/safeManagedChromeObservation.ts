@@ -75,7 +75,7 @@ export async function safeManagedChromeObservation(args:Record<string,unknown>):
    // Page queries/fragments may contain credentials; inventory is not content access.
    url.username="";url.password="";url.search="";url.hash="";
    const title=typeof item.title==="string"?
-     item.title.replace(/[\\r\\n\\t\\u0000-\\u001f]/g," ").slice(0,160):"";
+     item.title.replace(/[\r\n\t\u0000-\u001f]/g," ").slice(0,160):"";
    targets.push({id:item.id,title,url:url.toString()});
  }
  if(args.command==="transport_status")return JSON.stringify({
@@ -83,6 +83,6 @@ export async function safeManagedChromeObservation(args:Record<string,unknown>):
    reachable:true,certifiedHttpTargets:targets.length,
    browserLaunch:false,localFileTabsExcluded:true});
  return targets.length?targets.map(t=>
-   `- id: ${t.id}\\n  title: ${t.title}\\n  url: ${t.url}`).join("\\n"):
+   `- id: ${t.id}\n  title: ${t.title}\n  url: ${t.url}`).join("\n"):
    "Chrome CDP reachable; no certified HTTP(S) page targets.";
 }
