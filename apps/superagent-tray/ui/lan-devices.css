@@ -514,6 +514,28 @@
   font-size: 11px; color: var(--text-secondary);
 }
 .lan-terminal-task-newline input { accent-color: var(--accent); }
+.lan-terminal-task-pty-controls {
+  display: flex; gap: 10px; align-items: end; flex-wrap: wrap;
+  margin-top: 14px; border-top: 1px solid var(--border-subtle); padding-top: 12px;
+}
+.lan-terminal-task-pty-controls label {
+  display: grid; gap: 5px; font-size: 11px; font-weight: 600;
+  color: var(--text-secondary);
+}
+.lan-terminal-task-pty-controls input,
+.lan-terminal-task-pty-controls select {
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm); background: var(--bg-base);
+  color: var(--text-primary); font: 12px var(--font-mono);
+  padding: 8px 9px; min-height: 34px;
+}
+.lan-terminal-task-pty-controls input { width: 84px; }
+.lan-terminal-task-pty-controls select { min-width: 120px; }
+.lan-terminal-task-pty-controls .button { min-height: 34px; }
+.lan-terminal-task-pty-controls :is(input, select, button):focus-visible {
+  outline: 2px solid var(--accent-muted); outline-offset: 2px;
+}
+
 @media (max-width: 570px) {
   .lan-terminal-task { margin: 8px 14px 18px; padding: 14px; }
   .lan-terminal-task-controls { width: 100%; }
