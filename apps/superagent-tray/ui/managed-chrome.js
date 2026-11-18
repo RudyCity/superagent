@@ -99,6 +99,8 @@
   }
   async function run(action) {
     if (busy) return;
+    // Invalidate an in-flight read-only port probe before a mutation.
+    generation++;
     let port, payload;
     try {
       port = selectedPort();
