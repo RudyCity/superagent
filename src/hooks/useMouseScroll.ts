@@ -112,6 +112,7 @@ export function useMouseScroll(
   ctxRef: MutableRefObject<SingleAgentMouseContext | null>
 ) {
   useEffect(() => {
+    if (process.env.SUPERAGENT_CLI_DISABLE_MOUSE === "1") return;
     if (!process.stdin.isTTY) return;
 
     // Enable SGR extended mouse tracking (button events + SGR coordinates)
