@@ -134,6 +134,8 @@ jobs:
             tests/mcpOutputRecovery.test.ts \
             tests/mcpToolGateway.test.ts \
             tests/mcpFilePolicyMatrix.test.ts \
+            tests/mcpOAuthRoutes.test.ts \
+            tests/mcpOAuthStore.test.ts \
             tests/mcpDelegateWebCertification.test.ts \
             tests/mcpPolicyReadinessReport.test.ts \
             tests/mcpApprovalAndFilePolicy.test.ts \
