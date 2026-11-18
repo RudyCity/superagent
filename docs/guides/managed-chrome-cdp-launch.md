@@ -88,14 +88,32 @@ and unattended screen-capture flags, and refuses launch when the port is in
 use. For lifecycle ownership, status and safe stop, prefer the supervised
 `launch_chrome_profile` tool.
 
+## Native Tray launch panel
+
+In **SuperAgent Tray → Runtime Detection → Managed Chrome CDP**, choose a
+debug port (default 9222), display mode (Visible, Headless or Auto), and
+startup HTTP(S) URL. **Check status** is read-only. **Launch Chrome CDP**
+opens a native operator approval dialog, then sends a fixed-shape request
+through `managed_chrome_action` to Core's authenticated loopback-only
+`/api/desktop/chrome-runtime`. The Core process invokes
+`BrowserProcessManager`; the WebView never receives the Core bearer or
+runs shell commands. The panel displays verified PID, Chrome version,
+target count, readiness and whether the port belongs to a foreign process.
+
+**Stop owned Chrome** is enabled only after the status response proves a
+matching process start identity and CDP fingerprint. The native stop
+approval and Core each revalidate the same PID and supervisor record.
+A stale record, port collision or process belonging to someone else
+fails closed, with no termination attempt.
+
+A changed browser debug port is a separate isolated Chrome profile. Chrome
+Delegate sessions are never upgraded or closed by this panel.
+
 ## Limits and release checklist
 
-The code alone does **not** enable a native Tray Launch button or override
-ChatGPT/Gemini's permanent file policy. For full native one-click launch, a
-separate operator-only Tray-to-Core control route with explicit consent and
-ownership-verified stop is still needed.
-
-Before marking the feature Runtime Verified, build and restart the local Core,
-perform an attended launch on the actual target OS, check `/json/version`,
-list a real HTTP(S) tab, repeat the launch to verify reuse, then test a foreign
-occupied port. Never kill unrelated Chrome processes.
+An attended native Tray approval does **not** override ChatGPT/Gemini
+permanent-file policies. The source is implemented, but a GitHub commit
+alone does not install a new Tray/Core or prove end-to-end functionality.
+Build and restart the actual local Core/Tray, perform an approved launch,
+verify `/json/version` and tabs, check the stop PID boundary, then test
+a foreign occupied port. Never kill unrelated Chrome processes.
