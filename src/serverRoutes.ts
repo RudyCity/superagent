@@ -832,6 +832,45 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Native Tray-only Managed Chrome lifecycle. This is deliberately not an
+  // MCP/Delegate endpoint; the caller must already pass Core Bearer auth,
+  // localhost ingress checks and focused native operator confirmation.
+  if (pathname === "/api/desktop/chrome-runtime") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    const peer = req.socket.remoteAddress || "";
+    const loopback = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(peer);
+    const host = /^(?:127\\.0\\.0\\.1|localhost):([0-9]{2,5})$/i.exec(String(req.headers.host || ""));
+    const localPort = host ? Number(host[1]) : 0;
+    const forwarded = ["origin", "x-forwarded-for", "x-forwarded-host", "cf-connecting-ip", "cf-ray", "forwarded"];
+    if (!loopback || !host || localPort < 1024 || localPort > 65535 ||
+        forwarded.some(header => req.headers[header])) {
+      sendJSON(res, 403, { success: false, error: "MANAGED_CDP_LOCAL_TRAY_ONLY" });
+      return true;
+    }
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "MANAGED_CDP_POST_REQUIRED" });
+      return true;
+    }
+    try {
+      const raw = await readBody(req);
+      if (Buffer.byteLength(raw, "utf8") > 1200) {
+        sendJSON(res, 413, { success: false, error: "MANAGED_CDP_REQUEST_TOO_LARGE" });
+        return true;
+      }
+      const { trayManagedChromeAction } = await import("./core/browserRuntime/trayManagedChrome.js");
+      const result = await trayManagedChromeAction(JSON.parse(raw));
+      sendJSON(res, 200, result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "MANAGED_CDP_REQUEST_FAILED";
+      const code = /^MANAGED_CDP_[A-Z_]+$/.test(message)
+        ? message : "MANAGED_CDP_OPERATION_FAILED";
+      sendJSON(res, 409, { success: false, error: code });
+    }
+    return true;
+  }
+
   // New service connections from the *local authenticated* SuperAgent Tray.
   // Core remains the sole lifecycle owner. Never accept remote requests,
   // arbitrary subprocesses, raw CLI arguments, existing-owner takeovers,
