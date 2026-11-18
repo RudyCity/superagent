@@ -69,7 +69,7 @@ describe("operator-only MCP connection registration", () => {
     expect(saved).not.toContain("accessToken");
     expect(()=>reconcileVerifiedMcpConnections(port,[
       makeSession({ownerConnectionName:"Invalid\u202EName"}),
-    ],Date.now(),ledger)).toThrow("Invalid MCP client label");
+    ],Date.now(),ledger)).toThrow("Invalid owner MCP connection label");
   });
 
   it("keeps connection history without reusing the old online state", () => {
