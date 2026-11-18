@@ -499,6 +499,68 @@ describe("independent MCP Connections and Project Access UI", () => {
       c.args.action==="connected_clients")).toBe(true);
   });
 
+  it("registers ChatGPT and Gemini as separate credential connections on one MCP endpoint", async () => {
+    const now = Date.now();
+    const ui = boot(true, {
+      requests: [], identities: [], projects: [],
+      connectedClients: {
+        success: true, state: "verified", registrationState: "verified",
+        observedAt: now,
+        clients: [
+          {sessionHandle:"ses_aaaaaaaaaaaa",principalHandle:"idh_1111111111111111",
+            authMode:"oauth",state:"idle",inFlight:0,lastSeenAt:now,
+            claimedClientName:"ChatGPT",claimedClientVersion:"1.0"},
+          {sessionHandle:"ses_bbbbbbbbbbbb",principalHandle:"idh_1111111111111111",
+            authMode:"oauth",state:"active",inFlight:1,lastSeenAt:now,
+            claimedClientName:"ChatGPT",claimedClientVersion:"1.0"},
+          {sessionHandle:"ses_cccccccccccc",principalHandle:"idh_2222222222222222",
+            authMode:"oauth",state:"idle",inFlight:0,lastSeenAt:now,
+            claimedClientName:"Gemini",claimedClientVersion:"1.0"},
+        ],
+        registeredConnections: [
+          {connectionHandle:"idh_1111111111111111",ownerPort:9227,authMode:"oauth",
+            reportedClientName:"ChatGPT",firstObservedAt:now-1000,lastObservedAt:now,
+            sessionCount:2,status:"connected"},
+          {connectionHandle:"idh_2222222222222222",ownerPort:9227,authMode:"oauth",
+            reportedClientName:"Gemini",firstObservedAt:now-1000,lastObservedAt:now,
+            sessionCount:1,status:"connected"},
+        ],
+      },
+    });
+    await flush();
+    ui.document.getElementById("access-nav-tab-connections")!.click(); await flush();
+    expect(ui.document.getElementById("access-mcp-registered-summary")!.textContent)
+      .toContain("2 koneksi · 2 terhubung");
+    const cards = ui.document.getElementById("access-mcp-registered-list")!.children;
+    expect(cards).toHaveLength(2);
+    expect(cards[0].textContent).toContain("ChatGPT");
+    expect(cards[0].textContent).toContain("2 sesi");
+    expect(cards[1].textContent).toContain("Gemini");
+    expect(cards[1].textContent).toContain("1 sesi");
+    // A session sighting MUST NOT authorize a new MCP identity or direct grant.
+    expect(ui.document.getElementById("access-mcp-connection-grant")!.disabled).toBe(true);
+    expect(ui.calls.some(c => c.args.action === "direct_grant")).toBe(false);
+  });
+
+  it("retains redacted registration history but never calls it online after owner failure", async () => {
+    const now = Date.now();
+    const ui = boot(true, {
+      requests: [], identities: [], projects: [],
+      connectedClients: {
+        success: true, state: "unavailable", registrationState: "unverified",
+        clients: null, registeredConnections: [
+          {connectionHandle:"idh_1111111111111111",ownerPort:9227,authMode:"oauth",
+            reportedClientName:"ChatGPT",firstObservedAt:now-1000,
+            lastObservedAt:now,sessionCount:0,status:"disconnected"},
+        ],
+      },
+    }); await flush();
+    expect(ui.document.getElementById("access-mcp-registered-summary")!.textContent)
+      .toContain("status tidak terverifikasi");
+    expect(ui.document.getElementById("access-mcp-registered-list")!.textContent)
+      .not.toContain("Terhubung");
+  });
+
   it("does not mistake unavailable or invalid session inventory for zero sessions", async () => {
     const unavailable=boot(true,{requests:[],identities:[],projects:[]});await flush();
     expect(unavailable.document.getElementById("access-mcp-live-summary")!.textContent)
