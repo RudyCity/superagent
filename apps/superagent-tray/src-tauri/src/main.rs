@@ -797,7 +797,7 @@ async fn lan_support_action(
     action: String,
     payload: Option<Value>,
 ) -> Result<Value, String> {
-    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "control_request", "control_status", "control_revoke", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort", "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort",
+    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_stop", "close", "revoke", "screen", "input", "schema", "element", "control_request", "control_status", "control_revoke", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort", "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort",
         "file_relay_start", "file_relay_status", "file_relay_cancel",
         "file_receive_v2_start", "file_receive_v2_status", "file_receive_v2_cancel"];
     if !ALL.contains(&action.as_str()) { return Err("Unsupported LAN action".into()); }
@@ -814,7 +814,10 @@ async fn lan_support_action(
         "qr_heartbeat" => &["kind", "id"],
         "tunnel_pair_request" => &["tunnelId", "fingerprint", "controller"],
         "tunnel_revoke" => &["tunnelId"],
-        "exec" => &["deviceId", "command"],
+        "exec" | "terminal_start" => &["deviceId", "command"],
+        "terminal_read" => &["deviceId", "jobId", "cursor"],
+        "terminal_input" => &["deviceId", "jobId", "text", "appendNewline"],
+        "terminal_stop" => &["deviceId", "jobId"],
         "input" => &["deviceId", "kind", "x", "y", "endX", "endY", "durationMs", "text"],
         "control_request" | "control_status" | "control_revoke" => &["deviceId","kind"],
         "file_offer" => &["deviceId", "direction", "name", "size", "sha256"],
@@ -928,6 +931,31 @@ async fn lan_support_action(
         let command = data["command"].as_str().ok_or("Remote command required")?;
         if command.trim().is_empty() || command.len() > 2000 {
             return Err("Remote command length must be 1–2000".into());
+        }
+    }
+    if action == "terminal_start" {
+        let command = data["command"].as_str().ok_or("Terminal command required")?;
+        if command.trim().is_empty() || command.chars().count() > 2000 ||
+            command.chars().any(|c| c.is_control() && c != '\n' && c != '\r') {
+            return Err("Invalid terminal command".into());
+        }
+    }
+    if matches!(action.as_str(), "terminal_read" | "terminal_input" | "terminal_stop") {
+        let job = data["jobId"].as_str().ok_or("Terminal task ID required")?;
+        if job.len() != 36 || !job.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+            return Err("Invalid terminal task ID".into());
+        }
+        if action == "terminal_read" && data.get("cursor").is_some() &&
+            data["cursor"].as_u64().is_none() {
+            return Err("Invalid terminal cursor".into());
+        }
+        if action == "terminal_input" {
+            let text = data["text"].as_str().ok_or("Terminal input required")?;
+            if text.is_empty() || text.chars().count() > 1024 ||
+               text.chars().any(|c| c.is_control() && c != '\n' && c != '\t') ||
+               data.get("appendNewline").is_some_and(|v| !v.is_boolean()) {
+                return Err("Invalid terminal input".into());
+            }
         }
     }
     if action.starts_with("file_") {
@@ -2627,11 +2655,12 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
         // Pairing / session approval is a physical action at the target console.
         // Avoid replaying ambiguous requests when the owner is slow to approve.
         match body.as_ref().and_then(|b| b.get("action")).and_then(Value::as_str) {
-            Some("pair" | "open" | "file_offer") => Duration::from_secs(125),
+            Some("pair" | "open" | "file_offer" | "terminal_start" | "terminal_input") => Duration::from_secs(125),
             // HTTPS quick tunnel provisioning may take 30s, followed by public readiness checks.
             // A slow QR operation must not be mistaken for an unreachable Core.
             Some("tunnel_invite" | "apk_download_qr") => Duration::from_secs(75),
             Some("file_put" | "file_get" | "file_finish" | "file_abort") => Duration::from_secs(18),
+            Some("terminal_read" | "terminal_stop") => Duration::from_secs(15),
             Some("exec") if body.as_ref().and_then(|b| b.get("command"))
                 .and_then(Value::as_str).is_some_and(|command|
                     command.starts_with("android.action.")) => Duration::from_secs(120),
