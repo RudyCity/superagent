@@ -285,7 +285,8 @@ fn snapshot(ledger: &Ledger) -> Value {
         value["isSnoozed"] = json!(item.snoozed_until.is_some_and(|until| until > now));
         value
     }).collect();
-    let recent = ledger.items.iter().filter(|n| n.created_at >= now.saturating_sub(86_400_000));
+    let recent = ledger.items.iter().filter(|n|
+        n.last_seen_at.unwrap_or(n.created_at) >= now.saturating_sub(86_400_000));
     let (mut last_day_actions, mut last_day_information) = (0, 0);
     for item in recent {
         if kind_of(item) == "action" { last_day_actions += 1; }
@@ -493,6 +494,9 @@ pub fn perform(dir: &Path, action: &str, id: Option<&str>) -> Result<Value, Stri
         if managed(item) && ["resolve", "reopen"].contains(&action) {
             return Err("Managed incidents require verified native resolution".into());
         }
+        if action == "archive" && kind_of(item) == "action" {
+            return Err("Resolve an action-required incident before archiving".into());
+        }
         let source = item.source.clone();
         // An explicit interaction with an incident also reads it. Preserve
         // "Mark unread" as the sole intentional exception. Apply both changes
@@ -582,7 +586,9 @@ mod tests {
     fn incident_buttons_are_read_in_one_persisted_transaction() {
         let dir = isolated();
         for action in ["read", "archive", "acknowledge", "resolve"] {
-            publish(&dir, "core", "warning", action, "Issue", "Open incident").unwrap();
+            // Archiving an unresolved action is intentionally disallowed.
+            let severity = if action == "archive" { "info" } else { "warning" };
+            publish(&dir, "core", severity, action, "Issue", "Open incident").unwrap();
             let snapshot = perform(&dir, action, Some(action)).unwrap();
             assert!(!snapshot["items"].as_array().unwrap().iter()
                 .find(|entry| entry["id"] == action).unwrap()["readAt"].is_null(),
@@ -666,6 +672,7 @@ mod tests {
         let dir = isolated();
         publish(&dir, "security", "critical", "mcp-pending:req1", "Approval", "Review").unwrap();
         assert!(perform(&dir, "resolve", Some("mcp-pending:req1")).is_err());
+        assert!(perform(&dir, "archive", Some("mcp-pending:req1")).is_err());
         assert!(perform(&dir, "reopen", Some("mcp-pending:req1")).is_err());
         let started = perform(&dir, "in-progress", Some("mcp-pending:req1")).unwrap();
         assert_eq!(started["items"][0]["actionStatus"], "in_progress");
