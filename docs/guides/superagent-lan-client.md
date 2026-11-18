@@ -81,6 +81,11 @@ supported by their existing transport; a duplicated physical receiver
   output per Windows job using its own deviceId + jobId + nextCursor.
 - superagent_device_terminal_fleet_input — send different bounded stdin text
   to each Windows job; **every receiver must approve each input**.
+- superagent_device_terminal_fleet_key — independently send an approved
+  Enter/Escape/arrow/Ctrl+C key to each Windows ConPTY task; each target owner
+  must explicitly confirm every key action.
+- superagent_device_terminal_fleet_resize — set independent ConPTY columns/rows
+  on each Windows device; only active jobs in their approved session qualify.
 - superagent_device_terminal_fleet_stop — stop **only** the exact Windows
   deviceId/jobId pairs named by the caller.
 
