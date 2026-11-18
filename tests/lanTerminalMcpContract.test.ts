@@ -10,7 +10,7 @@ const jobId = "e8a37bc4-9933-40a4-a09c-38ac1ad65700";
 describe("Windows LAN terminal tool exposure and policy", () => {
   const definitions = new Map(LAN_MCP_TOOL_DEFS.map(item => [item.name, item]));
   it("exports agent-facing and compatibility tool names with closed schemas", () => {
-    for (const suffix of ["start", "read", "input", "stop"]) {
+    for (const suffix of ["start", "read", "input", "key", "resize", "stop"]) {
       for (const prefix of ["superagent_lan_terminal_", "superagent_device_terminal_"]) {
         const name = prefix + suffix;
         expect(definitions.has(name), name).toBe(true);
@@ -24,6 +24,8 @@ describe("Windows LAN terminal tool exposure and policy", () => {
       .toEqual(["deviceId", "jobId"]);
     expect(definitions.get("superagent_lan_terminal_input")?.inputSchema.required)
       .toEqual(["deviceId", "jobId", "text"]);
+    expect(definitions.get("superagent_lan_terminal_resize")?.inputSchema.required)
+      .toEqual(["deviceId", "jobId", "cols", "rows"]);
   });
 
   it("validates exact device and job IDs and refuses unsafe control input", () => {
@@ -33,6 +35,8 @@ describe("Windows LAN terminal tool exposure and policy", () => {
     expect(parseTrayLanAction({ action: "terminal_input", deviceId, jobId, text: "hello", appendNewline: true }).action)
       .toBe("terminal_input");
     expect(parseTrayLanAction({ action: "terminal_stop", deviceId, jobId }).action).toBe("terminal_stop");
+    expect(parseTrayLanAction({ action: "terminal_resize", deviceId, jobId, cols: 120, rows: 40 }).action).toBe("terminal_resize");
+    expect(parseTrayLanAction({ action: "terminal_key", deviceId, jobId, key: "ArrowUp" }).action).toBe("terminal_key");
     const bad = [
       { action: "terminal_start", deviceId, command: "a".repeat(2001) },
       { action: "terminal_start", deviceId, command: "echo\u001b" },
@@ -42,17 +46,22 @@ describe("Windows LAN terminal tool exposure and policy", () => {
       { action: "terminal_input", deviceId, jobId, text: "\u0000" },
       { action: "terminal_input", deviceId, jobId, text: "hello", sessionToken: "forbidden" },
       { action: "terminal_stop", deviceId, jobId: "invalid" },
+      { action: "terminal_resize", deviceId, jobId, cols: 0, rows: 24 },
+      { action: "terminal_resize", deviceId, jobId, cols: 80, rows: 900 },
+      { action: "terminal_key", deviceId, jobId, key: "FIRE" },
+      { action: "terminal_key", deviceId, jobId, key: "\u001b[A" },
       { action: "terminal_read", deviceId: "invalid", jobId },
     ];
     for (const request of bad) expect(() => parseTrayLanAction(request)).toThrow();
   });
 
-  it("exposes truthful capabilities and never claims PTY", async () => {
+  it("advertises native Bun ConPTY with explicit runtime dependency", async () => {
     const reply = await dispatchLanMcpTool("superagent_device_capabilities", {});
     expect(reply?.isError).not.toBe(true);
     const data = JSON.parse((reply?.content[0] as { text: string }).text);
     expect(data.windows.pipedTerminalTasks).toBe(true);
-    expect(data.windows.conpty).toBe(false);
+    expect(data.windows.conpty).toBe(true);
+    expect(data.windows.conptyRequiresBun).toBe(true);
     expect(data.windows.maxTaskSeconds).toBe(600);
   });
 });
