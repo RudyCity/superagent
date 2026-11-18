@@ -40,7 +40,7 @@ function setup() {
   context.navigator = { clipboard: { writeText: writeTextMock } };
   context.window.navigator = context.navigator;
   vm.runInNewContext(script, context);
-  return { feedback: context.window.TrayFeedback as any, host, timers, node, elements, writeTextMock };
+  return { feedback: context.window.TrayFeedback as any, host, timers, node, elements, writeTextMock, window: context.window };
 }
 
 describe("Tray shared loading and toast", () => {
@@ -143,6 +143,26 @@ describe("Tray shared loading and toast", () => {
     });
     expect(quiet.status).toBe("success");
     expect(host.children).toHaveLength(1);
+  });
+
+  it("routes a warning toast using only an allowlisted source and never its message", () => {
+    const { feedback, host, window } = setup();
+    const opened = vi.fn(() => true);
+    window.__superagentNotificationDefaultRoute = (scope: string) =>
+      scope === "runtime" ? "runtime:core" : null;
+    window.__superagentNotificationOpenScope = opened;
+    expect(feedback.notify({
+      kind: "warning", scope: "runtime", message: "https://evil.invalid/no-navigation",
+    })).toBe(true);
+    const warning = host.children[0];
+    expect(warning.children).toHaveLength(4);
+    const review = warning.children[3];
+    expect(review.textContent).toBe("Review");
+    review.listeners.get("click")();
+    expect(opened).toHaveBeenCalledWith("runtime");
+    expect(host.children).toHaveLength(0);
+    feedback.notify({ kind: "error", scope: "unknown", message: "No native route" });
+    expect(host.children[0].children).toHaveLength(3);
   });
 
   it("provides copy button on toast to copy message text and display feedback", async () => {
