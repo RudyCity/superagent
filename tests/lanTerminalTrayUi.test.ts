@@ -14,14 +14,17 @@ describe("Attended Windows LAN terminal task Tray", () => {
       "lan-terminal-task-panel", "lan-terminal-task-start", "lan-terminal-task-refresh",
       "lan-terminal-task-stop", "lan-terminal-task-input", "lan-terminal-task-send",
       "lan-terminal-task-output", "lan-terminal-task-status", "lan-terminal-task-newline",
+      "lan-terminal-task-cols", "lan-terminal-task-rows", "lan-terminal-task-resize",
+      "lan-terminal-task-key", "lan-terminal-task-send-key",
     ]) expect(html).toContain('id="' + id + '"');
     expect(css).toContain(".lan-terminal-task-head");
+    expect(css).toContain(".lan-terminal-task-pty-controls");
     expect(css).toContain("@media (max-width: 570px)");
   });
 
   it("uses only fixed native LAN actions, no tokens or arbitrary network URLs", () => {
     expect(js).toContain('fn("lan_support_action", { action, payload })');
-    for (const operation of ["terminal_start", "terminal_read", "terminal_input", "terminal_stop"]) {
+    for (const operation of ["terminal_start", "terminal_read", "terminal_input", "terminal_key", "terminal_resize", "terminal_stop"]) {
       expect(js).toContain('"' + operation + '"');
       expect(rust).toContain('"' + operation + '"');
     }
