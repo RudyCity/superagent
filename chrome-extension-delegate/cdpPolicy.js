@@ -26,9 +26,14 @@
   }
 
   function privileged(url) {
-    const value = String(url || "").trim().toLowerCase();
-    return /^(chrome|chrome-extension|devtools|edge|file):/.test(value) ||
-      (value.startsWith("about:") && value !== "about:blank");
+    const value = String(url || "").trim();
+    if (value === "about:blank") return false; // Only an empty, non-file page.
+    try {
+      const parsed = new URL(value);
+      return !((parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.hostname);
+    } catch {
+      return true;
+    }
   }
 
   function assertUrl(url) {
