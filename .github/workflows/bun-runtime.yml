@@ -132,12 +132,12 @@ jobs:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - run: bun run build
-      - name: Run Bun-native principal security tests
-        run: bun test tests/delegateMcpPrincipalBinding.test.ts
+      - name: Run authenticated principal security tests
+        run: bun --bun x vitest run tests/delegateMcpPrincipalBinding.test.ts --maxWorkers=2 --reporter=dot
       - name: Verify fast-command output and isolated Vision owner on Linux
         run: bun --bun x vitest run tests/mcpOutputRecovery.test.ts tests/managedVisionControl.test.ts --maxWorkers=2 --reporter=dot
       - name: Run vitest regression
-        run: bun --bun x vitest run --maxWorkers=2 --reporter=dot --exclude tests/delegateMcpPrincipalBinding.test.ts
+        run: bun --bun x vitest run --maxWorkers=2 --reporter=dot
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
   security:

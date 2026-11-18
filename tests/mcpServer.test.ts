@@ -7,9 +7,13 @@ import os from "os";
 import { createSuperagentMcpServer as createMcpServer, MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, MCP_TOOL_DEFINITIONS } from "../src/core/mcp/superagentMcpServer.js";
 // These assertions exercise legacy direct-tool compatibility, not the new gateway default.
 const createSuperagentMcpServer = (options: Parameters<typeof createMcpServer>[0] = {}) =>
-  createMcpServer({ ...options, toolExposure: "full" });
+  createMcpServer({ workspace:fixtureWorkspace,authMode:"oauth",getIdentity:()=>fixtureIdentity,...options, toolExposure: "full" });
+const fixtureIdentity={mode:"oauth" as const,subject:"mcp-server-fixture",scopes:["mcp:tools","mcp:tools:write","mcp:tools:admin"]};
+let fixtureWorkspace:string;
 import { getDefaultSafeTools } from "../src/core/mcp/mcpHttpTransport.js";
 import { registerProject, removeProject } from "../src/core/project/projectRegistry.js";
+import { grantProjectAccess, revokeProjectAccess } from "../src/core/project/projectAccessPolicy.js";
+import { MCP_CONNECTION_PROJECT_ID } from "../src/core/project/projectAccessRequestStore.js";
 import {
   superagentInstances,
   subagentInstances,
@@ -33,7 +37,10 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
     superagentInstances.clear();
     subagentInstances.clear();
     fs.mkdirSync(testDir, { recursive: true });
+    fixtureWorkspace=testDir;
     registerProject({ id: testProjectId, name: "MCP Test Suite", type: "local", root: testDir });
+    grantProjectAccess(fixtureIdentity,testProjectId,["read","write","execute","git","worktree","planning"]);
+    grantProjectAccess(fixtureIdentity,MCP_CONNECTION_PROJECT_ID,["execute"]);
   });
 
   afterEach(() => {
@@ -410,6 +417,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
     const projectId = `${testProjectId}-missing`;
     fs.mkdirSync(root);
     registerProject({ id: projectId, name: "Deleted Project Root", type: "local", root });
+    grantProjectAccess(fixtureIdentity,projectId,["read"]);
     fs.rmSync(root, { recursive: true, force: true });
 
     try {
@@ -444,7 +452,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
         params: { name: "superagent_check_project_health", arguments: { projectId } },
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toMatch(/not authorized/i);
+      expect(result.content[0].text).toContain("PROJECT_GRANT_MISSING");
       expect(result.content[0].text).not.toContain(outside);
     } finally {
       removeProject(projectId);
@@ -454,6 +462,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
 
   it("audits canonical project context and authorization decisions for allowed and denied calls", async () => {
     const auditEvents: any[] = [];
+    grantProjectAccess({mode:"oauth",subject:"audit-test-user"},testProjectId,["read"]);
     const server = createSuperagentMcpServer({
       workspace: testDir,
       onToolCall: (info) => { auditEvents.push(info); },
@@ -752,7 +761,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
       await expect(callHandler({
         method: "tools/call",
         params: { name: "superagent_cli_bridge", arguments: { action: "profile.list", cwd: outsideWorkspace } },
-      })).rejects.toThrow("blocked by Scoped YOLO boundary");
+      })).rejects.toThrow("PROJECT_GRANT_MISSING");
     } finally {
       fs.rmSync(outsideWorkspace, { recursive: true, force: true });
     }
@@ -864,7 +873,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
     expect(statusAfter.content[0].text).toContain("Status: UNLOCKED");
   });
 
-  it("auto-preempts conflicting locks during YOLO mode for write and mutation tools", async () => {
+  it("project grants and chat YOLO never replace explicit foreign-lock release", async () => {
     const server = createSuperagentMcpServer({ workspace: testDir, allowDangerous: true });
     const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
@@ -880,30 +889,46 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
     // Lock file by another session
     lockFile(testFile, "competing-session-123", "cli", 60000, testDir);
 
-    // Write file while locked without YOLO -> rejected at the fail-closed YOLO boundary before lock handling
+    revokeProjectAccess(fixtureIdentity,testProjectId);
+    // A missing project grant denies before lock handling, even for this workspace.
     await expect(callHandler({
       method: "tools/call",
       params: {
         name: "superagent_write_files",
         arguments: { files: [{ filePath: testFile, content: "Blocked content", overwrite: true }] },
       },
-    })).rejects.toThrow("YOLO OFF");
+    })).rejects.toThrow("PROJECT_GRANT_MISSING");
+    expect(fs.readFileSync(testFile,"utf8")).toBe("initial text line");
 
     // Turn ON YOLO mode
     setYoloMode(true);
     expect(isYoloMode()).toBe(true);
+    grantProjectAccess(fixtureIdentity,testProjectId,["write"]);
 
-    // Now write file -> auto-preempts lock and writes cleanly!
-    const writeSuccess = await callHandler({
+    const blockedWrite = await callHandler({
       method: "tools/call",
       params: {
         name: "superagent_write_files",
-        arguments: { files: [{ filePath: testFile, content: "YOLO auto-preempted content", overwrite: true }] },
+        arguments: { files: [{ filePath: testFile, content: "Still blocked", overwrite: true }] },
       },
     });
+    expect(blockedWrite.isError).toBe(true);
+    expect(blockedWrite.content[0].text).toContain("LOCK_CONFLICT");
+    expect(fs.readFileSync(testFile,"utf8")).toBe("initial text line");
+    expect(checkFileLock(testFile,undefined,testDir).locked).toBe(true);
+
+    const unlocked = await callHandler({method:"tools/call",params:{
+      name:"superagent_unlock_file",arguments:{filePath:testFile,action:"force_unlock",reason:"Reviewed fixture lock release"},
+    }});
+    expect(unlocked.isError).not.toBe(true);
+    expect(unlocked.content[0].text).toContain("Forcibly unlocked");
+    expect(checkFileLock(testFile,undefined,testDir).locked).toBe(false);
+    const writeSuccess = await callHandler({method:"tools/call",params:{
+      name:"superagent_write_files",arguments:{files:[{filePath:testFile,content:"Explicitly unlocked content",overwrite:true}]},
+    }});
     expect(writeSuccess.isError).toBeFalsy();
     expect(writeSuccess.content[0].text).toContain("Successfully wrote");
-    expect(fs.readFileSync(testFile, "utf-8")).toBe("YOLO auto-preempted content");
+    expect(fs.readFileSync(testFile, "utf-8")).toBe("Explicitly unlocked content");
 
     // Clean up YOLO mode
     setYoloMode(false);

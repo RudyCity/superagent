@@ -1,0 +1,2 @@
+# Checksum-pinned native source must retain its reviewed bytes on Windows.
+native/desktop-live-wayland/portal_window_consent.py text eol=lf

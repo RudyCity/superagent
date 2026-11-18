@@ -37,7 +37,7 @@ describe("Android internet Device Tunnel foreground service contract", () => {
     expect(service).toContain('"STOP SHARING", stopAction');
     expect(service).toContain("START_NOT_STICKY");
     expect(service).toContain("active.getAndSet(false)");
-    expect(activity).toContain("if (!requestingCapture && !ScreenProjectionService.isActive()) stopDirectSharing()");
+    expect(activity).toMatch(/if \(!requestingCapture && !ScreenProjectionService\.isActive\(\) &&\s*!LanTransferForegroundService\.isHolding\(server\)\) stopDirectSharing\(\);/);
     expect(activity).toContain("TunnelForegroundService.requestStop(this)");
     expect(activity).not.toContain("private volatile TunnelRelayClient tunnelRelay;");
   });

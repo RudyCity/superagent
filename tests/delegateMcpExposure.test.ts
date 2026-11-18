@@ -9,6 +9,8 @@ import {
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
 import { setYoloMode } from "../src/core/permissions.js";
 import { emitMcpActivity, onMcpActivity } from "../src/core/mcp/mcpActivityBus.js";
+import { grantProjectAccess } from "../src/core/project/projectAccessPolicy.js";
+import { MCP_CONNECTION_PROJECT_ID } from "../src/core/project/projectAccessRequestStore.js";
 
 const invoke = async (
   server: ReturnType<typeof createSuperagentMcpServer>,
@@ -205,6 +207,7 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
 
   it("audits fail-closed MCP dispatch without logging the message body", async () => {
     setYoloMode(true);
+    grantProjectAccess({mode:"oauth",subject:"author"},MCP_CONNECTION_PROJECT_ID,["execute"]);
     const privateMessage = "sensitive-outgoing-chat-text";
     const traces: unknown[] = [];
     vi.stubGlobal("fetch", async () => ({

@@ -3,6 +3,7 @@ import {
   handleControlChromeCdp, handleControlChromeVision, validateDelegateBrowserHostArgs,
 } from "../src/core/mcp/tools/chromeMcpTools.js";
 import { controlChromeCdpTool } from "../src/core/tools/chromeCdpTools.js";
+import * as managedObservation from "../src/core/tools/safeManagedChromeObservation.js";
 import { delegateBridge } from "../src/core/delegate/bridge.js";
 import { handleServerRoute } from "../src/serverRoutes.js";
 import { runWithAuthenticatedDelegatePrincipal } from "../src/core/browserTransport/delegatePrincipalPolicy.js";
@@ -74,7 +75,7 @@ describe("Delegate-CDP MCP to Core owner bridge", () => {
       expect(result.content[0].text).toMatch(/DELEGATE_FORWARD_/);
     }
     expect(fetchMock).not.toHaveBeenCalled();
-    const local = vi.spyOn(controlChromeCdpTool, "execute").mockResolvedValue("local managed result");
+    const local = vi.spyOn(managedObservation, "safeManagedChromeObservation").mockResolvedValue("local managed result");
     const managed = await handleControlChromeCdp({ command: "list_targets", transport: "managed" });
     expect(managed.content[0].text).toBe("local managed result");
     expect(local).toHaveBeenCalledOnce();

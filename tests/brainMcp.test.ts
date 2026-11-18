@@ -6,6 +6,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
 import { registerProject, removeProject } from "../src/core/project/projectRegistry.js";
 import { grantProjectAccess } from "../src/core/project/projectAccessPolicy.js";
+import { MCP_CONNECTION_PROJECT_ID } from "../src/core/project/projectAccessRequestStore.js";
 import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
 
 const roots: string[] = [];
@@ -26,6 +27,7 @@ describe("Brain MCP OAuth identity scope", () => {
     process.env.SUPERAGENT_CONFIG_DIR = root;
     setFullYoloMode(false);
     setYoloMode(true);
+    grantProjectAccess({ mode: "oauth", subject: "session-owner" }, MCP_CONNECTION_PROJECT_ID, ["execute"]);
     const server = createSuperagentMcpServer({
       authMode: "oauth", allowDangerous: true,
       getIdentity: () => ({ mode: "oauth", subject: "session-owner", scopes: ["mcp:tools", "mcp:tools:write"] }),
@@ -48,6 +50,7 @@ describe("Brain MCP OAuth identity scope", () => {
     setFullYoloMode(false);
     setYoloMode(true);
     let scopes = ["mcp:tools"];
+    grantProjectAccess({ mode: "oauth", subject: "reader" }, MCP_CONNECTION_PROJECT_ID, ["execute"]);
     const server = createSuperagentMcpServer({
       authMode: "oauth", allowDangerous: true,
       getIdentity: () => ({ mode: "oauth", subject: "reader", scopes }),
@@ -75,6 +78,9 @@ describe("Brain MCP OAuth identity scope", () => {
     setFullYoloMode(false);
     setYoloMode(true);
     let subject = "alice";
+    for (const principal of ["alice", "bob"]) {
+      grantProjectAccess({ mode: "oauth", subject: principal }, MCP_CONNECTION_PROJECT_ID, ["execute"]);
+    }
     const server = createSuperagentMcpServer({
       authMode: "oauth", allowDangerous: true,
       getIdentity: () => ({ mode: "oauth", subject, scopes: ["mcp:tools", "mcp:tools:write"] }),
@@ -105,6 +111,7 @@ describe("Brain MCP OAuth identity scope", () => {
     setFullYoloMode(false);
     setYoloMode(true);
     const identity = { mode: "oauth" as const, subject: "publish-user", scopes: ["mcp:tools", "mcp:tools:write"] };
+    grantProjectAccess(identity, MCP_CONNECTION_PROJECT_ID, ["execute"]);
     const server = createSuperagentMcpServer({
       authMode: "oauth", allowDangerous: true, workspace: nestedWorkspace,
       getIdentity: () => identity,
@@ -122,8 +129,8 @@ describe("Brain MCP OAuth identity scope", () => {
       projectId, sessionId: "publish_session", filePath: "artifacts/report.md",
       destinationPath: "reports/report.md",
     };
-    const blocked = await invoke("superagent_brain_publish", { ...publishArgs, action: "prepare" });
-    expect(blocked.isError).toBe(true);
+    await expect(invoke("superagent_brain_publish", { ...publishArgs, action: "prepare" }))
+      .rejects.toThrow(/PROJECT_GRANT_MISSING/);
     expect(fs.existsSync(path.join(target, "reports", "report.md"))).toBe(false);
     grantProjectAccess(identity, projectId, ["write"]);
     const prepared = await invoke("superagent_brain_publish", { ...publishArgs, action: "prepare" });

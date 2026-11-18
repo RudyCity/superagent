@@ -410,7 +410,7 @@ describe("SuperAgent Tray System Overview Dashboard", () => {
 
     expect(harness.byId("kpi-security-status").textContent).toBe("3 Rules");
     expect(harness.byId("kpi-security-meta").textContent).toBe("2 active targets · Permanent ACL");
-    expect(harness.byId("kpi-security-badge").textContent).toBe("Enforced");
+    expect(harness.byId("kpi-security-badge").textContent).toBe("Configured");
   });
 
   it("merges security access audit log entries into recent activity feed", async () => {

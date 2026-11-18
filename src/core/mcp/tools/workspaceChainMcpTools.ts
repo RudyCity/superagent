@@ -47,12 +47,12 @@ const nodeSchema = {
 export const WORKSPACE_CHAIN_MCP_TOOL_DEFS = [
   {
     name: "superagent_list_workspace_chains",
-    description: "Read-only list of Workspace Chains visible from the current MCP workspace. Shows chain IDs, node labels/types, and active selection; does not connect to SSH or change config.",
+    description: "Read-only list of Workspace Chains visible from the current MCP workspace. Requires an identity-bound project read grant; OAuth callers also require read scope. Shows chain IDs, node labels/types, and active selection; does not connect to SSH or change config.",
     inputSchema: { type: "object", properties: { workspace: { type: "string" }, projectId: { type: "string" } } },
   },
   {
     name: "superagent_manage_workspace_chain",
-    description: "Manage Workspace Chains across local/SSH projects (create/list/activate/deactivate/delete/add-node/remove-node/status/topology/update/health). Mutating or connection actions require SuperAgent Full YOLO mode. SSH passwords or inline secrets are rejected; use SSH keys/config.",
+    description: "Manage Workspace Chains across local/SSH projects (create/list/activate/deactivate/delete/add-node/remove-node/status/topology/update/health). Requires an explicit identity-bound project chain capability; OAuth callers also require write scope. Chat YOLO grants no MCP access. SSH passwords or inline secrets are rejected; use SSH keys/config.",
     inputSchema: {
       type: "object",
       properties: {
@@ -72,7 +72,7 @@ export const WORKSPACE_CHAIN_MCP_TOOL_DEFS = [
   },
   {
     name: "superagent_cross_workspace_exec",
-    description: "Run/read/write/diff/sync across nodes of an active Workspace Chain. This can execute commands or mutate remote files; requires SuperAgent Full YOLO mode and an explicit registered chain project context.",
+    description: "Run/read/write/diff/sync across nodes of an active Workspace Chain. This can execute commands or mutate remote files; requires an explicit registered chain project context and its identity-bound chain capability. OAuth callers also require write scope. Chat YOLO grants no MCP access; host file policy remains independent.",
     inputSchema: {
       type: "object",
       properties: {

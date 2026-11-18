@@ -80,7 +80,9 @@ describe("native Shutdown Manager UI",()=>{
     expect(ownerControl).toContain('read_lease(dir, port, pid)');
     expect(native).toContain('force_confirmation.as_deref()!=Some("KILL SELECTED")');
     expect(native).toContain('manual_process_allowed(&item.kind,pid,expected)');
-    expect(native).toContain('process.start_time()!=birth');
+    expect(native).toContain('item.process_started_at==Some(birth)');
+    expect(native).toContain('manual_process_identity_matches(item,process.start_time(),process.name(),');
+    expect(native).toContain('Some(current) if current.start_time()!=birth =>');
     expect(native).toContain('pid==std::process::id()');
   });
   it("previews owner states read-only, and excludes unverified services from selection",async()=>{
@@ -152,7 +154,7 @@ describe("native Shutdown Manager UI",()=>{
     expect(action.exitAfter).toBeUndefined();
     expect(action.pid).toBeUndefined();
     expect(m.node("shutdown-progress").hidden).toBe(false);
-    expect(m.node("shutdown-progress-status").textContent).toContain("in progress");
+    await vi.waitFor(()=>expect(m.node("shutdown-progress-status").textContent).toContain("in progress"));
   });
   it("allows manually killing reviewed Guardian, external Cloudflare and Core Supervisor PIDs",async()=>{
     const inventory=fixture();

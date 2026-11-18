@@ -124,7 +124,7 @@ import { getProject } from "../project/projectRegistry.js";
 import type { ResolvedProjectTarget } from "../project/projectRouter.js";
 import { LocalProjectProvider } from "../project/providers/localProjectProvider.js";
 import type { ProjectProvider, ProjectProviderKind, ResolvedProjectContext } from "../project/providers/types.js";
-import { getProjectCapabilityForTool, hasProjectAccess } from "../project/projectAccessPolicy.js";
+import { getProjectCapabilityForTool, hasProjectAccess, ProjectAccessPolicyStoreError } from "../project/projectAccessPolicy.js";
 import { standaloneSshProjectProvider } from "./tools/standaloneSshProjectTools.js";
 
 const localProjectProvider = new LocalProjectProvider();
@@ -163,6 +163,7 @@ type McpRequestAuditContext = {
 function classifyMcpAuditError(error?: string): string | undefined {
   if (!error) return undefined;
   const message = error.toLowerCase();
+  if (message.includes("[policy_store_unavailable]")) return "policy_store_unavailable";
   if (message.includes("health probe exceeded its deadline") || message.includes("timed out")) return "provider_timeout";
   if (message.includes('"status": "unavailable"') || message.includes("could not verify the registered root")) return "provider_unavailable";
   if (message.includes(".env") || message.includes("protected config") || message.includes("protected path")) return "protected_path";
@@ -1285,7 +1286,9 @@ function extractMcpResultText(result: unknown): string {
         ...info, args: lifecycleAuditArgs,
         ...(info.error ? { error: "EXTERNAL_LIFECYCLE_CALL_FAILED" } : {}),
       } : info;
-      if (desktopCall) {
+      if (auditContext.errorCode === "policy_store_unavailable") {
+        safeInfo = { ...info, args: {}, error: new ProjectAccessPolicyStoreError().message };
+      } else if (desktopCall) {
         safeInfo = {
           ...safeInfo,
           args: desktopAuditArgs,
@@ -1302,14 +1305,27 @@ function extractMcpResultText(result: unknown): string {
           ...safeInfo,
           correlationId: auditContext.correlationId,
           principalHash: auditContext.principalHash,
-          projectId,
-          providerKind,
+          projectId: errorCode === "policy_store_unavailable" ? null : projectId,
+          providerKind: errorCode === "policy_store_unavailable" ? null : providerKind,
           requiredCapability,
           authorizationDecision,
           errorCode,
         });
       } catch {
         // Audit observers must never break tool execution.
+      }
+    };
+    const checkCurrentProjectAccess = (...args: Parameters<typeof hasProjectAccess>) => {
+      try { return hasProjectAccess(...args); }
+      catch (error) {
+        if (error instanceof ProjectAccessPolicyStoreError) {
+          auditContext.authorizationDecision = "denied";
+          auditContext.errorCode = "policy_store_unavailable";
+          emitAudit({ tool: toolName, args: {}, ok: false, error: error.message, durationMs: 0 });
+          emitMcpActivity({ type: "tool_call", tool: toolName, args: {}, ok: false,
+            error: error.message, durationMs: 0, timestamp: Date.now(), workspace: "mcp://permission-store" });
+        }
+        throw error;
       }
     };
     // Block direct calls too, including clients that cached an old tools/list response.
@@ -1374,7 +1390,7 @@ function extractMcpResultText(result: unknown): string {
         // Revoking one's own grant decreases privilege and must remain usable.
         && toolName !== "superagent_revoke_project_access"
         && (!callerIdentity?.subject ||
-          !hasProjectAccess(callerIdentity, MCP_CONNECTION_PROJECT_ID, "execute"))) {
+          !checkCurrentProjectAccess(callerIdentity, MCP_CONNECTION_PROJECT_ID, "execute"))) {
       // An authorization error alone is invisible to the native Tray inbox.
       // Queue a bounded, identity-bound request only after OAuth write-scope
       // validation. This NEVER grants access, replays the tool, or consults YOLO.
@@ -1402,7 +1418,8 @@ function extractMcpResultText(result: unknown): string {
       throw new McpError(ErrorCode.InvalidRequest, reason);
     }
     if (toolName !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(toolName)
-      && (typeof rawArgs.projectId === "string" || typeof rawArgs.workspace === "string" || typeof rawArgs.cwd === "string" || typeof rawArgs.worktreePath === "string")) {
+      && (WORKSPACE_SCOPED_MCP_TOOLS.has(toolName) || typeof rawArgs.projectId === "string"
+        || typeof rawArgs.workspace === "string" || typeof rawArgs.cwd === "string" || typeof rawArgs.worktreePath === "string")) {
       try {
         const resolvedTarget = resolveMcpProjectTarget(toolName, {
           projectId: rawArgs.projectId,
@@ -1507,7 +1524,7 @@ function extractMcpResultText(result: unknown): string {
       const identity = getIdentity?.();
       const capability = getProjectCapabilityForTool(toolName, rawArgs);
       const grant = Boolean(project?.enabled && identity?.subject &&
-        hasProjectAccess(identity, project.id, capability));
+        checkCurrentProjectAccess(identity, project.id, capability));
       const remoteProject = project?.type === "ssh" || project?.type === "chain";
       const within = Boolean(project && (remoteProject ||
         (project.type === "local" && project.root &&
@@ -1651,6 +1668,11 @@ function extractMcpResultText(result: unknown): string {
       const failed = !!(result && typeof result === "object" && (result as any).isError);
       const durationMs = Date.now() - startedAt;
       const outputText = extractMcpResultText(result);
+      const policyStoreFailure = failed && outputText.includes("[POLICY_STORE_UNAVAILABLE]");
+      if (policyStoreFailure) {
+        auditContext.authorizationDecision = "denied";
+        auditContext.errorCode = "policy_store_unavailable";
+      }
       mcpToolMetrics.record(toolName, durationMs, failed, Buffer.byteLength(outputText, "utf8"));
       const wrappedLifecycle = toolName === MCP_GATEWAY_TOOL_NAMES.execute &&
         rawArgs.name === "superagent_lifecycle";
@@ -1663,7 +1685,7 @@ function extractMcpResultText(result: unknown): string {
           ["superagent_chrome_cdp_web","superagent_chrome_cdp"].includes(String(rawArgs.name)) &&
           rawArgs.arguments && typeof rawArgs.arguments === "object" &&
           (rawArgs.arguments as Record<string, unknown>).transport === "delegate");
-      const safeActivityArgs = privateBrowser
+      const safeActivityArgs = policyStoreFailure ? {} : privateBrowser
         ? { command: rawArgs.command ?? (rawArgs.arguments as any)?.command,
             contentRedacted: true }
         : desktopCall ? desktopAuditArgs
@@ -1672,7 +1694,7 @@ function extractMcpResultText(result: unknown): string {
           ? { action: lifecycleParams.action, workflowId: lifecycleParams.workflowId,
               runId: lifecycleParams.runId, stepId: lifecycleParams.stepId,
               workerId: lifecycleParams.workerId } : rawArgs;
-      const safeActivityOutput = privateBrowser
+      const safeActivityOutput = policyStoreFailure ? new ProjectAccessPolicyStoreError().message : privateBrowser
         ? "[DELEGATE_CDP_RESPONSE_REDACTED]"
         : desktopCall ? "[DESKTOP_UI_RESPONSE_REDACTED]"
         : permissionPreflightCall ? "[TOOL_PERMISSION_PREFLIGHT_REDACTED]"
@@ -1688,24 +1710,29 @@ function extractMcpResultText(result: unknown): string {
         output: failed ? undefined : safeActivityOutput,
         durationMs,
         timestamp: Date.now(),
-        workspace: effectiveWs,
+        workspace: policyStoreFailure ? "mcp://permission-store" : effectiveWs,
       });
       return result;
     } catch (err: any) {
       const durationMs = Date.now() - startedAt;
       const errorMsg = err?.message || String(err);
+      const policyStoreFailure = err instanceof ProjectAccessPolicyStoreError;
+      if (policyStoreFailure) {
+        auditContext.authorizationDecision = "denied";
+        auditContext.errorCode = "policy_store_unavailable";
+      }
       mcpToolMetrics.record(toolName, durationMs, true, Buffer.byteLength(errorMsg, "utf8"));
       const wrappedLifecycle = toolName === MCP_GATEWAY_TOOL_NAMES.execute &&
         rawArgs.name === "superagent_lifecycle";
       const lifecycleParams = wrappedLifecycle && rawArgs.arguments && typeof rawArgs.arguments === "object"
         && !Array.isArray(rawArgs.arguments) ? rawArgs.arguments as Record<string, unknown> : rawArgs;
-      const safeActivityArgs = desktopCall ? desktopAuditArgs
+      const safeActivityArgs = policyStoreFailure ? {} : desktopCall ? desktopAuditArgs
         : permissionPreflightCall ? permissionPreflightAuditArgs
         : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
           ? { action: lifecycleParams.action, workflowId: lifecycleParams.workflowId,
               runId: lifecycleParams.runId, stepId: lifecycleParams.stepId,
               workerId: lifecycleParams.workerId } : rawArgs;
-      const safeErrorMsg = desktopCall
+      const safeErrorMsg = policyStoreFailure ? new ProjectAccessPolicyStoreError().message : desktopCall
         ? "DESKTOP_UI_CALL_FAILED"
         : permissionPreflightCall ? "TOOL_PERMISSION_PREFLIGHT_FAILED"
         : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
@@ -1725,7 +1752,7 @@ function extractMcpResultText(result: unknown): string {
         error: safeErrorMsg,
         durationMs,
         timestamp: Date.now(),
-        workspace: effectiveWs,
+        workspace: policyStoreFailure ? "mcp://permission-store" : effectiveWs,
       });
       throw err;
     }

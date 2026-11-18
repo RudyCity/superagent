@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { executeDelegateChromeCommand } from "../src/core/delegate/cdpTransport.js";
 import { dispatchChromeMcpTool } from "../src/core/mcp/tools/chromeMcpTools.js";
 import {

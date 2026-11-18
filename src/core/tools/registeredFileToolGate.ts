@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { readPermanentAccessRegistry } from "../desktopUi/permanentRegistryStore.js";
+import { parseReadOnlyServiceArgs } from "../runtime/serviceReadPolicy.js";
 import { certifiedBrowserObservation, certifiedDelegateWebAction } from "./browserFilePolicyCertification.js";
 import { evaluatePersistentAccess, type ExecutableIdentity, type FileOperation, type PersistentAccessPolicy }
   from "../desktopUi/persistentAccessPolicy.js";
@@ -114,7 +115,6 @@ const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace
   "superagent_get_project","superagent_list_projects","superagent_list_project_access",
   "superagent_request_project_access",
   "superagent_discover_projects","superagent_get_token_usage","superagent_get_remote_status",
-  "superagent_services_status",
   "superagent_delegate_doctor","superagent_delegate_list_chats",
   "superagent_delegate_read_chat","superagent_delegate_read_chat_full",
   "superagent_delegate_search_history",
@@ -122,24 +122,9 @@ const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace
   "superagent_process_pool_status","superagent_lan_capabilities",
   "superagent_media_capabilities",
 ]);
-const READ_ONLY_SERVICE_ACTIONS = new Set([
-  "status","inventory","owner_status","doctor","health","dashboard","logs","profile",
-]);
 /** Read-only service inspection cannot carry restart/upgrade/file arguments. */
 function certifiedServiceInspection(args:Args|undefined):boolean {
-  if (!args || typeof args!=="object" || Array.isArray(args) ||
-      !READ_ONLY_SERVICE_ACTIONS.has(String(args.action))) return false;
-  if (Object.keys(args).some(key => !["action","service","port","limit"].includes(key)))
-    return false;
-  if (args.service !== undefined &&
-      (typeof args.service !== "string" || !/^[a-z0-9_-]{1,64}$/.test(args.service))) return false;
-  if (args.port !== undefined &&
-      (!Number.isSafeInteger(args.port) || Number(args.port)<1024 || Number(args.port)>65535))
-    return false;
-  if (args.limit !== undefined &&
-      (!Number.isSafeInteger(args.limit) || Number(args.limit)<1 || Number(args.limit)>200))
-    return false;
-  return true;
+  return parseReadOnlyServiceArgs(args)!==null;
 }
 const CERTIFIED_DESKTOP_DISCOVERY = new Set([
   "probe","list_windows","get_active_window","find_window",
@@ -249,7 +234,7 @@ export function describePermanentFileToolReadiness(name:string):string {
   if(name==="superagent_grep_search")
     return "Recursive grep is denied; supply filePaths of explicitly approved files, a literal query, and bounded offset/limit.";
   if(name==="superagent_manage_services")
-    return "Read-only status, inventory, doctor, health, dashboard, logs or profile actions only; lifecycle mutations remain restricted.";
+    return "Read-only status, inventory, owner_status, doctor, health, dashboard, logs or profile actions only; lifecycle mutations remain restricted.";
   const readiness=getPermanentFileToolReadiness(name);
   if(readiness==="requires_explicit_files")
     return "Supply each canonical input/target file path inside the authorized project, with matching permanent host file rules; implicit outputs are not certified.";
@@ -260,6 +245,7 @@ export function describePermanentFileToolReadiness(name:string):string {
   return "Not certified for permanent file policy v2: use an explicitly mediated operation rather than bypassing host restrictions.";
 }
 export function getPermanentFileToolReadiness(name: string): PermanentFileToolReadiness {
+  if (name === "superagent_services_status") return "certified_metadata";
   if (BENIGN.has(name)) return "certified_metadata";
   if (name === "superagent_chrome_cdp_observe") return "certified_metadata";
   if (name === "superagent_chrome_cdp_web") return "action_dependent";
@@ -384,8 +370,12 @@ export function registeredFileToolGate(
       return "Desktop UI metadata command has unsupported arguments for permanent file-policy certification; use only the documented fields.";
     return "Desktop UI window content, session, lifecycle and input commands are not certified for permanent file access restrictions; MCP Execute approval does not replace host-native file-aware mediation.";
   }
-  if(call.name === "superagent_manage_services" && certifiedServiceInspection(call.args))
-    return null;
+  if(call.name === "superagent_services_status" || call.name === "superagent_manage_services"){
+    const args=call.args??{};
+    if(certifiedServiceInspection(args) &&
+       (call.name==="superagent_services_status" || args.action!==undefined))return null;
+    return "Service inspection is not certified with unsupported arguments; use only the documented read-only fields.";
+  }
   if(READ_SEARCH.has(call.name) &&
       !(call.name==="superagent_grep_search"&&certifiedExplicitGrepSearchArgs(call.args)))
     return "Unmediated discovery/search could expose explicitly blocked child files.";

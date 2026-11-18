@@ -160,4 +160,47 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       expect(JSON.stringify(hidden)).not.toContain("mcpConnectionExecute");
     }finally{await server.close();}
   });
+
+  it("fails closed with a bounded store reason after preflight without leaking or creating an approval",async()=>{
+    prior=process.env.SUPERAGENT_CONFIG_DIR;
+    isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-private-store-"));
+    process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    fs.writeFileSync(path.join(isolated,"desktop-access-registry.json"),
+      JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
+    const identity={mode:"oauth" as const,subject:"store-recheck-writer",
+      scopes:["mcp:tools","mcp:tools:write"]};
+    grantProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,["execute"]);
+    const records:string[]=[];
+    const server=createSuperagentMcpServer({toolExposure:"gateway",authMode:"oauth",
+      getIdentity:()=>identity,allowDangerous:true,
+      onToolCall:(event)=>records.push(JSON.stringify(event))});
+    const sentinel="PRIVATE_TOKEN_JSON_MUST_NOT_ESCAPE";
+    const policy=path.join(isolated,"project-access.json");
+    try {
+      const preflight=await invoke(server,"superagent_tool_describe",{
+        name:"superagent_desktop_ui",checkArguments:{command:"probe"},
+      });
+      expect(JSON.parse(preflight.content[0].text).permissionPreflight.decisionCode)
+        .toBe("ALLOWED_TO_ATTEMPT");
+      for(const invalid of ["{"+sentinel,JSON.stringify({schemaVersion:1,grants:[{secret:sentinel}]})]){
+        fs.writeFileSync(policy,invalid);
+        for(const gateway of [false,true]){
+          let failure="";
+          try {
+            await invoke(server,gateway?"superagent_tool_execute":"superagent_desktop_ui",
+              gateway?{name:"superagent_desktop_ui",arguments:{command:"probe"}}:{command:"probe"});
+          }catch(error){failure=error instanceof Error?error.message:String(error);}
+          expect(failure).toContain("POLICY_STORE_UNAVAILABLE");
+          expect(failure).not.toContain(isolated);
+          expect(failure).not.toContain(sentinel);
+          expect(failure).not.toContain("MCP_APPROVAL_REQUIRED");
+        }
+        expect(fs.readFileSync(policy,"utf8")).toBe(invalid);
+        expect(listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID})).toHaveLength(0);
+      }
+      expect(JSON.stringify(records)).not.toContain(sentinel);
+      expect(JSON.stringify(records)).not.toContain(isolated);
+      expect(records.some(record=>record.includes("policy_store_unavailable"))).toBe(true);
+    }finally{await server.close();}
+  });
 });

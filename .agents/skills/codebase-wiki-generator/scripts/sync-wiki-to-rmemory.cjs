@@ -54,7 +54,7 @@ const memoryChunks = [];
 for (const file of mdFiles) {
   const fullPath = path.join(resolvedWiki, file);
   const content = fs.readFileSync(fullPath, 'utf8');
-  const lines = content.split('\n');
+  const lines = content.split(/\r?\n/);
 
   let currentSectionTitle = path.basename(file, '.md');
   let currentChunkLines = [];

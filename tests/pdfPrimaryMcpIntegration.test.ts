@@ -16,6 +16,7 @@ import { MASTER_AGENT_SYSTEM_PROMPT, SUPERAGENT_SYSTEM_PROMPT } from "../src/cor
 
 let dir: string;
 let original: Uint8Array;
+const fixtureProjectId = "pdf-primary-fixture";
 type Mcp = ReturnType<typeof createSuperagentMcpServer>;
 type RpcHandler = (request: unknown) => Promise<unknown>;
 function handler(server: Mcp, method: string): RpcHandler {
@@ -45,10 +46,12 @@ beforeEach(async () => {
   doc.addPage([240, 320]);
   original = await doc.save();
   await fs.writeFile(path.join(dir, "input.pdf"), original);
+  registerProject({id:fixtureProjectId,name:"Primary PDF fixture",type:"local",root:dir});
   setYoloMode(false);
 });
 afterEach(async () => {
   setYoloMode(false);
+  removeProject(fixtureProjectId);
   await fs.rm(dir, { recursive: true, force: true });
 });
 
@@ -79,6 +82,7 @@ describe("Primary SuperAgent MCP PDF integration", () => {
   });
 
   it("lists read-only tools and blocks mutation for OAuth read-only token", async () => {
+    grantProjectAccess(identity(["mcp:tools"]),fixtureProjectId,["read"]);
     const server = createSuperagentMcpServer({
       workspace: dir, toolExposure: "all", authMode: "oauth",
       getIdentity: () => identity(["mcp:tools"]),
@@ -101,24 +105,24 @@ describe("Primary SuperAgent MCP PDF integration", () => {
     }
   });
 
-  it("denies mutation with YOLO OFF despite OAuth write scope", async () => {
+  it("OAuth write discovery with chat YOLO off does not grant project mutation", async () => {
     const server = createSuperagentMcpServer({
       workspace: dir, toolExposure: "all", authMode: "oauth", allowDangerous: true,
       getIdentity: () => identity(["mcp:tools", "mcp:tools:write"]),
     });
     try {
       const names = (await listed(server)).tools.map(t => t.name);
-      expect(names).not.toContain("superagent_pdf_edit");
-      expect(names).not.toContain("superagent_pdf_sign");
-      expect(names).not.toContain("superagent_pdf_edit_vector_exact");
-      await expect(call(server, "superagent_pdf_edit", editArgs)).rejects.toThrow(/YOLO OFF/);
-      await expect(call(server, "superagent_pdf_sign", {})).rejects.toThrow(/YOLO OFF/);
+      expect(names).toContain("superagent_pdf_edit");
+      expect(names).toContain("superagent_pdf_sign");
+      expect(names).toContain("superagent_pdf_edit_vector_exact");
+      await expect(call(server, "superagent_pdf_edit", editArgs)).rejects.toThrow(/PROJECT_GRANT_MISSING/);
+      await expect(call(server, "superagent_pdf_sign", {})).rejects.toThrow(/PROJECT_GRANT_MISSING/);
       await expect(fs.stat(path.join(dir, "result.pdf"))).rejects.toMatchObject({code:"ENOENT"});
     } finally { await server.close(); }
   });
 
-  it("executes editing through primary MCP with scoped YOLO and valid OAuth write scope", async () => {
-    setYoloMode(true);
+  it("executes editing with explicit project approval while chat YOLO remains off", async () => {
+    grantProjectAccess(identity(["mcp:tools","mcp:tools:write"]),fixtureProjectId,["read","write"]);
     const server = createSuperagentMcpServer({
       workspace: dir, toolExposure: "all", authMode: "oauth", allowDangerous: true,
       getIdentity: () => identity(["mcp:tools", "mcp:tools:write"]),
@@ -138,6 +142,7 @@ describe("Primary SuperAgent MCP PDF integration", () => {
 
   it("filters gateway search and rechecks OAuth scopes on recursive execution", async () => {
     setYoloMode(true);
+    grantProjectAccess(identity(["mcp:tools","mcp:tools:write"]),fixtureProjectId,["read","write"]);
     let scopes = ["mcp:tools"];
     const server = createSuperagentMcpServer({
       workspace: dir, toolExposure: "gateway", authMode: "oauth", allowDangerous: true,
@@ -191,10 +196,9 @@ describe("Primary SuperAgent MCP PDF integration", () => {
       const allowed = await call(server, "superagent_pdf_inspect", target);
       expect(allowed.isError).toBeFalsy();
       expect(parse(allowed).pageCount).toBe(1);
-      const attempt = await call(server, "superagent_pdf_edit", {
+      await expect(call(server, "superagent_pdf_edit", {
         ...target, outputPath:"unapproved.pdf",operations:[{op:"page_numbers"}],
-      });
-      expect(attempt.isError).toBe(true);
+      })).rejects.toThrow(/PROJECT_GRANT_MISSING/);
       await expect(fs.stat(path.join(other, "unapproved.pdf"))).rejects.toMatchObject({code:"ENOENT"});
       grantProjectAccess(user, projectId, ["read", "write"]);
       const saved = await call(server, "superagent_pdf_edit", {

@@ -4,6 +4,8 @@ import { MCP_GATEWAY_TOOL_NAMES } from "../../src/core/mcp/mcpToolGateway.js";
 import { onMcpActivity } from "../../src/core/mcp/mcpActivityBus.js";
 import { setYoloMode } from "../../src/core/permissions.js";
 import { desktopUiSessionManager } from "../../src/core/tools/desktopUiTools.js";
+import { grantProjectAccess } from "../../src/core/project/projectAccessPolicy.js";
+import { MCP_CONNECTION_PROJECT_ID } from "../../src/core/project/projectAccessRequestStore.js";
 
 const privateTitle = "Private-Window-Document";
 const privateQuery = "Private-Search-Text";
@@ -27,13 +29,13 @@ describe("desktop MCP activity privacy", () => {
       const audit: any[] = [];
       const activity: any[] = [];
       const unsubscribe = onMcpActivity((event) => activity.push(event));
+      const identity = {mode:"static-bearer" as const,subject:"privacy-test",credentialHash:"d".repeat(64)};
+      grantProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,["execute"]);
       const server = createSuperagentMcpServer({
         toolExposure: routed ? "gateway" : "full",
         allowDangerous: true,
         authMode: "static-bearer",
-        getIdentity: () => ({
-          mode: "static-bearer", subject: "privacy-test", credentialHash: "privacy-credential-hash",
-        }),
+        getIdentity: () => identity,
         onToolCall: (event) => audit.push(event),
       });
       try {

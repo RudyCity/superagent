@@ -88,7 +88,7 @@ describe("MCP unified management authorization",()=>{
         name:"superagent_services_status",arguments:{action:"stop"},
       }});
       expect(invalid.isError).toBe(true);
-      expect(JSON.stringify(invalid)).toContain("Action 'stop' is not permitted");
+      expect(JSON.stringify(invalid)).toContain("SERVICE_INVALID_INSPECTION_ARGUMENTS");
     } finally {await server.close();}
   });
 });

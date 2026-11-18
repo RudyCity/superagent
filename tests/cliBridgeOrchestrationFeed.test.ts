@@ -7,6 +7,7 @@ import {
   listActiveDags,
 } from "../src/core/tools/cliBridgeOrchestrationFeed.js";
 import { createDagGraph } from "../src/core/tools/cliBridgeDag.js";
+import { MAX_CLI_BRIDGE_PARALLEL_JOBS } from "../src/core/tools/cliBridgeScheduler.js";
 
 describe("Milestone M6 — T-Line Live Orchestration Feed & Metrics", () => {
   it("provides live host strip, slot allocations, and active jobs feed", async () => {
@@ -14,7 +15,9 @@ describe("Milestone M6 — T-Line Live Orchestration Feed & Metrics", () => {
 
     expect(feed.timestamp).toBeGreaterThan(0);
     expect(feed.hostStrip.effectiveSlots).toBeGreaterThanOrEqual(2);
-    expect(feed.hostStrip.effectiveSlots).toBeLessThanOrEqual(8);
+    expect(feed.hostStrip.effectiveSlots).toBeLessThanOrEqual(feed.hostStrip.configuredSlots);
+    expect(feed.hostStrip.configuredSlots).toBeLessThanOrEqual(feed.hostStrip.maxSlots);
+    expect(feed.hostStrip.maxSlots).toBeLessThanOrEqual(MAX_CLI_BRIDGE_PARALLEL_JOBS);
     expect(["none", "moderate", "high", "critical"]).toContain(feed.hostStrip.pressure);
     expect(feed.hostStrip.cpuUsagePercent).toBeGreaterThanOrEqual(0);
     expect(feed.hostStrip.freeMemPercent).toBeGreaterThanOrEqual(0);

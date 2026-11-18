@@ -3,6 +3,8 @@
  * The host gate and actual MCP dispatcher are always evaluated again on call.
  * No tool arguments, file targets, token strings, or principal names enter here.
  */
+import { parseReadOnlyServiceArgs } from "../runtime/serviceReadPolicy.js";
+
 export const MCP_PERMISSION_DECISION_CODES = [
   "ALLOWED_TO_ATTEMPT", "SCHEMA_INVALID", "OAUTH_SCOPE_MISSING",
   "MCP_CONNECTION_EXECUTE_REQUIRED", "PROJECT_CAPABILITY_MISSING",
@@ -62,26 +64,12 @@ export function describeBoundedDesktopPermission(input: BoundedDesktopPermission
 
 /** Service inspection is explicitly metadata-only. Never query a path, owner,
  * executable, policy grant or process during this advisory preflight. */
-const SERVICE_READ_ACTIONS = new Set(["status","inventory","owner_status",
-  "doctor","health","dashboard","logs","profile"]);
-const SERVICE_NAMES = new Set(["all","core","mcp","transport","channel_host",
-  "muse","telegram","vision","guardian","daemon","tray","rest_tunnel",
-  "muse_tunnel","process_supervisor"]);
 export function describeBoundedServicePermission(args:unknown,filePolicyActive:boolean) {
-  const x=args && typeof args==="object"&&!Array.isArray(args)
-    ?args as Record<string,unknown>:null;
-  const keys=x?Object.keys(x):[];
-  const valid=Boolean(x&&
-    keys.every(key=>["action","service","port","limit"].includes(key))&&
-    (x!.action===undefined||SERVICE_READ_ACTIONS.has(String(x!.action)))&&
-    (x!.service===undefined||SERVICE_NAMES.has(String(x!.service)))&&
-    (x!.port===undefined||(Number.isSafeInteger(x!.port)&&
-      Number(x!.port)>=1024&&Number(x!.port)<=65535))&&
-    (x!.limit===undefined||(Number.isSafeInteger(x!.limit)&&
-      Number(x!.limit)>=1&&Number(x!.limit)<=200)));
+  const parsed=parseReadOnlyServiceArgs(args);
+  const valid=parsed!==null;
   return {
     decisionCode:valid?"ALLOWED_TO_ATTEMPT" as const:"SCHEMA_INVALID" as const,
-    action:valid?(typeof x!.action==="string"?x!.action:"status"):"unrecognized",
+    action:parsed?.action??"unrecognized",
     layers:({oauthScope:"granted",connectionExecute:"not_checked",
       projectCapability:"not_checked",
       hostFilePolicy:!filePolicyActive?"not_checked":valid?"granted":"blocked",

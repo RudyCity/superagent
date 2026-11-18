@@ -15,6 +15,8 @@ import {McpOAuthStore,randomToken} from "../src/core/mcp/mcpOAuthStore.js";
 import {startMcpHttpServer} from "../src/core/mcp/mcpHttpTransport.js";
 import {setYoloMode,setFullYoloMode} from "../src/core/permissions.js";
 import {requestCoreSupervisor} from "../src/core/runtime/coreSupervisor.js";
+import {grantProjectAccess} from "../src/core/project/projectAccessPolicy.js";
+import {MCP_CONNECTION_PROJECT_ID} from "../src/core/project/projectAccessRequestStore.js";
 
 const previousDir=process.env.SUPERAGENT_CONFIG_DIR;
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),"core-oauth-http-stage-"));
@@ -57,7 +59,7 @@ function grant(store:McpOAuthStore,scope:string[]) {
     codeVerifier:verifier,resource:base+"/mcp",
   });
   if(!response.ok)throw new Error("Staging PKCE exchange failed");
-  return response.accessToken;
+  return {accessToken:response.accessToken,clientId:id};
 }
 afterAll(async()=>{
   for(const close of cleanupClients.reverse())await close().catch(()=>{});
@@ -109,13 +111,14 @@ describe("OAuth HTTP authenticated live Core restart and idempotent replay",()=>
       cleanupClients.push(()=>client.close());
       return client;
     }
-    const read=await connect(grant(store,["mcp:tools"]));
+    const read=await connect(grant(store,["mcp:tools"]).accessToken);
     const readNames=(await read.listTools()).tools.map(t=>t.name);
     expect(readNames).toContain("superagent_core_plan");
     expect(readNames).not.toContain("superagent_core_restart");
     await expect(read.callTool({name:"superagent_core_restart",arguments:{confirm:true}}))
       .rejects.toThrow();
-    const writer=await connect(grant(store,["mcp:tools","mcp:tools:write"]));
+    const writerGrant=grant(store,["mcp:tools","mcp:tools:write"]);
+    const writer=await connect(writerGrant.accessToken);
     expect((await writer.listTools()).tools.map(t=>t.name)).toContain("superagent_core_restart");
     const prepared=await writer.callTool({name:"superagent_core_plan",
       arguments:{port:ownerPort,action:"restart"}});
@@ -124,6 +127,10 @@ describe("OAuth HTTP authenticated live Core restart and idempotent replay",()=>
     expect(plan.supervisorPid).toBe(owner.pid);
     const args={port:ownerPort,operationId:plan.operationId,
       expectedBuildDigest:plan.expectedBuildDigest,confirm:true};
+    await expect(writer.callTool({name:"superagent_core_restart",arguments:args}))
+      .rejects.toThrow("MCP_APPROVAL_REQUIRED");
+    expect((await requestCoreSupervisor("status",ownerPort)).active.pid).toBe(before.active.pid);
+    grantProjectAccess({mode:"oauth",subject:writerGrant.clientId},MCP_CONNECTION_PROJECT_ID,["execute"]);
     const restarted=await writer.callTool({name:"superagent_core_restart",arguments:args});
     expect(restarted.isError).not.toBe(true);
     const output=JSON.parse((restarted.content as any[])[0].text);

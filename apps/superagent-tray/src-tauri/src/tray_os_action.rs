@@ -6,9 +6,15 @@ use uuid::Uuid;
 use crate::tray_notification_center;
 const TTL:Duration=Duration::from_secs(120);
 const CAPACITY:usize=64;
-struct Ticket {incident_id:String,issued:Instant}
+struct Ticket {
+    incident_id:String,
+    target:tray_notification_center::NavigationTarget,
+    issued:Instant,
+}
 static TICKETS:OnceLock<Mutex<HashMap<i32,Ticket>>>=OnceLock::new();
 static ACTIVATION:OnceLock<Mutex<Option<Ticket>>>=OnceLock::new();
+#[cfg(test)]
+static TEST_ACTIVATION_LOCK: Mutex<()> = Mutex::new(());
 fn tickets()->&'static Mutex<HashMap<i32,Ticket>>{
     TICKETS.get_or_init(||Mutex::new(HashMap::new()))
 }
@@ -20,9 +26,8 @@ pub fn issue(dir:&Path,incident_id:&str)->Result<i32,String>{
     if incident_id.is_empty()||incident_id.len()>180{
         return Err("OS_NOTIFICATION_ID_INVALID".into());
     }
-    if tray_notification_center::navigation_source(dir,incident_id)?.is_none() {
-        return Err("OS_NOTIFICATION_NOT_IN_INBOX".into());
-    }
+    let target=tray_notification_center::navigation_target(dir,incident_id)?
+        .ok_or("OS_NOTIFICATION_NOT_IN_INBOX")?;
     let mut owned=tickets().lock().map_err(|_|"OS_NOTIFICATION_TICKETS_UNAVAILABLE")?;
     owned.retain(|_,v|v.issued.elapsed()<TTL);
     if owned.len()>=CAPACITY{return Err("OS_NOTIFICATION_CAPACITY_REACHED".into())}
@@ -32,7 +37,7 @@ pub fn issue(dir:&Path,incident_id:&str)->Result<i32,String>{
         let candidate=i32::from_be_bytes([bytes[0],bytes[1],bytes[2],bytes[3]])
             & 0x7fff_ffff;
         if candidate==0||owned.contains_key(&candidate){continue}
-        owned.insert(candidate,Ticket{incident_id:incident_id.to_owned(),issued:Instant::now()});
+        owned.insert(candidate,Ticket{incident_id:incident_id.to_owned(),target,issued:Instant::now()});
         return Ok(candidate);
     }
     Err("OS_NOTIFICATION_NONCE_UNAVAILABLE".into())
@@ -48,10 +53,12 @@ pub fn activate(dir:&Path,id:i32)->bool{
     };
     let Some(ticket)=ticket else{return false};
     if ticket.issued.elapsed()>=TTL{return false}
-    if tray_notification_center::navigation_source(dir,&ticket.incident_id)
-        .ok().flatten().is_none(){return false}
+    if tray_notification_center::navigation_target(dir,&ticket.incident_id)
+        .ok().flatten().as_ref()!=Some(&ticket.target){return false}
     if let Ok(mut slot)=activation().lock(){
-        slot.replace(Ticket{incident_id:ticket.incident_id,issued:Instant::now()});
+        // Ledger lookup or slot contention cannot extend the original lease.
+        if ticket.issued.elapsed()>=TTL{return false}
+        slot.replace(ticket);
         return true
     }
     false
@@ -65,15 +72,20 @@ pub fn take(dir:&Path)->Value{
     };
     let Some(ticket)=ticket else{return json!({"status":"NONE"})};
     if ticket.issued.elapsed()>=TTL{return json!({"status":"EXPIRED"})}
-    if tray_notification_center::navigation_source(dir,&ticket.incident_id)
-        .ok().flatten().is_none(){return json!({"status":"EXPIRED"})}
+    if tray_notification_center::navigation_target(dir,&ticket.incident_id)
+        .ok().flatten().as_ref()!=Some(&ticket.target){return json!({"status":"EXPIRED"})}
+    if ticket.issued.elapsed()>=TTL{return json!({"status":"EXPIRED"})}
     json!({"status":"READY","incidentId":ticket.incident_id})
 }
+#[cfg(test)]
+#[path = "../../../../tests/tray_os_activation_security.rs"]
+mod security_tests;
 #[cfg(test)]
 mod tests{
     use super::*;
     #[test]
     fn forged_replayed_and_resolved_os_toasts_cannot_activate(){
+        let _guard=TEST_ACTIVATION_LOCK.lock().unwrap();
         let dir=std::env::temp_dir().join(format!("sa-os-click-{}",Uuid::new_v4()));
         tray_notification_center::publish(&dir,"security","critical",
             "mcp-pending:connections:req_os_1","Access needed","Review").unwrap();

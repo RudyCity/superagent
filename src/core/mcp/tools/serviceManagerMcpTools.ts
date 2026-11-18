@@ -4,6 +4,7 @@
  * operations, to prevent one mixed-mode schema from advertising readOnlyHint.
  */
 import { MANAGED_SERVICE_NAMES } from "../../runtime/serviceManagerTypes.js";
+import { READ_ONLY_SERVICE_ACTIONS, parseReadOnlyServiceArgs } from "../../runtime/serviceReadPolicy.js";
 
 export const SERVICE_MANAGER_MCP_TOOL_DEFS=[
   {
@@ -12,7 +13,7 @@ export const SERVICE_MANAGER_MCP_TOOL_DEFS=[
     inputSchema:{
       type:"object",
       properties:{
-        action:{type:"string",enum:["status","inventory","owner_status","doctor","health","dashboard","logs","profile"],description:"Read-only action. Defaults to 'status'."},
+        action:{type:"string",enum:READ_ONLY_SERVICE_ACTIONS,description:"Read-only action. Defaults to 'status'."},
         service:{type:"string",enum:["all",...MANAGED_SERVICE_NAMES],description:"Filter by specific service or 'all'. Defaults to 'all'."},
         port:{type:"integer",minimum:1024,maximum:65535},
         limit:{type:"integer",minimum:1,maximum:200,description:"Max event logs to return (default 50)."},
@@ -25,7 +26,7 @@ export const SERVICE_MANAGER_MCP_TOOL_DEFS=[
   inputSchema:{
     type:"object",
     properties:{
-      action:{type:"string",enum:["inventory","status","owner_status","doctor","health","dashboard","logs","profile","configure","reconcile","watchdog","plan","start","stop","restart","rollback","drain","reload","upgrade","recycle"]},
+      action:{type:"string",enum:[...READ_ONLY_SERVICE_ACTIONS,"configure","reconcile","watchdog","plan","start","stop","restart","rollback","drain","reload","upgrade","recycle"]},
       service:{type:"string",enum:["all",...MANAGED_SERVICE_NAMES]},
       port:{type:"integer",minimum:1024,maximum:65535},
       targetAction:{type:"string",enum:["start","stop","restart","rollback","drain","reload","upgrade","recycle"]},
@@ -81,18 +82,17 @@ export async function dispatchServiceManagerMcpTool(nameOrArgs:string|Record<str
     args = nameOrArgs;
   }
   if (toolName === "superagent_services_status") {
-    const action = typeof args.action === "string" ? args.action : "status";
-    const readOnlyActions = new Set(["status","inventory","owner_status","doctor","health","dashboard","logs","profile"]);
-    if (!readOnlyActions.has(action)) {
+    const parsed = parseReadOnlyServiceArgs(args);
+    if (!parsed) {
       return {
         content: [{
           type: "text" as const,
-          text: `Action '${action}' is not permitted on read-only superagent_services_status. Use superagent_manage_services for lifecycle mutations.`,
+          text: "SERVICE_INVALID_INSPECTION_ARGUMENTS: use only documented read-only action, service, port and limit fields.",
         }],
         isError: true,
       };
     }
-    args = { ...args, action };
+    args = parsed;
   }
   try {
     const { manageServices }=await import("../../runtime/serviceManager.js");

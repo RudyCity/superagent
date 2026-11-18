@@ -62,9 +62,7 @@ describe("MCP authorization is independent from chat YOLO", () => {
     const file = path.join(root, "denied.txt");
     try {
       expect(await listNames(server)).toContain("superagent_write_files");
-      const result = await write(server, file);
-      expect(result.isError).toBe(true);
-      expect(JSON.stringify(result)).toContain("PROJECT_GRANT_MISSING");
+      await expect(write(server, file)).rejects.toThrow(/PROJECT_GRANT_MISSING/);
       expect(fs.existsSync(file)).toBe(false);
     } finally { await server.close(); }
   });
@@ -128,8 +126,7 @@ describe("MCP authorization is independent from chat YOLO", () => {
     const server = makeServer();
     try {
       const file = path.join(root, "revoked.txt");
-      const result = await write(server, file);
-      expect(result.isError).toBe(true);
+      await expect(write(server, file)).rejects.toThrow(/PROJECT_GRANT_MISSING/);
       expect(fs.existsSync(file)).toBe(false);
     } finally { await server.close(); }
   });
@@ -171,12 +168,11 @@ describe("MCP authorization is independent from chat YOLO", () => {
     const server = makeServer("gateway");
     const file = path.join(root, "gateway-denied.txt");
     try {
-      const result = await call(server, "superagent_tool_execute", {
+      await expect(call(server, "superagent_tool_execute", {
         name: "superagent_write_files",
         arguments: { projectId: "mcp-test-project",
           files: [{ filePath: file, content: "DENIED" }], cwd: root },
-      });
-      expect(result.isError).toBe(true);
+      })).rejects.toThrow(/PROJECT_GRANT_MISSING/);
       expect(fs.existsSync(file)).toBe(false);
     } finally { await server.close(); }
   });
