@@ -610,6 +610,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
             mode: "oauth",
             subject: record.clientId,
             scopes: record.scope,
+            ownerConnectionName: record.ownerConnectionName ?? null,
             credentialHash: sha256Hex(token),
           };
         }
