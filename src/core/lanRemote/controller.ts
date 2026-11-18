@@ -212,6 +212,62 @@ export async function execLanCommand(id: string, command: string): Promise<{ std
   }
   return { stdout, stderr, exitCode: typeof done.exitCode === "number" ? done.exitCode : null, ok: done.ok === true, ...(done.error ? { error: String(done.error) } : {}) };
 }
+
+export interface LanTerminalSnapshot {
+  jobId: string;
+  running: boolean;
+  exitCode: number | null;
+  reason: string | null;
+  cursor: number;
+  oldestCursor: number;
+  nextCursor: number;
+  truncated: boolean;
+  chunks: { cursor: number; stream: "stdout" | "stderr"; text: string }[];
+}
+async function lanTerminalRequest(
+  id: string, operation: "terminal_start" | "terminal_read" | "terminal_input" | "terminal_stop",
+  fields: Record<string, unknown>,
+): Promise<LanTerminalSnapshot> {
+  const device = getSession(id);
+  if (device.platform !== "windows") throw Error("Piped terminal sessions are supported only by Windows LAN receivers.");
+  if (!device.sessionId || !device.sessionToken) throw Error("Open an approved session before using terminal tasks.");
+  const frames = await requestSaved(device, {
+    op: operation, pairId: device.pairId, pairToken: device.pairToken,
+    sessionId: device.sessionId, sessionToken: device.sessionToken, ...fields,
+  }, operation === "terminal_start" ? 125_000 : 15_000, 48 * 1024);
+  const terminal = frames[0]?.terminal;
+  if (!terminal || typeof terminal !== "object" || Array.isArray(terminal)) throw Error("Malformed terminal response.");
+  const t = terminal as Record<string, unknown>;
+  if (typeof t.jobId !== "string" || !/^[a-f0-9-]{36}$/i.test(t.jobId) ||
+      typeof t.running !== "boolean" || !Number.isSafeInteger(t.cursor) ||
+      !Number.isSafeInteger(t.nextCursor) || !Array.isArray(t.chunks) ||
+      t.chunks.length > 64 || t.chunks.some((v: unknown) =>
+        !v || typeof v !== "object" || typeof (v as Record<string, unknown>).text !== "string" ||
+        typeof (v as Record<string, unknown>).cursor !== "number" ||
+        !["stdout", "stderr"].includes(String((v as Record<string, unknown>).stream))))
+    throw Error("Invalid terminal response from target.");
+  return terminal as LanTerminalSnapshot;
+}
+export async function startLanTerminal(id: string, command: string): Promise<LanTerminalSnapshot> {
+  if (!command || command.length > 2000 || /[\x00-\x08\x0b-\x1f\x7f]/.test(command))
+    throw Error("Terminal command must be 1–2000 printable characters.");
+  return lanTerminalRequest(id, "terminal_start", { command });
+}
+export async function readLanTerminal(id: string, jobId: string, cursor = 0): Promise<LanTerminalSnapshot> {
+  if (!Number.isSafeInteger(cursor) || cursor < 0) throw Error("Invalid terminal cursor.");
+  return lanTerminalRequest(id, "terminal_read", { jobId, cursor });
+}
+export async function inputLanTerminal(
+  id: string, jobId: string, text: string, appendNewline = false,
+): Promise<LanTerminalSnapshot> {
+  if (!text || text.length > 1024 || /[\x00-\x08\x0b-\x1f\x7f]/.test(text) ||
+      typeof appendNewline !== "boolean") throw Error("Invalid terminal input.");
+  return lanTerminalRequest(id, "terminal_input", { jobId, text, appendNewline });
+}
+export async function stopLanTerminal(id: string, jobId: string): Promise<LanTerminalSnapshot> {
+  return lanTerminalRequest(id, "terminal_stop", { jobId });
+}
+
 /** Agent-to-Android shell: separate from diagnostic exec and Tray UI.
  * Full YOLO/MCP policy is enforced at the entry points. Every command also
  * requires a fresh physical confirmation on the Android device.
