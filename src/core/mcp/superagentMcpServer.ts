@@ -1,5 +1,5 @@
 import { registeredFileToolGate, fileRulesRegistered, getPermanentFileToolReadiness, describePermanentFileToolReadiness } from "../tools/registeredFileToolGate.js";
-import { describeBoundedDesktopPermission } from "./mcpPermissionDecision.js";
+import { describeBoundedDesktopPermission, describeBoundedServicePermission } from "./mcpPermissionDecision.js";
 /**
  * superagentMcpServer.ts — Complete 3-Pillar (Tools, Resources, Prompts) MCP Server for Superagent.
  *
@@ -1537,18 +1537,32 @@ function extractMcpResultText(result: unknown): string {
       } else if (toolName === MCP_GATEWAY_TOOL_NAMES.describe) {
         const found = describeGatewayTool(authorizedTools, rawArgs.name);
         const filePolicyActive = fileRulesRegistered();
-        // An optional preflight is deliberately limited to Desktop UI: arbitrary
-        // tool arguments may refer to protected files, and offering a generic
-        // read-scope path-existence oracle would be unsafe. Only evaluate the
-        // current principal's grant and the same existing host file gate.
+        // Optional preflight is narrowly bounded to Desktop UI and pure
+        // service-status argument shapes. Arbitrary target files, searches or
+        // mutation plans cannot be queried through a discovery oracle.
+        // Runtime still rechecks OAuth, grants, host policy and owner identity.
         const hasCheckArguments = Object.prototype.hasOwnProperty.call(rawArgs, "checkArguments");
         let preflight: Record<string, unknown> | undefined;
         if (found && hasCheckArguments) {
           const checkedArgs = rawArgs.checkArguments;
-          if (found.name !== "superagent_desktop_ui" || !checkedArgs ||
-              typeof checkedArgs !== "object" || Array.isArray(checkedArgs)) {
+          if (!["superagent_desktop_ui","superagent_services_status"].includes(found.name) ||
+              !checkedArgs || typeof checkedArgs !== "object" || Array.isArray(checkedArgs)) {
             result = { content: [{ type: "text",
-              text: "Permission preflight accepts an object only for superagent_desktop_ui." }], isError: true };
+              text: "Permission preflight requires a bounded object for an allowlisted tool." }], isError: true };
+          } else if (found.name === "superagent_services_status") {
+            const safe = describeBoundedServicePermission(checkedArgs,filePolicyActive);
+            preflight = {
+              ...safe,
+              hostFilePolicy: {active:filePolicyActive,
+                decision:!filePolicyActive?"inactive":
+                  safe.decisionCode==="SCHEMA_INVALID"?"blocked":"eligible",
+                reasonCode:safe.decisionCode==="SCHEMA_INVALID"
+                  ?"unsupported_arguments":null},
+              mcpConnectionExecute:{decision:"not_required"},
+              oauthScope:{decision:"visible_under_current_token"},
+              nativeHostApproval:{decision:"not_checked"},
+              note:"Read-only service metadata preflight. No owner scan, grants, lifecycle plan or command execution.",
+            };
           } else {
             const commandArgs = checkedArgs as Record<string,unknown>;
             const command = typeof commandArgs.command === "string" ? commandArgs.command

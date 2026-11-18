@@ -110,6 +110,23 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       expect(unavailable.mcpConnectionExecute.decision).toBe("unavailable");
       expect(unavailable.decisionCode).toBe("POLICY_STORE_UNAVAILABLE");
       expect(JSON.stringify(unavailable)).not.toContain(isolated);
+      // The read-only service probe is schema-only and never uses project
+      // access or native process inspection to report its argument verdict.
+      const service=await invoke(server,"superagent_tool_describe",{
+        name:"superagent_services_status",
+        checkArguments:{action:"owner_status",service:"tray"},
+      });
+      const servicePreflight=JSON.parse(service.content[0].text).permissionPreflight;
+      expect(servicePreflight.decisionCode).toBe("ALLOWED_TO_ATTEMPT");
+      expect(servicePreflight.mcpConnectionExecute.decision).toBe("not_required");
+      expect(servicePreflight.performedExecution).toBe(false);
+      const badService=await invoke(server,"superagent_tool_describe",{
+        name:"superagent_services_status",
+        checkArguments:{action:"restart",secret:"DO_NOT_ECHO"},
+      });
+      const badPreflight=JSON.parse(badService.content[0].text).permissionPreflight;
+      expect(badPreflight.decisionCode).toBe("SCHEMA_INVALID");
+      expect(JSON.stringify(badService)).not.toContain("DO_NOT_ECHO");
       const invalid=await invoke(server,"superagent_tool_describe",{
         name:"superagent_desktop_ui",checkArguments:[],
       });

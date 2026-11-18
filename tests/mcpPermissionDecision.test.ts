@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeBoundedDesktopPermission, MCP_PERMISSION_DECISION_CODES } from "../src/core/mcp/mcpPermissionDecision.js";
+import { describeBoundedDesktopPermission, describeBoundedServicePermission, MCP_PERMISSION_DECISION_CODES } from "../src/core/mcp/mcpPermissionDecision.js";
 
 describe("bounded MCP permission trace never grants an action", () => {
   const allowed = { oauthAllowed:true, connectionDecision:"granted" as const,
@@ -28,6 +28,24 @@ describe("bounded MCP permission trace never grants an action", () => {
       connectionDecision:"unavailable"}).decisionCode).toBe("POLICY_STORE_UNAVAILABLE");
     expect(describeBoundedDesktopPermission({...allowed,
       oauthAllowed:false}).decisionCode).toBe("OAUTH_SCOPE_MISSING");
+  });
+  it("preflights read-only service status without granting MCP Execute or leaking paths", () => {
+    const allowed=describeBoundedServicePermission({action:"owner_status",service:"tray"},true);
+    expect(allowed.decisionCode).toBe("ALLOWED_TO_ATTEMPT");
+    expect(allowed.layers).toMatchObject({connectionExecute:"not_checked",
+      hostFilePolicy:"granted",nativeConsent:"not_checked"});
+    expect(allowed.performedExecution).toBe(false);
+    for (const args of [
+      {action:"restart",service:"tray",confirm:true},
+      {action:"status",expectedExecutablePath:"PRIVATE_PATH"},
+      {action:"owner_status",port:1},
+      {action:"owner_status",service:"not-a-service"},
+      {action:"owner_status",limit:1.3},
+    ]) {
+      const denied=describeBoundedServicePermission(args,true);
+      expect(denied.decisionCode).toBe("SCHEMA_INVALID");
+      expect(JSON.stringify(denied)).not.toContain("PRIVATE_PATH");
+    }
   });
   it("never reflects host text or private values into a public diagnostic", () => {
     const secret = "PATH_AND_TOKEN_DO_NOT_ECHO";

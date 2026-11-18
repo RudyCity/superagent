@@ -58,3 +58,38 @@ export function describeBoundedDesktopPermission(input: BoundedDesktopPermission
     performedExecution: false as const,
   };
 }
+
+
+/** Service inspection is explicitly metadata-only. Never query a path, owner,
+ * executable, policy grant or process during this advisory preflight. */
+const SERVICE_READ_ACTIONS = new Set(["status","inventory","owner_status",
+  "doctor","health","dashboard","logs","profile"]);
+const SERVICE_NAMES = new Set(["all","core","mcp","transport","channel_host",
+  "muse","telegram","vision","guardian","daemon","tray","rest_tunnel",
+  "muse_tunnel","process_supervisor"]);
+export function describeBoundedServicePermission(args:unknown,filePolicyActive:boolean) {
+  const x=args && typeof args==="object"&&!Array.isArray(args)
+    ?args as Record<string,unknown>:null;
+  const keys=x?Object.keys(x):[];
+  const valid=Boolean(x&&
+    keys.every(key=>["action","service","port","limit"].includes(key))&&
+    (x!.action===undefined||SERVICE_READ_ACTIONS.has(String(x!.action)))&&
+    (x!.service===undefined||SERVICE_NAMES.has(String(x!.service)))&&
+    (x!.port===undefined||(Number.isSafeInteger(x!.port)&&
+      Number(x!.port)>=1024&&Number(x!.port)<=65535))&&
+    (x!.limit===undefined||(Number.isSafeInteger(x!.limit)&&
+      Number(x!.limit)>=1&&Number(x!.limit)<=200)));
+  return {
+    decisionCode:valid?"ALLOWED_TO_ATTEMPT" as const:"SCHEMA_INVALID" as const,
+    action:valid?(typeof x!.action==="string"?x!.action:"status"):"unrecognized",
+    layers:{oauthScope:"granted",connectionExecute:"not_checked",
+      projectCapability:"not_checked",
+      hostFilePolicy:!filePolicyActive?"not_checked":valid?"granted":"blocked",
+      nativeConsent:"not_checked",targetIdentity:"not_checked",hostOwner:"not_checked"}
+      as Record<string,McpPermissionLayerState>,
+    remediation:valid
+      ?"Metadata-only advisory. Runtime still validates action, owner and target."
+      :"Only bounded read-only action, service, port and limit are permitted; no approval changes the schema.",
+    performedExecution:false as const,
+  };
+}

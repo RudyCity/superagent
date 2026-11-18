@@ -77,13 +77,13 @@ export const MCP_GATEWAY_TOOL_DEFS = [
   },
   {
     name: MCP_GATEWAY_TOOL_NAMES.describe,
-    description: "Read the input schema and layered permission requirements for an authorized tool. For superagent_desktop_ui, supply optional checkArguments to preflight the exact command against current host file-policy and connection approval without executing it or requesting new grants. The result is advisory and permissions are rechecked at execution.",
+    description: "Read the input schema and layered permission requirements for an authorized tool. Optional checkArguments is a non-executing preflight for superagent_desktop_ui or bounded read-only superagent_services_status only. Never requests approvals or grants and never inspects file paths. Runtime rechecks all layers.",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string", description: "Exact target tool name from superagent_tool_search." },
         checkArguments: { type: "object", additionalProperties: true,
-          description: "Optional, non-executing Desktop UI command preflight. Only supported for superagent_desktop_ui; never submits approval or performs window input." },
+          description: "Optional non-executing argument preflight for Desktop UI or read-only service metadata only; no host file/content or grant mutations." },
       },
       required: ["name"],
     },
