@@ -85,8 +85,10 @@ describe("attended LAN terminal task lifecycle", () => {
       expect(started.cols).toBe(80);
       expect(started.rows).toBe(24);
       expect(() => manager.resize("other-session", started.jobId, 100, 36)).toThrow(/not found/);
+      expect(() => manager.key("other-session", started.jobId, "ArrowUp")).toThrow(/not found/);
       expect(() => manager.resize("interactive-session", started.jobId, 4, 36)).toThrow(/dimensions/);
       if (started.mode === "conpty") {
+        expect(() => manager.key("interactive-session", started.jobId, "UnsafeRawEscape")).toThrow(/Unsupported/);
         const resized = manager.resize("interactive-session", started.jobId, 100, 36);
         expect(resized.cols).toBe(100);
         expect(resized.rows).toBe(36);
