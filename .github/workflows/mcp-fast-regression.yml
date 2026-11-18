@@ -143,6 +143,7 @@ jobs:
             tests/mcpDelegateWebCertification.test.ts \
             tests/mcpPolicyReadinessReport.test.ts \
             tests/mcpApprovalAndFilePolicy.test.ts \
+            tests/mcpPermissionDecision.test.ts \
             tests/mcpExactFileSearch.test.ts \
             tests/mcpExplicitGrepIntegration.test.ts \
             tests/mcpPolicyHttpSmoke.test.ts \
@@ -190,6 +191,7 @@ jobs:
         run: >
           bun --bun x vitest run --maxWorkers=2
           tests/mcpApprovalAndFilePolicy.test.ts
+          tests/mcpPermissionDecision.test.ts
           tests/mcpOAuthStore.test.ts
           tests/desktopTrayNotificationsUi.test.ts
           tests/desktopTrayFeedback.test.ts
