@@ -224,13 +224,16 @@ export interface LanTerminalSnapshot {
   nextCursor: number;
   truncated: boolean;
   chunks: { cursor: number; stream: "stdout" | "stderr"; text: string }[];
+  mode?: "conpty" | "pipe";
+  cols?: number;
+  rows?: number;
 }
 async function lanTerminalRequest(
-  id: string, operation: "terminal_start" | "terminal_read" | "terminal_input" | "terminal_stop",
+  id: string, operation: "terminal_start" | "terminal_read" | "terminal_input" | "terminal_resize" | "terminal_stop",
   fields: Record<string, unknown>,
 ): Promise<LanTerminalSnapshot> {
   const device = getSession(id);
-  if (device.platform !== "windows") throw Error("Piped terminal sessions are supported only by Windows LAN receivers.");
+  if (device.platform !== "windows") throw Error("Terminal tasks are supported only by Windows LAN receivers.");
   if (!device.sessionId || !device.sessionToken) throw Error("Open an approved session before using terminal tasks.");
   const frames = await requestSaved(device, {
     op: operation, pairId: device.pairId, pairToken: device.pairToken,
@@ -264,6 +267,14 @@ export async function inputLanTerminal(
   if (!text || text.length > 1024 || /[\x00-\x08\x0b-\x1f\x7f]/.test(text) ||
       typeof appendNewline !== "boolean") throw Error("Invalid terminal input.");
   return lanTerminalRequest(id, "terminal_input", { jobId, text, appendNewline });
+}
+export async function resizeLanTerminal(
+  id: string, jobId: string, cols: number, rows: number,
+): Promise<LanTerminalSnapshot> {
+  if (!Number.isSafeInteger(cols) || cols < 20 || cols > 300 ||
+      !Number.isSafeInteger(rows) || rows < 5 || rows > 120)
+    throw Error("Invalid terminal dimensions.");
+  return lanTerminalRequest(id, "terminal_resize", { jobId, cols, rows });
 }
 export async function stopLanTerminal(id: string, jobId: string): Promise<LanTerminalSnapshot> {
   return lanTerminalRequest(id, "terminal_stop", { jobId });
