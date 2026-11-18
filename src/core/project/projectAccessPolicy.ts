@@ -15,7 +15,7 @@ export const PROJECT_ACCESS_CAPABILITIES = [
   "chain",
 ] as const;
 export type ProjectAccessCapability = typeof PROJECT_ACCESS_CAPABILITIES[number];
-export type ProjectAccessIdentity = Pick<McpIdentity, "mode" | "subject"> & Partial<Pick<McpIdentity, "credentialHash">>;
+export type ProjectAccessIdentity = Pick<McpIdentity, "mode" | "subject"> & Partial<Pick<McpIdentity, "credentialHash" | "ownerConnectionName">>;
 
 interface ProjectAccessGrant {
   projectId: string;
