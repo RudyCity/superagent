@@ -86,7 +86,7 @@ describe("MCP full-catalog host file-policy transparency", () => {
       // Tool discovery must not suggest a fixed Git grant when the action
       // determines read vs git; OAuth write is still independently required.
       expect(byName("superagent_git_action")._meta.mcpApproval).toMatchObject({
-        kind:"project",capability:"action_dependent",
+        kind:"project",capabilityMode:"action_dependent",
         capabilitiesByAction:{status:"read",diff:"read",log:"read",commit:"git"},
       });
       expect(byName("superagent_register_project")._meta.mcpApproval).toMatchObject({
