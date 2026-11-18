@@ -97,6 +97,15 @@
   transition: background var(--transition-fast, 150ms ease), color var(--transition-fast, 150ms ease);
 }
 .notification-popover-close:hover { background: rgba(148, 163, 184, 0.14); color: var(--notif-text); }
+.notification-popover-summary {
+  margin: 0;
+  padding: 9px 16px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--notif-muted);
+  background: var(--notif-surface);
+  border-bottom: 1px solid var(--notif-edge);
+}
 .notification-popover-list {
   overflow-y: auto;
   min-height: 72px;
@@ -325,6 +334,40 @@
   gap: 14px;
   background: var(--notif-surface);
 }
+/* Two triage categories are independent from unread/read and severity. */
+.notification-kind-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.notification-kind-filter {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  font: inherit;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--notif-edge);
+  border-radius: var(--radius-md, 10px);
+  background: var(--notif-surface-raised);
+  color: var(--notif-text);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.notification-kind-filter:hover { border-color: var(--notif-edge-strong); background: var(--notif-surface-elevated); }
+.notification-kind-filter.is-active {
+  border-color: var(--accent, #3b82f6);
+  background: rgba(59, 130, 246, 0.1);
+}
+.notification-kind-filter:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
+.notification-kind-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.notification-kind-label { font-size: 13px; font-weight: 700; }
+.notification-kind-detail { font-size: 11px; line-height: 1.35; color: var(--notif-muted); }
+.notification-kind-count { font-size: 21px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.notification-kind-filter.is-action .notification-kind-count { color: var(--notif-warning); }
 .notification-filter-scroll {
   overflow-x: auto;
   scrollbar-width: thin;
@@ -567,6 +610,22 @@
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
+}
+.notification-item-kind {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--notif-edge);
+  border-radius: var(--radius-pill, 9999px);
+  color: var(--notif-muted);
+  background: var(--notif-surface-elevated);
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.notification-item-kind.is-action {
+  color: var(--notif-warning);
+  border-color: rgba(251, 191, 36, 0.3);
+  background: rgba(245, 158, 11, 0.1);
 }
 .notification-item-severity {
   flex-shrink: 0;
@@ -848,6 +907,7 @@
   .notification-toggle-list { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 480px) {
+  .notification-kind-filters { grid-template-columns: minmax(0, 1fr); }
   .notification-kpi-strip,
   .notification-toolbar,
   .notification-preferences-top,

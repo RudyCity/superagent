@@ -48,10 +48,18 @@
   const incidentState = (n) =>
     n.resolvedAt ? "Resolved" : n.acknowledgedAt ? "Acknowledged" : "Open";
   const active = () => state.items.filter((n) => !n.archivedAt);
+  // Action required is an incident state, not a read receipt. An acknowledged
+  // warning still needs follow-up; a resolved incident is information/history.
+  // Classification uses native severity/lifecycle metadata, never titles/body.
+  const kindOf = (n) => !n.resolvedAt && n.severity !== "info" ? "action" : "information";
+  const prioritized = () => active().slice().sort((a, b) =>
+    Number(kindOf(b) === "action") - Number(kindOf(a) === "action"));
   const selected = () => {
     let items = state.filter === "archived"
       ? state.items.filter((n) => n.archivedAt) : active();
     items = items.filter((n) => {
+      if (state.filter === "action" && kindOf(n) !== "action") return false;
+      if (state.filter === "information" && kindOf(n) !== "information") return false;
       if (state.filter === "unread" && n.readAt) return false;
       if (state.filter === "important" && n.severity === "info") return false;
       if (state.filter === "open" && (n.resolvedAt || n.acknowledgedAt)) return false;
@@ -76,6 +84,8 @@
     return {
       all: current.length,
       unread: current.filter((n) => !n.readAt).length,
+      action: current.filter((n) => kindOf(n) === "action").length,
+      information: current.filter((n) => kindOf(n) === "information").length,
       important: current.filter((n) => n.severity !== "info").length,
       open: current.filter((n) => !n.resolvedAt && !n.acknowledgedAt).length,
       acknowledged: current.filter((n) => Boolean(n.acknowledgedAt) && !n.resolvedAt).length,
@@ -247,6 +257,8 @@
     const heading = element("div", "notification-item-heading");
     heading.append(element("h3", "", item.title));
     if (!item.readAt && !item.archivedAt) heading.append(element("span", "notification-item-new", "New"));
+    heading.append(element("span", "notification-item-kind is-" + kindOf(item),
+      kindOf(item) === "action" ? "Action required" : "Information"));
     heading.append(element("span", "notification-item-severity severity-" + item.severity, severityTag[item.severity]));
     heading.append(element("span", "notification-item-state", incidentState(item)));
     const meta = element("div", "notification-item-meta");
@@ -324,17 +336,21 @@
     }
     const bell = $("tray-notification-bell");
     if (bell) {
-      bell.setAttribute("aria-label", count ? "Notifications, " + count + " unread" : "Notifications, none unread");
+      bell.setAttribute("aria-label", "Notifications, " + count + " unread, " +
+        counts.action + " require action");
       bell.setAttribute("aria-expanded", String(state.open));
     }
     const popup = $("tray-notification-popover");
     if (popup) popup.hidden = !state.open;
+    const popoverSummary = $("tray-notification-category-summary");
+    if (popoverSummary) popoverSummary.textContent =
+      counts.action + " need action · " + counts.information + " information";
     const recent = $("tray-notification-recent");
     if (recent) {
       recent.replaceChildren();
       if (state.error) recent.append(empty(state.error));
       else if (!active().length) recent.append(empty("You're all caught up. No current notifications."));
-      else active().slice(0, 5).forEach((n) => recent.append(noteCard(n, true)));
+      else prioritized().slice(0, 5).forEach((n) => recent.append(noteCard(n, true)));
     }
     const inbox = $("notification-inbox-list");
     if (inbox) {
@@ -360,7 +376,8 @@
       }
     }
     const summary = $("notification-summary");
-    if (summary) summary.textContent = count + " unread · " +
+    if (summary) summary.textContent = counts.action + " require action · " +
+      counts.information + " informational · " + count + " unread · " +
       active().filter((n) => !n.resolvedAt).length + " open · " +
       active().filter((n) => n.resolvedAt).length + " resolved · " +
       counts.archived + " archived" +
@@ -379,6 +396,8 @@
       const badge = $("notification-filter-count-" + key);
       if (badge) badge.textContent = String(val);
     }
+    if ($("notification-kind-count-action")) $("notification-kind-count-action").textContent = String(counts.action);
+    if ($("notification-kind-count-information")) $("notification-kind-count-information").textContent = String(counts.information);
     if ($("notification-kpi-unread")) $("notification-kpi-unread").textContent = String(counts.unread);
     if ($("notification-kpi-open")) $("notification-kpi-open").textContent = String(counts.open);
     if ($("notification-kpi-important")) $("notification-kpi-important").textContent = String(counts.important);

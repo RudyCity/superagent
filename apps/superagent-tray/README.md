@@ -35,11 +35,32 @@ MCP or Chat Agent permissions.
   **Archived/Restored**. Search by title/details/source, filter by age, category,
   severity, status, and see repeated-incident counts.
 
-Pending MCP approvals are **informational only**. Clicking a pending-approval
-notification focuses its exact request card in the Access Manager MCP or
+Pending MCP approval notifications are **read-only navigation**, even though
+the pending decision is categorized as **Requires action**. Clicking one
+focuses its exact request card in the Access Manager MCP or
 Connections tab. The focused card still requires separate native human
 confirmation; opening or acknowledging an alert does **not** approve a request,
 alter permissions, connect a device, or execute a tool.
+
+### Action required vs information
+
+The Notification Center also divides active events into **Requires action**
+and **Information only**. The two category controls filter the same native
+incident history, and their counts are independent of the read/unread filter.
+This distinction comes from native incident severity and lifecycle metadata,
+not from free-text titles, source labels, or user-provided messages.
+
+- **Requires action**: unresolved warning/critical incidents, including
+  pending MCP approval, service health loss, and scheduled-run failures.
+  **Read** and **Acknowledge** do not remove an incident from this category.
+- **Information only**: info events (such as completed reminders) and
+  resolved incidents, including warning/critical incidents that recovered.
+- Archived items stay in the Archived filter rather than either active count.
+  The bell previews action-required items first, but its numeric badge remains
+  the number of unread events across both categories.
+
+The classification only helps the operator triage. Navigation to an approval
+card never grants a capability or automatically performs the requested action.
 
 ### Delivery, privacy, and retention
 
