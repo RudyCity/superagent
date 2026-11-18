@@ -409,13 +409,18 @@ async function onRowClick(event) {
 
 function navigateToPage(pageId) {
   const validPages = ["overview", "notifications", "jobs", "runtime", "history", "logs", "delegate", "desktop-live", "recordings", "security", "terminal", "muse-files", "lan-devices", "updates", "settings"];
-  const target = validPages.includes(pageId) ? pageId : "overview";
+  // Security Approval sub-tabs are real, allowlisted deep links. Preserve the
+  // sub-route in the hash instead of silently resetting it to Overview.
+  const securityTab = typeof pageId === "string"
+    ? /^security:(connections|mcp|register|rules|audit)$/.exec(pageId)?.[1] : undefined;
+  const target = securityTab ? "security" : validPages.includes(pageId) ? pageId : "overview";
+  const route = securityTab ? "security:" + securityTab : target;
 
-  if (window.location.hash !== `#${target}`) {
+  if (window.location.hash !== `#${route}`) {
     if (typeof history.replaceState === "function") {
-      history.replaceState(null, "", `#${target}`);
+      history.replaceState(null, "", `#${route}`);
     } else {
-      window.location.hash = `#${target}`;
+      window.location.hash = `#${route}`;
     }
   }
 
@@ -519,6 +524,9 @@ function navigateToPage(pageId) {
     if (topTitle) topTitle.textContent = "Security Approval Manager";
     if (topDesc) topDesc.textContent =
       "Enroll and review permanent access permissions for applications, files, and folders.";
+    // A specific notification may enter directly at MCP Project Access or
+    // MCP Connections. Never rely on hashchange: replaceState is silent.
+    if (securityTab) window.__superagentAccessManagerOpenTab?.(securityTab);
     window.__superagentAccessManagerRefresh?.();
     if (typeof window.__superagentLoadTrustPolicy === "function") {
       void window.__superagentLoadTrustPolicy();
