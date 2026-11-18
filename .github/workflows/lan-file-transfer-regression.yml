@@ -148,6 +148,7 @@ jobs:
           tests/lanTerminalFleet.test.ts
           tests/lanTerminalFleetIntegration.test.ts
           tests/lanTerminalFleetMcp.test.ts
+          tests/lanTerminalFleetDispatch.test.ts
           tests/lanSessionOpenCancellation.test.ts
           tests/lanTerminalMcpContract.test.ts
           tests/lanTerminalTrayUi.test.ts
