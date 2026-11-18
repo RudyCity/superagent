@@ -17,6 +17,7 @@ const deviceId = {
   pattern: "^[a-fA-F0-9-]{36}$",
   description: "Controller-local opaque LAN device handle returned by pairing. It is not a credential.",
 };
+const terminalId = { type: "string", pattern: "^[a-fA-F0-9-]{36}$", description: "Opaque terminal task ID for one approved device session." };
 const transferId = {
   type: "string",
   pattern: "^[a-fA-F0-9-]{36}$",
@@ -36,6 +37,10 @@ const DEVICE_MCP_ALIAS_TO_LEGACY: Record<string, string> = {
   superagent_device_pair_cancel: "superagent_lan_pair_cancel",
   superagent_device_session_open: "superagent_lan_session_open",
   superagent_device_exec: "superagent_lan_device_exec",
+  superagent_device_terminal_start: "superagent_lan_terminal_start",
+  superagent_device_terminal_read: "superagent_lan_terminal_read",
+  superagent_device_terminal_input: "superagent_lan_terminal_input",
+  superagent_device_terminal_stop: "superagent_lan_terminal_stop",
   superagent_device_android_diagnostic: "superagent_lan_android_diagnostic",
   superagent_device_android_shell: "superagent_lan_android_shell",
   superagent_device_android_ui_schema: "superagent_lan_android_ui_schema",
@@ -67,6 +72,10 @@ export const LAN_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> 
   superagent_lan_session_open: "dangerous",
   superagent_lan_device_exec: "dangerous",
   superagent_lan_terminal_exec: "dangerous", // compatibility alias
+  superagent_lan_terminal_start: "dangerous",
+  superagent_lan_terminal_read: "dangerous",
+  superagent_lan_terminal_input: "dangerous",
+  superagent_lan_terminal_stop: "dangerous",
   superagent_lan_android_diagnostic: "dangerous",
   superagent_lan_android_shell: "dangerous",
   superagent_lan_android_ui_schema: "dangerous",
@@ -195,6 +204,33 @@ const LAN_MCP_BASE_TOOL_DEFS = [
       deviceId,
       command: { type: "string", minLength: 1, maxLength: 2000 },
     }, ["deviceId", "command"]),
+  },
+  {
+    name: "superagent_lan_terminal_start",
+    description: "Start a non-elevated Windows terminal task with fresh owner approval. Piped stdin/stdout; NOT ConPTY. One task per approved session; ten-minute lifetime, two-minute idle and bounded output.",
+    inputSchema: closed({ deviceId,
+      command: { type: "string", minLength: 1, maxLength: 2000, description: "Complete command displayed to the device owner for approval. No secrets." },
+    }, ["deviceId", "command"]),
+  },
+  {
+    name: "superagent_lan_terminal_read",
+    description: "Read bounded incremental stdout/stderr from a previously approved Windows terminal task. Use nextCursor for further reads; truncated means older output was discarded.",
+    inputSchema: closed({ deviceId, jobId: terminalId,
+      cursor: { type: "integer", minimum: 0, description: "Start at 0; use previous nextCursor to resume." },
+    }, ["deviceId", "jobId"]),
+  },
+  {
+    name: "superagent_lan_terminal_input",
+    description: "Write bounded text to a running Windows terminal task's stdin. Each input requires fresh target-side approval. NOT an interactive PTY.",
+    inputSchema: closed({ deviceId, jobId: terminalId,
+      text: { type: "string", minLength: 1, maxLength: 1024 },
+      appendNewline: { type: "boolean", description: "Append a newline after input." },
+    }, ["deviceId", "jobId", "text"]),
+  },
+  {
+    name: "superagent_lan_terminal_stop",
+    description: "Stop the exact task owned by the approved device session. Does not terminate unrelated processes.",
+    inputSchema: closed({ deviceId, jobId: terminalId }, ["deviceId", "jobId"]),
   },
   {
     name: "superagent_lan_android_diagnostic",
@@ -355,7 +391,7 @@ export async function dispatchLanMcpTool(
           owner: "core",
           transports: { lan: true, reverseHttpsTunnel: true },
           workflow: ["discover_or_tunnel_list", "pair_request", "local_pair_complete", "pair_status", "session_open", "inspect_or_interact", "session_close_or_revoke"],
-          windows: { exec: true, nonElevated: true },
+          windows: { exec: true, nonElevated: true, pipedTerminalTasks: true, conpty: false, maxTaskSeconds: 600 },
           android: {
             diagnostics: ANDROID_READONLY_DIAGNOSTICS,
             ownerApprovedActions: ANDROID_APPROVED_ACTIONS,
@@ -399,6 +435,16 @@ export async function dispatchLanMcpTool(
       case "superagent_lan_device_exec":
       case "superagent_lan_terminal_exec":
         return await coreLan({ action: "exec", deviceId: id, command: str(args.command) }, 125_000);
+      case "superagent_lan_terminal_start":
+        return await coreLan({ action: "terminal_start", deviceId: id, command: str(args.command) }, 125_000);
+      case "superagent_lan_terminal_read":
+        return await coreLan({ action: "terminal_read", deviceId: id, jobId: str(args.jobId),
+          ...(integer(args.cursor) === undefined ? {} : { cursor: integer(args.cursor) }) }, 15_000);
+      case "superagent_lan_terminal_input":
+        return await coreLan({ action: "terminal_input", deviceId: id, jobId: str(args.jobId),
+          text: str(args.text), appendNewline: args.appendNewline === true }, 125_000);
+      case "superagent_lan_terminal_stop":
+        return await coreLan({ action: "terminal_stop", deviceId: id, jobId: str(args.jobId) }, 15_000);
       case "superagent_lan_android_diagnostic":
         return await coreLan({ action: "exec", deviceId: id, command: str(args.diagnostic) }, 45_000);
       case "superagent_lan_android_shell":
