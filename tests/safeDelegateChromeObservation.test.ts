@@ -28,7 +28,7 @@ describe("file-safe Delegate CDP metadata",()=>{
  });
  it("exposes only filtered HTTP(S) targets and removes URL credentials and control characters",()=>{
    const rows:BrowserTargetRef[]=[
-     target(10,"https://alice:token@example.org/album?secret=hello#hidden","Old\\nPhoto"),
+     target(10,"https://alice:token@example.org/album?secret=hello#hidden","Old\nPhoto"),
      target(11,"http://example.net/"),
      target(12,"file:///C:/secrets.txt","PRIVATE FILE"),
      target(13,"chrome://settings","INTERNAL"),
