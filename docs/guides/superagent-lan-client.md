@@ -164,10 +164,13 @@ allows reconnect **inside the same still-approved session**. Device restart,
 re-pairing or a new session invalidates the old task; commands must never be
 automatically replayed after uncertain network failures.
 
-This uses regular stdin/stdout/stderr **pipes**, **not Windows ConPTY**.
-Interactive full-screen applications, terminal escape sequences, shell line
-editing, terminal-size changes, privilege elevation, durable resumption and
-production-grade PTY behavior are **not supported/certified**. Do not send
+On Windows, recent **Bun-native receiver builds attempt ConPTY** with
+terminal read/input/key/resize support. The receiver falls back to bounded
+stdin/stdout/stderr **pipes** on non-Bun runtimes; inspect the returned
+terminal.mode (`conpty` or `pipe`) before using key/resize or full-screen
+programs. This does **not** imply the installed receiver has been tested with
+real Windows apps. Privilege elevation, durable resumption and
+production-grade PTY reliability are **not yet certified**. Do not send
 passwords through task input. Same explicit target-side approval rules and
 Core/MCP dangerous-tool permissions continue to apply.
 
