@@ -15,6 +15,7 @@ path = "src/cli_launcher.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.7", features = [] }
+sha2 = "0.10"
 
 [dependencies]
 tauri = { version = "2.12", features = ["tray-icon"] }

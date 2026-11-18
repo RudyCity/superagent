@@ -93,6 +93,7 @@ async function probe(owner:Owner){
      value.pid!==owner.pid||value.controlPort!==owner.controlPort||
      value.instanceId!==owner.instanceId||value.ownerVerified!==true)
     throw new Error("TRAY_PRIVATE_HEALTH_IDENTITY_MISMATCH");
+  return value;
 }
 async function verifiedOwner(){
   const owner=readManagedTrayOwner();
@@ -100,6 +101,24 @@ async function verifiedOwner(){
     throw new Error("TRAY_NO_VERIFIED_KERNEL_OWNER");
   await probe(owner);
   return owner;
+}
+/** Owner-confirmed binary digest and native-reported compiled WebView digest.
+ * Only read after the authenticated instanceId + kernel PID checks pass.
+ * The configured release digest is not equivalent to current Git checkout.
+ */
+export async function inspectManagedTrayAttestation(){
+  const owner=await verifiedOwner();
+  const health=await probe(owner);
+  const release=readTrayReleaseState();
+  const valid=(value:unknown):string|null=>typeof value==="string" &&
+    /^[a-f0-9]{64}$/.test(value)?value:null;
+  return {
+    installedReleaseDigest:fileSha256(owner.executablePath),
+    sourceBuildDigest:valid(release.activeDigest),
+    webviewBundleDigest:valid(health.webviewBundleDigest),
+    loadedSourceRevision:typeof health.sourceRevision==="string" &&
+      /^[a-f0-9]{40}$/.test(health.sourceRevision)?health.sourceRevision:null,
+  };
 }
 export async function inspectManagedTray(){
   let owner:Owner|null=null;

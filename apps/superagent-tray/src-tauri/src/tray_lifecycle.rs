@@ -126,7 +126,9 @@ fn handle(mut stream:TcpStream,own:&TrayOwner)->bool {
     if first=="GET /tray/health HTTP/1.1\r\n" {
         reply(&mut stream,200,&json!({"service":"superagent-tray",
             "version":1,"pid":own.pid,"instanceId":own.instance_id,
-            "controlPort":own.control_port,"ownerVerified":true}).to_string());
+            "controlPort":own.control_port,"ownerVerified":true,
+            "webviewBundleDigest":option_env!("SUPERAGENT_TRAY_UI_DIGEST"),
+            "sourceRevision":option_env!("SUPERAGENT_TRAY_SOURCE_REVISION")}).to_string());
         return false;
     }
     if first!="POST /tray/control HTTP/1.1\r\n" {
