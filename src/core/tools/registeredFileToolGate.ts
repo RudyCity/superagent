@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { readPermanentAccessRegistry } from "../desktopUi/permanentRegistryStore.js";
-import { certifiedBrowserObservation } from "./browserFilePolicyCertification.js";
+import { certifiedBrowserObservation, certifiedDelegateWebAction } from "./browserFilePolicyCertification.js";
 import { evaluatePersistentAccess, type ExecutableIdentity, type FileOperation, type PersistentAccessPolicy }
   from "../desktopUi/persistentAccessPolicy.js";
 
@@ -204,7 +204,7 @@ function certifiedSupervisedCoreMutation(name:string, args:Args|undefined):boole
 }
 const BROWSER_OBSERVATION_TOOLS = new Set([
   "superagent_browser_gateway", "superagent_chrome_cdp",
-  "superagent_chrome_cdp_observe",
+  "superagent_chrome_cdp_observe", "superagent_chrome_cdp_web",
   "superagent_control_chrome_cdp", "superagent_list_running_chrome",
 ]);
 /**
@@ -238,6 +238,8 @@ export function describePermanentFileToolReadiness(name:string):string {
     return "Only probe, bounded window/app inventory, find_window, live_inventory and security-prompt metadata are certified; snapshot, open and input remain restricted.";
   if(name==="superagent_chrome_cdp_observe")
     return "Only list_targets or transport_status with exact managed/Delegate arguments; HTTP(S) tab metadata is filtered, with no DOM read, navigation, evaluate, upload, or file:// access.";
+  if(name==="superagent_chrome_cdp_web")
+    return "Only exact certified Delegate web workflow commands on an explicit qualified HTTP(S) tab; write scope, separate human MCP approval, verified principal, tab lease and revision still required. No raw evaluation, files, terminal, screenshot or upload.";
   if(BROWSER_OBSERVATION_TOOLS.has(name))
     return "Only certified managed/Delegate HTTP(S) target metadata, local Chrome process inventory, or browser gateway identity/policy actions; no navigation, no evaluate, no upload, or file:// browsing.";
   if(CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name))
@@ -260,6 +262,7 @@ export function describePermanentFileToolReadiness(name:string):string {
 export function getPermanentFileToolReadiness(name: string): PermanentFileToolReadiness {
   if (BENIGN.has(name)) return "certified_metadata";
   if (name === "superagent_chrome_cdp_observe") return "certified_metadata";
+  if (name === "superagent_chrome_cdp_web") return "action_dependent";
   if (name === "superagent_delegate_sync_history") return "certified_app_storage";
   if (READ_TOOLS.has(name) || WRITE_TOOLS.has(name) || PATCH_TOOLS.has(name) ||
       Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,name) ||
@@ -365,6 +368,7 @@ export function registeredFileToolGate(
   // No blanket Chrome exemption: only side-effect-free, non-file inventory
   // operations qualify. All other browser/file-capable actions fail closed.
   if(certifiedBrowserObservation(call))return null;
+  if(certifiedDelegateWebAction(call))return null;
   if(certifiedLanInventory(call.name,call.args))return null;
   if(certifiedSupervisedCoreMutation(call.name,call.args))return null;
   if(call.name === "superagent_desktop_ui" && certifiedDesktopDiscovery(call.args))return null;
