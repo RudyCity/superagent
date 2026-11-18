@@ -409,12 +409,21 @@ async function onRowClick(event) {
 
 function navigateToPage(pageId) {
   const validPages = ["overview", "notifications", "jobs", "runtime", "history", "logs", "delegate", "desktop-live", "recordings", "security", "terminal", "muse-files", "lan-devices", "updates", "settings"];
-  // Security Approval sub-tabs are real, allowlisted deep links. Preserve the
-  // sub-route in the hash instead of silently resetting it to Overview.
-  const securityTab = typeof pageId === "string"
-    ? /^security:(connections|mcp|register|rules|audit)$/.exec(pageId)?.[1] : undefined;
-  const target = securityTab ? "security" : validPages.includes(pageId) ? pageId : "overview";
-  const route = securityTab ? "security:" + securityTab : target;
+  // Preserve only known pages and sub-tabs. Notification content and opaque
+  // incident IDs are never interpreted as arbitrary navigation destinations.
+  const allowedSubtabs = {
+    security: ["connections", "mcp", "register", "rules", "audit"],
+    runtime: ["core", "mcp", "cloudflare", "muse", "chrome", "processes", "hosts"],
+    settings: ["general", "security", "tunnel", "muse"],
+    delegate: ["connection", "orchestrator", "diagnostics", "cdp"],
+    "lan-devices": ["devices", "terminal", "files", "screen"],
+  };
+  const parts = typeof pageId === "string" ? pageId.split(":") : [];
+  const routePage = parts[0];
+  const subTab = parts.length === 2 &&
+    allowedSubtabs[routePage]?.includes(parts[1]) ? parts[1] : null;
+  const target = subTab ? routePage : validPages.includes(pageId) ? pageId : "overview";
+  const route = subTab ? target + ":" + subTab : target;
 
   if (window.location.hash !== `#${route}`) {
     if (typeof history.replaceState === "function") {
@@ -481,6 +490,7 @@ function navigateToPage(pageId) {
     if (topTitle) topTitle.textContent = "Runtime Detection";
     if (topDesc) topDesc.textContent = "Inspect authenticated Core APIs, CLI sessions, MCP servers, and tunnel connections.";
     if (actionsRuntime) actionsRuntime.hidden = false;
+    if (subTab) window.__superagentRuntimeOpenTab?.(subTab);
     if (typeof window.__superagentRuntimeRefresh === "function") {
       window.__superagentRuntimeRefresh();
     }
@@ -491,6 +501,8 @@ function navigateToPage(pageId) {
     if (topTitle) topTitle.textContent = "Execution History";
     if (topDesc) topDesc.textContent = "Review recent execution outcomes from the SuperAgent daemon run ledger.";
     if (actionsHistory) actionsHistory.hidden = false;
+    // A notification may already identify a run; fetch before trying to focus it.
+    void refresh();
   } else if (target === "logs") {
     if (topEyebrow) topEyebrow.textContent = "REAL-TIME TELEMETRY";
     if (topTitle) topTitle.textContent = "Connection Logs";
@@ -506,6 +518,7 @@ function navigateToPage(pageId) {
     if (topDesc) topDesc.textContent =
       "Manage connected Chrome extensions, pairing codes, active browser profiles, and WebSocket bridge sessions.";
     if (actionsDelegate) actionsDelegate.hidden = false;
+    if (subTab) window.delegateSwitchTab?.(subTab);
     if (typeof window.__superagentDelegateRefresh === "function") {
       window.__superagentDelegateRefresh();
     }
@@ -526,7 +539,7 @@ function navigateToPage(pageId) {
       "Enroll and review permanent access permissions for applications, files, and folders.";
     // A specific notification may enter directly at MCP Project Access or
     // MCP Connections. Never rely on hashchange: replaceState is silent.
-    if (securityTab) window.__superagentAccessManagerOpenTab?.(securityTab);
+    if (subTab) window.__superagentAccessManagerOpenTab?.(subTab);
     window.__superagentAccessManagerRefresh?.();
     if (typeof window.__superagentLoadTrustPolicy === "function") {
       void window.__superagentLoadTrustPolicy();
@@ -552,6 +565,7 @@ function navigateToPage(pageId) {
     if (topTitle) topTitle.textContent = "LAN Devices";
     if (topDesc) topDesc.textContent = "Discover, pair and support Windows laptops on the same physical local network.";
     if (actionsLanDevices) actionsLanDevices.hidden = false;
+    if (subTab) window.lanSwitchTab?.(subTab);
     window.__superagentLanRefresh?.();
   } else if (target === "updates") {
     if (topEyebrow) topEyebrow.textContent = "VERIFIED DISTRIBUTION";
@@ -563,7 +577,7 @@ function navigateToPage(pageId) {
     if (typeof window.settingsSwitchTab === "function") {
       const activeBtn = document.querySelector?.(".settings-subnav-btn.active");
       const currentTab = activeBtn?.dataset?.settingsTab || "general";
-      window.settingsSwitchTab(currentTab);
+      window.settingsSwitchTab(subTab || currentTab);
     } else {
       if (topEyebrow) topEyebrow.textContent = "TRAY PREFERENCES";
       if (topTitle) topTitle.textContent = "Tray Settings";
