@@ -40,6 +40,8 @@ const DEVICE_MCP_ALIAS_TO_LEGACY: Record<string, string> = {
   superagent_device_pair_cancel: "superagent_lan_pair_cancel",
   superagent_device_session_open: "superagent_lan_session_open",
   superagent_device_exec: "superagent_lan_device_exec",
+  superagent_device_terminal_fleet_open: "superagent_lan_terminal_fleet_open",
+  superagent_device_terminal_fleet_close: "superagent_lan_terminal_fleet_close",
   superagent_device_terminal_fleet_start: "superagent_lan_terminal_fleet_start",
   superagent_device_terminal_fleet_read: "superagent_lan_terminal_fleet_read",
   superagent_device_terminal_fleet_input: "superagent_lan_terminal_fleet_input",
@@ -81,6 +83,8 @@ export const LAN_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> 
   superagent_lan_session_open: "dangerous",
   superagent_lan_device_exec: "dangerous",
   superagent_lan_terminal_exec: "dangerous", // compatibility alias
+  superagent_lan_terminal_fleet_open: "dangerous",
+  superagent_lan_terminal_fleet_close: "dangerous",
   superagent_lan_terminal_fleet_start: "dangerous",
   superagent_lan_terminal_fleet_read: "dangerous",
   superagent_lan_terminal_fleet_input: "dangerous",
@@ -219,6 +223,16 @@ const LAN_MCP_BASE_TOOL_DEFS = [
       deviceId,
       command: { type: "string", minLength: 1, maxLength: 2000 },
     }, ["deviceId", "command"]),
+  },
+  {
+    name: "superagent_lan_terminal_fleet_open",
+    description: "Request 2–8 separate approved device support sessions concurrently. Each Windows/Android owner must approve locally; no pairing, shared credentials or automatic consent. Rejects an already-open session to protect running tasks.",
+    inputSchema: closed({ targets: fleetItems({ deviceId }, ["deviceId"]) }, ["targets"]),
+  },
+  {
+    name: "superagent_lan_terminal_fleet_close",
+    description: "Close 2–8 selected LAN/tunnel support sessions independently. Receiver shutdown stops the corresponding terminal tasks. Never closes unrelated devices; device-scoped emergency action.",
+    inputSchema: closed({ targets: fleetItems({ deviceId }, ["deviceId"]) }, ["targets"]),
   },
   {
     name: "superagent_lan_terminal_fleet_start",
@@ -458,7 +472,8 @@ export async function dispatchLanMcpTool(
           transports: { lan: true, reverseHttpsTunnel: true },
           workflow: ["discover_or_tunnel_list", "pair_request", "local_pair_complete", "pair_status", "session_open", "inspect_or_interact", "session_close_or_revoke"],
           windows: { exec: true, nonElevated: true, pipedTerminalTasks: true, conpty: true, conptyRequiresBun: true, maxTaskSeconds: 600 },
-          terminalFleet: { parallel: true, maxDevices: 8, distinctSessionPerDevice: true, windowsPipedJobs: true, androidOwnerApprovedSingleCommand: true, automaticPairing: false },
+          terminalFleet: { parallel: true, maxDevices: 8, distinctSessionPerDevice: true,
+            parallelSessionApproval: true, emergencyDeviceSessionClose: true, windowsPipedJobs: true, androidOwnerApprovedSingleCommand: true, automaticPairing: false },
           android: {
             diagnostics: ANDROID_READONLY_DIAGNOSTICS,
             ownerApprovedActions: ANDROID_APPROVED_ACTIONS,
@@ -502,6 +517,10 @@ export async function dispatchLanMcpTool(
       case "superagent_lan_device_exec":
       case "superagent_lan_terminal_exec":
         return await coreLan({ action: "exec", deviceId: id, command: str(args.command) }, 125_000);
+      case "superagent_lan_terminal_fleet_open":
+        return await coreLan({ action: "terminal_fleet_open", targets: args.targets }, 145_000);
+      case "superagent_lan_terminal_fleet_close":
+        return await coreLan({ action: "terminal_fleet_close", targets: args.targets }, 25_000);
       case "superagent_lan_terminal_fleet_start":
         return await coreLan({ action: "terminal_fleet_start", targets: args.targets }, 145_000);
       case "superagent_lan_terminal_fleet_read":
