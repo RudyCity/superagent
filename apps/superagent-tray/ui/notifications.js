@@ -28,6 +28,7 @@
   // A click must not lose its read receipt just because a refresh or native
   // action is currently running. Read receipts wait for the existing request.
   const pendingReadIds = new Set();
+  let readWriteInProgress = false;
   const invoke = (action, id) => {
     const call = window.__TAURI__?.core?.invoke;
     if (!call) return Promise.reject(new Error("Native Tray notification service unavailable"));
@@ -423,10 +424,14 @@
     flushPendingReads();
   }
   function flushPendingReads() {
-    if (state.busy || pendingReadIds.size === 0) return;
+    if (state.busy || readWriteInProgress || pendingReadIds.size === 0) return;
     const id = pendingReadIds.values().next().value;
-    pendingReadIds.delete(id);
-    void mutate("read", id);
+    readWriteInProgress = true;
+    void mutate("read", id).finally(() => {
+      pendingReadIds.delete(id);
+      readWriteInProgress = false;
+      flushPendingReads();
+    });
   }
   async function mutate(action, id) {
     if (state.busy) return;
