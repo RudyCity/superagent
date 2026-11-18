@@ -1090,7 +1090,11 @@
       const card = make("article", "access-mcp-request-card");
       card.dataset.requestId = String(req.requestId || "");
       const title = make("div", "access-mcp-request-head");
-      title.append(make("strong", "", String(req.subject || "Identitas MCP tidak dikenal")));
+      const ownerName = typeof req.ownerConnectionName === "string" &&
+        req.ownerConnectionName.trim() ? req.ownerConnectionName : null;
+      title.append(make("strong", "", ownerName || String(req.subject || "Identitas MCP tidak dikenal")));
+      if (ownerName) title.append(make("span", "access-mcp-meta",
+        "Nama dari persetujuan OAuth · identitas: " + String(req.subject || "—")));
       title.append(make("span", "access-mcp-meta", String(req.mode || "") +
         " · " + (req.createdAt ? new Date(req.createdAt).toLocaleString() : "Waktu tidak tersedia")));
       const scope = make("div", "access-mcp-target", humanMcpTarget(req));
@@ -1219,8 +1223,14 @@
       const row = make("div", "access-mcp-identity-row");
       const reportedName = typeof client.claimedClientName === "string" &&
         client.claimedClientName.trim() ? client.claimedClientName : "Klien MCP tanpa nama";
+      const assignedName = typeof client.ownerConnectionName === "string" &&
+        client.ownerConnectionName.trim() ? client.ownerConnectionName : null;
       row.append(
-        make("strong", "", reportedName + " (nama dari klien)"),
+        make("strong", "", assignedName
+          ? assignedName + " (nama dari persetujuan OAuth)"
+          : reportedName + " (nama dari klien)"),
+        ...(assignedName ? [make("span", "access-mcp-meta",
+          "Aplikasi melaporkan: " + reportedName)] : []),
         make("span", "access-mcp-meta",
           (client.authMode === "oauth" ? "OAuth" : "Bearer") + " · " +
           client.state + " · " + client.inFlight + " permintaan aktif · " +
@@ -1256,12 +1266,14 @@
           previous.sessionCount++;
           if (client.lastSeenAt > previous.lastObservedAt) {
             previous.reportedClientName = client.claimedClientName;
+            previous.ownerConnectionName = client.ownerConnectionName;
             previous.lastObservedAt = client.lastSeenAt;
           }
         } else {
           groups.set(client.principalHandle, {
             connectionHandle: client.principalHandle, authMode: client.authMode,
             reportedClientName: client.claimedClientName,
+            ownerConnectionName: client.ownerConnectionName,
             lastObservedAt: client.lastSeenAt,
             sessionCount: 1, status: "connected",
           });
@@ -1277,7 +1289,9 @@
       record.sessionCount >= 0 && record.sessionCount <= 64 &&
       ["connected", "disconnected"].includes(record.status) &&
       (record.reportedClientName == null ||
-        (typeof record.reportedClientName === "string" && record.reportedClientName.length <= 64)));
+        (typeof record.reportedClientName === "string" && record.reportedClientName.length <= 64)) &&
+      (record.ownerConnectionName == null ||
+        (typeof record.ownerConnectionName === "string" && record.ownerConnectionName.length <= 64)));
     if (!valid) {
       summary.textContent = "Data tidak valid";
       root.append(make("p", "access-empty", "Catatan koneksi tidak lolos validasi."));
@@ -1296,8 +1310,12 @@
     }
     for (const record of registrations) {
       const row = make("div", "access-mcp-identity-row");
-      const name = record.reportedClientName || "Klien MCP tanpa nama";
-      row.append(make("strong", "", name + " (nama diklaim klien)"));
+      const name = record.ownerConnectionName || record.reportedClientName || "Klien MCP tanpa nama";
+      row.append(make("strong", "", name + (record.ownerConnectionName
+        ? " (nama dari persetujuan OAuth)" : " (nama diklaim klien)")));
+      if (record.ownerConnectionName && record.reportedClientName)
+        row.append(make("span", "access-mcp-meta",
+          "Nama dari aplikasi: " + record.reportedClientName));
       row.append(make("span", "access-mcp-meta",
         (record.authMode === "oauth" ? "OAuth" : "Bearer") + " · " +
         (live ? record.status === "connected" ? "Terhubung" : "Terputus" :
