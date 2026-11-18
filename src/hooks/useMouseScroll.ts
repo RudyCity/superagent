@@ -432,24 +432,18 @@ export function useMouseScroll(
       try {
         process.stdin.off("data", handleMouseInput);
         process.stdout.write(disableMouseTracking);
-        if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
-          process.stdin.setRawMode(false);
-        }
+        // Ink owns stdin raw mode. Do not switch the keyboard to canonical
+        // input when an agent handles SIGINT without exiting the CLI.
       } catch {}
     };
+    // Exit-only fallback. SIGINT/TERM may be handled without exiting the TUI.
     process.once("exit", emergencyCleanup);
-    process.once("SIGINT", emergencyCleanup);
-    process.once("SIGTERM", emergencyCleanup);
-    process.once("uncaughtException", emergencyCleanup);
 
     return () => {
       process.stdin.off("data", handleMouseInput);
       process.stdout.write(disableMouseTracking);
       // Remove emergency handlers so they don't fire after normal cleanup
       process.off("exit", emergencyCleanup);
-      process.off("SIGINT", emergencyCleanup);
-      process.off("SIGTERM", emergencyCleanup);
-      process.off("uncaughtException", emergencyCleanup);
     };
   }, []); // Empty deps - listener registered once, reads latest ctx from ref
 }
