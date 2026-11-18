@@ -23,6 +23,7 @@ type Task = {
   chars: number;
   cursor: number;
   running: boolean;
+  stopping: boolean;
   exitCode: number | null;
   reason: string | null;
   deadline: ReturnType<typeof setTimeout>;
@@ -32,6 +33,7 @@ type Task = {
 export type LanTerminalSnapshot = {
   jobId: string;
   running: boolean;
+  stopping: boolean;
   exitCode: number | null;
   reason: string | null;
   cursor: number;
@@ -67,32 +69,20 @@ export class LanTerminalTaskManager {
       { windowsHide: true, shell: false, detached: !windows, stdio: ["pipe", "pipe", "pipe"] });
     const task: Task = {
       jobId: crypto.randomUUID(), sessionId, child, chunks: [], chars: 0,
-      cursor: 0, running: true, exitCode: null, reason: null,
+      cursor: 0, running: true, stopping: false, exitCode: null, reason: null,
       deadline: undefined as unknown as ReturnType<typeof setTimeout>,
       idle: undefined as unknown as ReturnType<typeof setTimeout>,
     };
     this.task = task;
     const finish = (reason: string, exitCode: number | null = null) => {
       if (!task.running) return;
-      task.running = false; task.reason = reason; task.exitCode = exitCode;
+      task.running = false; task.stopping = false;
+      task.reason = task.reason ?? reason; task.exitCode = exitCode;
       clearTimeout(task.deadline); clearTimeout(task.idle);
       try { child.stdin.end(); } catch {}
     };
     const terminate = (reason: string) => {
-      if (!task.running) return;
-      finish(reason);
-      // Kill only the exact child spawned by this manager. Windows process
-      // trees require a separate best-effort reaper; never reuse a stale PID.
-      const pid = child.pid;
-      try {
-        if (process.platform !== "win32" && pid) process.kill(-pid, "SIGKILL");
-        else child.kill();
-      } catch {}
-      if (process.platform === "win32" && pid) {
-        const reaper = spawn("taskkill.exe", ["/PID", String(pid), "/T", "/F"],
-          { windowsHide: true, stdio: "ignore" });
-        reaper.once("error", () => {});
-      }
+      if (this.task === task) this.stopAll(reason);
     };
     const idleReset = () => {
       clearTimeout(task.idle);
@@ -126,7 +116,7 @@ export class LanTerminalTaskManager {
     if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > task.cursor) throw Error("Invalid terminal cursor.");
     // An authorized polling controller keeps its active task alive across
     // transient request disconnects. No polling for 2 minutes means stop.
-    if (task.running) {
+    if (task.running && !task.stopping) {
       clearTimeout(task.idle);
       task.idle = setTimeout(() => {
         if (this.task === task) this.stopAll("idle_timeout");
@@ -143,7 +133,7 @@ export class LanTerminalTaskManager {
       chunks.push(item); size += item.text.length;
     }
     return {
-      jobId: task.jobId, running: task.running, exitCode: task.exitCode,
+      jobId: task.jobId, running: task.running, stopping: task.stopping, exitCode: task.exitCode,
       reason: task.reason, cursor: task.cursor, oldestCursor,
       nextCursor: chunks.at(-1)?.cursor ?? Math.max(cursor, oldestCursor - 1),
       truncated, chunks,
@@ -152,7 +142,7 @@ export class LanTerminalTaskManager {
 
   input(sessionId: string, jobId: string, text: string, appendNewline = false): LanTerminalSnapshot {
     const task = this.forSession(sessionId, jobId);
-    if (!task.running || !task.child.stdin.writable) throw Error("Terminal is not running.");
+    if (!task.running || task.stopping || !task.child.stdin.writable) throw Error("Terminal is not running.");
     if (!inputIsValid(text) || typeof appendNewline !== "boolean") throw Error("Invalid terminal input.");
     if (task.child.stdin.writableLength + text.length > 16 * 1024)
       throw Error("Terminal input queue is full; read output before retrying.");
@@ -173,7 +163,8 @@ export class LanTerminalTaskManager {
     const task = this.task;
     if (!task) return;
     if (!task.running) { this.task = null; return; }
-    task.running = false; task.reason = reason;
+    if (task.stopping) return;
+    task.stopping = true; task.reason = reason;
     clearTimeout(task.deadline); clearTimeout(task.idle);
     const pid = task.child.pid;
     try {
