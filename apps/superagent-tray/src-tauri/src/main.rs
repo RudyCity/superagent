@@ -40,6 +40,7 @@ mod lifecycle_console;
 mod release_updates;
 mod tray_notification_center;
 mod tray_navigation_receipt;
+mod tray_os_action;
 
 /// Samples only independently verified local process owners reported by Core.
 #[tauri::command]
@@ -231,10 +232,13 @@ fn record_operational_incident(
             os_alert_budget_available() {
             // The OS surface is intentionally generic; detailed text stays in
             // the private, authenticated native Tray inbox.
-            if let Err(error) = app.notification().builder()
+            let ticket=tray_os_action::issue(&dir,id).ok();
+            let mut builder=app.notification().builder()
                 .title("SuperAgent needs attention")
-                .body("A system event requires review. Open the Tray Notification Center.")
-                .show() {
+                .body("A system event requires review. Open the Tray Notification Center.");
+            if let Some(id)=ticket {builder=builder.id(id);}
+            if let Err(error)=builder.show(){
+                if let Some(id)=ticket {tray_os_action::cancel(id);}
                 eprintln!("[tray] Critical desktop alert unavailable: {error}");
             }
         }
@@ -269,6 +273,19 @@ fn tray_notification_center_action(
         return Err("Focus the native Tray to change notifications".into());
     }
     tray_notification_center::perform(&config_dir()?, &action, id.as_deref())
+}
+
+/// Take a one-time OS toast activation verified and queued by the native
+/// notification plugin. Never accepts an arbitrary URL, tab, or incident ID.
+#[tauri::command]
+fn tray_notification_center_take_os_activation(
+    window: tauri::WebviewWindow,
+) -> Result<Value,String> {
+    if window.label()!="main" || !window.is_visible().unwrap_or(false) ||
+       !window.is_focused().unwrap_or(false) {
+        return Err("OS_NOTIFICATION_TRAY_FOREGROUND_REQUIRED".into());
+    }
+    Ok(tray_os_action::take(&config_dir()?))
 }
 
 /// A navigation ticket is valid only for an existing, active native incident.
@@ -3951,6 +3968,23 @@ fn main() {
         .manage(muse_file_transfer::MuseFileSelection::default())
         .setup(|app| {
             tray_lifecycle::install(app.handle().clone(), &config_dir()?)?;
+            // OS toast click is a native event, not a caller-supplied URL or
+            // HTML title. An ID maps to one published, unexpired incident.
+            // An Action Center click outside the OS provider's delivery window
+            // may not be reported; the persisted inbox remains authoritative.
+            let activation_app=app.handle().clone();
+            let _=app.notification().on_action(move |event| {
+                if event.action_id()!="tap"{return}
+                let Some(notification)=event.notification() else{return};
+                let Ok(dir)=config_dir() else{return};
+                if !tray_os_action::activate(&dir,notification.id()){return}
+                if let Some(window)=activation_app.get_webview_window("main"){
+                    let _=window.show();
+                    let _=window.unminimize();
+                    let _=window.set_focus();
+                }
+                let _=activation_app.emit("tray-notification-os-activate",());
+            });
             // Windows native chrome must never appear above our custom
             // HTML titlebar, even if the host preserves caption style bits
             // for resize/snap compatibility. Enforce decorations=false
@@ -4230,6 +4264,7 @@ fn main() {
             tray_notification_center_action,
             tray_notification_center_begin_navigation,
             tray_notification_center_ack_navigation,
+            tray_notification_center_take_os_activation,
             tray_notification_center_refresh_security,
             tray_notification_center_ui_alert,
             tray_notification_center_preferences,

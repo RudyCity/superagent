@@ -445,7 +445,7 @@
       if (syncSecurity === true) state.securitySync = "unavailable";
       state.error = "Cannot load notifications. Open the installed Tray or retry.";
       render();
-    } finally { state.busy = false; render(); flushPendingReads(); }
+    } finally { state.busy = false; render(); flushPendingReads(); finishOsActivation(); }
   }
   // Keep the click synchronous for navigation and coalesce repeated read
   // receipts until the native write has completed.
@@ -505,6 +505,32 @@
     state.open = !state.open;
     render();
     if (state.open) void refresh(true);
+  }
+  // Only a native-delivered, single-use OS activation may open a specific
+  // incident. The HTML page cannot forge a toast ID or replay a consumed click.
+  let pendingOsIncidentId = null;
+  function finishOsActivation() {
+    if (state.busy || !pendingOsIncidentId) return;
+    const id = pendingOsIncidentId;
+    pendingOsIncidentId = null;
+    const item = state.items.find((entry) => entry.id === id &&
+      !entry.archivedAt && !entry.resolvedAt);
+    if (item) openDestination(item);
+    else window.navigateToPage?.("notifications"); // no read receipt
+  }
+  async function takeOsActivation() {
+    try {
+      const pull = window.__TAURI__?.core?.invoke;
+      if (typeof pull !== "function") return;
+      const result = await pull("tray_notification_center_take_os_activation");
+      if (result?.status !== "READY" || typeof result.incidentId !== "string" ||
+          result.incidentId.length > 180) return;
+      pendingOsIncidentId = result.incidentId;
+      if (!state.busy) await refresh(true);
+      finishOsActivation();
+    } catch {
+      // Failure to read native activation must not mark an incident read.
+    }
   }
   function init() {
     $("tray-notification-bell")?.addEventListener("click", toggle);
@@ -572,6 +598,11 @@
       Promise.resolve(call("tray_notification_center_ui_alert", { scope, kind }))
         .then(refresh).catch(() => {});
     });
+    window.__TAURI__?.event?.listen?.("tray-notification-os-activate", () => {
+      void takeOsActivation();
+    });
+    // Catch an OS click delivered before the WebView attached its listener.
+    void takeOsActivation();
     window.__TAURI__?.event?.listen?.("tray-notifications-changed", refresh);
     window.__TAURI__?.event?.listen?.("desktop-server-started", refresh);
     window.__TAURI__?.event?.listen?.("desktop-server-stopped", refresh);

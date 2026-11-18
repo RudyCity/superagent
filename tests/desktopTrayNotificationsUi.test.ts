@@ -75,7 +75,8 @@ function mount(items: Record<string, unknown>[] = []) {
     window: {
       __TAURI__: {
         core: { invoke: vi.fn(async (name: string, args: any) => {
-          expect(name).toMatch(/^tray_notification_center_(action|ui_alert|refresh_security|begin_navigation|ack_navigation)$/);
+          expect(name).toMatch(/^tray_notification_center_(action|ui_alert|refresh_security|begin_navigation|ack_navigation|take_os_activation)$/);
+          if (name.endsWith("take_os_activation")) return {status:"NONE"};
           if (name.endsWith("ui_alert")) return {};
           if (name.endsWith("begin_navigation")) {
             mockInvocations.push({action:"navigation-begin",id:args.incidentId});
@@ -369,6 +370,10 @@ describe("Tray Notification Manager", () => {
     expect(mounted.mockInvocations.map(v=>v.action)).toContain("navigation-ack");
     expect(mounted.mockInvocations.map(v=>v.action)).toContain("read");
     expect(rust).toContain("tray_notification_center_ack_navigation,");
+    expect(rust).toContain("tray_notification_center_take_os_activation,");
+    expect(rust).toContain('activation_app.emit("tray-notification-os-activate",())');
+    expect(js).toContain("tray_notification_center_take_os_activation");
+    expect(js).toContain('tray-notification-os-activate');
     expect(rust).toContain("tray_navigation_receipt::consume(");
   });
   it("does not use a JS scheduleRead shortcut after navigation", () => {
