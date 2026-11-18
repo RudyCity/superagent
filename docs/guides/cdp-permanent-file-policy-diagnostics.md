@@ -15,6 +15,33 @@ There are two independent browser transports:
   No managed debugging listener is needed. If more than one profile is paired,
   choose its exact `delegateClientId`.
 
+## Certified direct metadata tool (Gateway and Full)
+
+Use `superagent_chrome_cdp_observe` directly rather than nesting the broad
+`superagent_chrome_cdp` tool inside `superagent_tool_execute`. It is
+advertised eagerly even in the compact Gateway catalog and has a deliberately
+small, read-only schema. It requires OAuth read scope; neither browser execution
+nor MCP Connection Controls execute is implicitly granted.
+
+```json
+{"name":"superagent_chrome_cdp_observe","arguments":{"command":"transport_status","transport":"delegate","delegateClientId":"YOUR_REAL_PROFILE_ID"}}
+```
+
+```json
+{"name":"superagent_chrome_cdp_observe","arguments":{"command":"list_targets","transport":"delegate","delegateClientId":"YOUR_REAL_PROFILE_ID"}}
+```
+
+For managed loopback Chrome use
+`{"command":"transport_status","transport":"managed","debug_port":9222}`.
+Only these two commands are accepted, and only their narrow metadata arguments
+are allowed. Tab inventory excludes local files, privileged browser pages,
+query strings, URL fragments, and tabs owned by other MCP principals.
+
+Existing `superagent_chrome_cdp` remains available for backwards compatibility
+and retains its separate write scope, human MCP approval and host-policy checks.
+The direct observation tool does **not** enable navigation, DOM snapshots,
+page reads, JavaScript evaluation, screenshots, or file uploads.
+
 ## Safe, read-only diagnosis (file-policy v2)
 
 ```json
