@@ -11,7 +11,7 @@ const jA = "aaaa1111-1111-4111-8111-111111111111";
 const jB = "bbbb2222-2222-4222-8222-222222222222";
 
 const windows = (id: string, ip: string): LanDevice => ({
-  id, host: ip, port: 17845, fingerprint: "a".repeat(64),
+  id, host: ip, port: 17845, fingerprint: (id === a ? "a" : "c").repeat(64),
   label: "Receiver " + id.slice(0, 4), platform: "windows",
   paired: true, connected: true, transport: "lan",
 });
