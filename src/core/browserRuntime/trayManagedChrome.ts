@@ -45,7 +45,9 @@ export async function trayManagedChromeAction(
       compareProcessStartIdentity(tracked.creationIdentity, birth) === "matched_unverified");
     const endpointVerified = health.status === "healthy" &&
       Boolean(tracked?.browserFingerprint && tracked.browserFingerprint === health.browserFingerprint);
-    const owned = pidVerified && endpointVerified;
+    // A verified owned PID may outlive its CDP listener. Permit an attended
+    // exact-PID Stop in that case, but never when a different endpoint owns the port.
+    const owned = pidVerified && (endpointVerified || !health.listening);
     return {
       success: true, port, host: "127.0.0.1", status: health.status,
       reachable: health.status === "healthy", occupied: health.listening,
