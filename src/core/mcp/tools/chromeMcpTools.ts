@@ -452,8 +452,11 @@ export const CHROME_MCP_TOOL_DEFS = [
       properties: {
         profileName: { type: "string", description: "Directory name of the Chrome profile (default: 'Default')." },
         url: { type: "string", description: "Target URL to open." },
-        remoteDebuggingPort: { type: "number", description: "Port for CDP automation (e.g. 9222)." },
-        userDataDir: { type: "string", description: "Custom user data directory path." },
+        managedCdp: { type: "boolean", description: "Launch a supervised, isolated Managed Chrome CDP instance (defaults to port 9222). Requires explicit operator/MCP authorization." },
+        remoteDebuggingPort: { type: "integer", minimum: 1024, maximum: 65535, description: "Loopback Chrome debugging port (e.g. 9222); selecting a port implies Managed CDP launch." },
+        isolated: { type: "boolean", description: "Must not be false for Managed CDP; use Delegate-CDP for an existing logged-in personal Chrome profile." },
+        mode: { type: "string", enum: ["auto", "headed", "headless", "virtual-display"], description: "Chrome process display mode." },
+        userDataDir: { type: "string", description: "Explicit isolated Chrome data directory path. Defaults to the port-specific SuperAgent profile." },
       },
     },
   },
