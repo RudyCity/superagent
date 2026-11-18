@@ -574,6 +574,17 @@ fn force_candidates(preview:&Preview)->Result<Vec<Item>,String> {
     });
     Ok(selected)
 }
+// The legacy comparison guard is retained for regression tests; the live
+// manual-kill path intentionally revalidates directly with the OS instead.
+#[cfg(test)]
+fn same_manual_owner(before:&Item,after:&Item)->bool {
+    before.id==after.id && before.kind==after.kind && before.pid==after.pid &&
+        before.port==after.port && before.process_started_at.is_some() &&
+        before.process_started_at==after.process_started_at &&
+        before.process_name==after.process_name &&
+        before.process_path==after.process_path &&
+        after.manual_kill_selectable && running(&after.state)
+}
 fn manual_candidates(preview:&Preview,ids:&[String])->Result<Vec<Item>,String> {
     if ids.is_empty()||ids.len()>64{return Err("SHUTDOWN_MANUAL_SELECTION_INVALID".into());}
     let mut unique=HashSet::new();
