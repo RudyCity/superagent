@@ -46,7 +46,7 @@ fn completion_rechecks_revision_after_a_backend_await() {
     let ticket = consume(&dir, id, issued["nonce"].as_str().unwrap(),
         "security:connections", true).unwrap().unwrap();
     tray_notification_center::resolve(&dir, id).unwrap();
-    tray_notification_center::perform(&dir, "reopen", Some(id)).unwrap();
+    publish(&dir, id);
     tray_notification_center::perform(&dir, "unread", Some(id)).unwrap();
     assert!(!complete(&dir, &ticket).unwrap());
     assert_eq!(tray_notification_center::perform(&dir, "list", None).unwrap()["unreadCount"], 1);
@@ -133,5 +133,81 @@ fn legacy_ledger_gets_an_independent_revision_when_first_changed() {
     assert!(Uuid::parse_str(read["items"][0]["navigationRevision"].as_str().unwrap()).is_ok());
     assert!(!tray_notification_center::mark_navigation_read(&dir, "legacy_revision", &target,
         Instant::now() + TTL).unwrap());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn lifecycle_and_snooze_transitions_invalidate_older_read_receipts() {
+    let dir = isolated();
+    let id = "incident_lifecycle";
+    publish(&dir, id);
+    for action in ["in-progress", "pause-work", "snooze-15m", "unsnooze"] {
+        tray_notification_center::perform(&dir, "unread", Some(id)).unwrap();
+        let issued = issue(&dir, id).unwrap();
+        let ticket = consume(&dir, id, issued["nonce"].as_str().unwrap(),
+            "security", true).unwrap().unwrap();
+        let snapshot = tray_notification_center::perform(&dir, action, Some(id)).unwrap();
+        assert_eq!(snapshot["history"][0]["action"], action);
+        assert!(!complete(&dir, &ticket).unwrap(), "{action} must invalidate the older receipt");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn verified_expiry_invalidates_receipts_and_cannot_be_reopened_by_the_webview() {
+    let dir = isolated();
+    let id = "mcp-pending:connections:req_verified_expiry";
+    publish(&dir, id);
+    let issued = issue(&dir, id).unwrap();
+    let ticket = consume(&dir, id, issued["nonce"].as_str().unwrap(),
+        "security:connections", true).unwrap().unwrap();
+    assert!(tray_notification_center::expire_verified(&dir, id).unwrap());
+    let snapshot = tray_notification_center::perform(&dir, "list", None).unwrap();
+    assert_eq!(snapshot["items"][0]["actionStatus"], "expired");
+    assert_eq!(snapshot["history"][0]["action"], "expired_verified");
+    assert!(!complete(&dir, &ticket).unwrap());
+    assert!(issue(&dir, id).is_err());
+    assert!(tray_notification_center::perform(&dir, "reopen", Some(id)).is_err());
+    publish(&dir, id);
+    assert!(issue(&dir, id).is_ok());
+    assert!(!complete(&dir, &ticket).unwrap());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_durable_digest_does_not_replace_an_incident_but_native_open_is_audited() {
+    let dir = isolated();
+    let id = "incident_digest";
+    publish(&dir, id);
+    let issued = issue(&dir, id).unwrap();
+    let ticket = consume(&dir, id, issued["nonce"].as_str().unwrap(),
+        "security", true).unwrap().unwrap();
+    let mut preferences = tray_notification_center::NotificationPreferences::default();
+    preferences.digest_enabled = true;
+    preferences.digest_next_at = Some(0);
+    tray_notification_center::save_preferences(&dir, preferences).unwrap();
+    assert!(tray_notification_center::take_daily_digest(&dir).unwrap().is_some());
+    assert!(tray_notification_center::take_daily_digest(&dir).unwrap().is_none());
+    assert!(complete(&dir, &ticket).unwrap());
+    let snapshot = tray_notification_center::perform(&dir, "list", None).unwrap();
+    assert_eq!(snapshot["history"][0]["action"], "read");
+    assert_eq!(snapshot["history"][0]["itemId"], id);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn an_incident_device_identity_change_invalidates_its_ticket() {
+    let dir = isolated();
+    let id = "incident_device";
+    tray_notification_center::publish_for_device(&dir, "security", "critical", id,
+        "Pending", "Review", "device_a").unwrap();
+    let issued = issue(&dir, id).unwrap();
+    let ledger_file = dir.join("tray-notifications.json");
+    let mut ledger: Value = serde_json::from_slice(&std::fs::read(&ledger_file).unwrap()).unwrap();
+    ledger["items"][0]["deviceId"] = json!("device_b");
+    std::fs::write(&ledger_file, serde_json::to_vec(&ledger).unwrap()).unwrap();
+    assert!(consume(&dir, id, issued["nonce"].as_str().unwrap(),
+        "security", true).unwrap().is_none());
+    assert_eq!(tray_notification_center::perform(&dir, "list", None).unwrap()["unreadCount"], 1);
     std::fs::remove_dir_all(dir).unwrap();
 }
