@@ -1396,6 +1396,7 @@ export async function handleServerRoute(
           authMode:row.authMode, state:row.state, inFlight:row.inFlight,
           createdAt:row.createdAt, lastSeenAt:row.lastSeenAt,
           claimedClientName:label(row.claimedClientName,64),
+          ownerConnectionName:label(row.ownerConnectionName,64),
           claimedClientVersion:label(row.claimedClientVersion,32),
           lastToolRequest:typeof row.lastToolRequest==="string" &&
             /^[A-Za-z0-9_./-]{1,80}$/.test(row.lastToolRequest)
