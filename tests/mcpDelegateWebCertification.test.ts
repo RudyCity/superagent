@@ -117,7 +117,7 @@ describe("narrow direct Delegate web workflow",()=>{
 
   it("does not expose data/javascript/blob pages through the Delegate extension policy",()=>{
     const filename=path.resolve(process.cwd(),"chrome-extension-delegate/cdpPolicy.js");
-    const context=vm.createContext({});
+    const context=vm.createContext({URL});
     vm.runInContext(fs.readFileSync(filename,"utf8"),context);
     const policy=(context as any).DelegateCdpPolicy;
     for(const url of ["data:text/html,a","blob:https://example.org/abc",
