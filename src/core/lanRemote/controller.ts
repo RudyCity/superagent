@@ -216,6 +216,7 @@ export async function execLanCommand(id: string, command: string): Promise<{ std
 export interface LanTerminalSnapshot {
   jobId: string;
   running: boolean;
+  stopping: boolean;
   exitCode: number | null;
   reason: string | null;
   cursor: number;
@@ -239,7 +240,7 @@ async function lanTerminalRequest(
   if (!terminal || typeof terminal !== "object" || Array.isArray(terminal)) throw Error("Malformed terminal response.");
   const t = terminal as Record<string, unknown>;
   if (typeof t.jobId !== "string" || !/^[a-f0-9-]{36}$/i.test(t.jobId) ||
-      typeof t.running !== "boolean" || !Number.isSafeInteger(t.cursor) ||
+      typeof t.running !== "boolean" || typeof t.stopping !== "boolean" || !Number.isSafeInteger(t.cursor) ||
       !Number.isSafeInteger(t.nextCursor) || !Array.isArray(t.chunks) ||
       t.chunks.length > 64 || t.chunks.some((v: unknown) =>
         !v || typeof v !== "object" || typeof (v as Record<string, unknown>).text !== "string" ||
