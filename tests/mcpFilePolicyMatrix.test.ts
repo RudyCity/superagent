@@ -83,6 +83,16 @@ describe("MCP full-catalog host file-policy transparency", () => {
         .toMatch(/no evaluate/i);
       expect(byName("superagent_lan_capabilities")._meta.filePolicy.readiness)
         .toBe("certified_metadata");
+      // Tool discovery must not suggest a fixed Git grant when the action
+      // determines read vs git; OAuth write is still independently required.
+      expect(byName("superagent_git_action")._meta.mcpApproval).toMatchObject({
+        kind:"project",capability:"action_dependent",
+        capabilitiesByAction:{status:"read",diff:"read",log:"read",commit:"git"},
+      });
+      expect(byName("superagent_register_project")._meta.mcpApproval).toMatchObject({
+        kind:"operator_admin",
+        requiredOAuthScopes:["mcp:tools:write","mcp:tools:admin"],
+      });
 
       const search = resultJson(await invoke(server,MCP_GATEWAY_TOOL_NAMES.search,
         {query:"exec_command"}));
