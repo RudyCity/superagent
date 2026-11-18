@@ -48,7 +48,7 @@ describe("attended LAN terminal task lifecycle", () => {
       const wrote = manager.input("first-session", started.jobId, "hello", true);
       expect(wrote.running).toBe(true);
       const stopped = manager.stop("first-session", started.jobId);
-      expect(stopped.running).toBe(false);
+      expect(stopped.stopping).toBe(true);
       expect(stopped.reason).toBe("stopped_by_owner");
       expect(() => manager.input("first-session", started.jobId, "hello")).toThrow(/not running/);
     } finally {
