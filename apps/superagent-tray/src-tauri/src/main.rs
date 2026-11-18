@@ -3845,11 +3845,11 @@ async fn poll_lan_device_health(
     for (id, connected) in &current {
         let key = format!("lan:device:{id}:disconnected");
         match previous.get(id) {
-            Some(true) if !connected => record_verified_device_incident(
+            Some(&true) if !*connected => record_verified_device_incident(
                 app, id, &key, "Paired LAN device disconnected",
                 "A previously connected, paired device is now reported disconnected by Core.",
             )?,
-            Some(false) if *connected => {
+            Some(&false) if *connected => {
                 if tray_notification_center::resolve(&config_dir()?, &key)? {
                     let _ = app.emit("tray-notifications-changed", ());
                 }
