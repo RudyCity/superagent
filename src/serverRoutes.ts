@@ -1298,7 +1298,21 @@ export async function handleServerRoute(
   // /api/desktop/access/* boundary, not the general MCP service status.
   if (pathname === "/api/desktop/access/connected-clients" && req.method === "GET") {
     res.setHeader("Cache-Control", "no-store");
-    const unavailable = {success:true, state:"unavailable", clients:null};
+    const { reconcileVerifiedMcpConnections, listLastObservedMcpConnections } =
+      await import("./core/mcp/mcpConnectedClientRegistry.js");
+    let ownerPort: number | null = null;
+    const unavailable = () => {
+      // Historical sightings are deliberately unverified here, even if they
+      // were marked online during a previous successful owner probe.
+      let history: ReturnType<typeof listLastObservedMcpConnections> = [];
+      try {
+        if (ownerPort !== null) history = listLastObservedMcpConnections(ownerPort);
+      } catch { /* an invalid ledger must never look like verified presence */ }
+      sendJSON(res, 200, {
+        success:true, state:"unavailable", clients:null,
+        registeredConnections:history, registrationState:"unverified",
+      });
+    };
     try {
       const { inspectServices } = await import("./core/runtime/serviceManager.js");
       const { readManagedMcpTunnelLease, verifyManagedOwnerIdentity,
@@ -1306,13 +1320,14 @@ export async function handleServerRoute(
       const observed = (await inspectServices("mcp"))[0];
       const port = observed?.port;
       const pid = observed?.ownerPid;
+      if (Number.isSafeInteger(port)) ownerPort = port!;
       if (!observed?.ownershipVerified || !Number.isSafeInteger(port) ||
           !Number.isSafeInteger(pid) || !observed.details?.reloadable) {
-        sendJSON(res, 200, unavailable); return true;
+        unavailable(); return true;
       }
       const lease = readManagedMcpTunnelLease(port!);
       if (!lease || lease.pid !== pid) {
-        sendJSON(res, 200, unavailable); return true;
+        unavailable(); return true;
       }
       await verifyManagedOwnerIdentity(lease, {timeoutMs:1100});
       const live = await probeManagedMcpTunnelOwner(lease);
@@ -1321,7 +1336,7 @@ export async function handleServerRoute(
           !Number.isSafeInteger(live.connectedAgentsObservedAt) ||
           Date.now()-live.connectedAgentsObservedAt! > 15_000 ||
           live.connectedAgentsObservedAt! > Date.now()+1000) {
-        sendJSON(res, 200, unavailable); return true;
+        unavailable(); return true;
       }
       const clients = live.connectedAgents.map(item => {
         if (!item || typeof item !== "object") return null;
@@ -1351,12 +1366,24 @@ export async function handleServerRoute(
       if (clients.some(item=>item===null) ||
           !Number.isSafeInteger(live.activeSessions) ||
           clients.length !== live.activeSessions) {
-        sendJSON(res, 200, unavailable); return true;
+        unavailable(); return true;
+      }
+      // Register only from the fully reconciled, authenticated backend session
+      // snapshot, not from a claimed client name or a Core-side stale identity.
+      // This is metadata registration, NEVER permission registration.
+      let registeredConnections: ReturnType<typeof reconcileVerifiedMcpConnections> = [];
+      let registrationState: "verified" | "unavailable" = "verified";
+      try {
+        registeredConnections = reconcileVerifiedMcpConnections(port!, clients as
+          import("./core/mcp/mcpConnectedClientRegistry.js").TrustedMcpSessionMetadata[]);
+      } catch {
+        registrationState = "unavailable";
       }
       sendJSON(res, 200, {success:true,state:"verified",clients,
+        registeredConnections, registrationState,
         observedAt:live.connectedAgentsObservedAt});
     } catch {
-      sendJSON(res, 200, unavailable);
+      unavailable();
     }
     return true;
   }
