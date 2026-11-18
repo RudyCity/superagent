@@ -48,7 +48,7 @@ export function certifiedDelegateWebAction(call:BrowserCall):boolean{
  const command=a.command;
  const allow=["command","transport","delegateClientId","targetId"];
  const token=()=>typeof a.sessionToken==="string"&&a.sessionToken.length>=16&&
-   a.sessionToken.length<=256&&!/[\\r\\n\\0]/.test(a.sessionToken);
+   a.sessionToken.length<=256&&!/[\r\n\0]/.test(a.sessionToken);
  const exactWith=(...keys:string[])=>exact(a,[...allow,...keys]);
  const leased=()=>token();
  const revision=()=>Number.isSafeInteger(a.expectedRevision)&&Number(a.expectedRevision)>=0;
@@ -78,7 +78,7 @@ export function certifiedDelegateWebAction(call:BrowserCall):boolean{
      const hasIndex=a.index!==undefined;
      if(hasSelector===hasIndex)return false;
      return hasSelector
-       ? a.selector.length>0&&a.selector.length<=512&&!/[\\0\\r\\n]/.test(a.selector)
+       ? a.selector.length>0&&a.selector.length<=512&&!/[\0\r\n]/.test(a.selector)
        : Number.isSafeInteger(a.index)&&Number(a.index)>=1&&Number(a.index)<=250;
    }
    case "type": {
@@ -88,7 +88,7 @@ export function certifiedDelegateWebAction(call:BrowserCall):boolean{
      const hasIndex=a.index!==undefined;
      if(hasSelector===hasIndex)return false;
      return hasSelector
-       ? a.selector.length>0&&a.selector.length<=512&&!/[\\0\\r\\n]/.test(a.selector)
+       ? a.selector.length>0&&a.selector.length<=512&&!/[\0\r\n]/.test(a.selector)
        : Number.isSafeInteger(a.index)&&Number(a.index)>=1&&Number(a.index)<=250;
    }
    default:return false;
