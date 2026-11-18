@@ -8,6 +8,7 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -21,6 +22,8 @@ final class AndroidLocalTerminalUi {
     private final LocalAndroidShell shell;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final TextView output;
+    private final TextView status;
+    private final ScrollView consoleScroll;
     private final EditText input;
     private final Button run;
     private final Button stop;
@@ -45,7 +48,18 @@ final class AndroidLocalTerminalUi {
         output.setPadding(AndroidUiKit.dp(activity, 12), AndroidUiKit.dp(activity, 10),
                 AndroidUiKit.dp(activity, 12), AndroidUiKit.dp(activity, 10));
         output.setBackground(AndroidUiKit.shape(AndroidUiKit.SURFACE_INSET, AndroidUiKit.LINE_SUBTLE, 12, activity));
-        AndroidUiKit.add(panel, output, 6);
+        consoleScroll = new ScrollView(activity);
+        consoleScroll.setFillViewport(false);
+        consoleScroll.setFocusable(true);
+        consoleScroll.setVerticalScrollBarEnabled(false);
+        consoleScroll.addView(output);
+        LinearLayout.LayoutParams viewport = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, AndroidUiKit.dp(activity, 220));
+        viewport.topMargin = AndroidUiKit.dp(activity, 6);
+        panel.addView(consoleScroll, viewport);
+        status = AndroidUiKit.text(activity, "Idle · no command running", 12,
+                AndroidUiKit.TEXT_MUTED, false);
+        AndroidUiKit.add(panel, status, 8);
         input = new EditText(activity);
         input.setHint("Enter shell command...");
         input.setSingleLine(true);
@@ -88,12 +102,17 @@ final class AndroidLocalTerminalUi {
         run.setEnabled(false);
         stop.setEnabled(true);
         output.setText("$ " + command + "\nRunning locally...");
+        status.setText("Running · max 10 seconds · app sandbox");
+        consoleScroll.post(() -> consoleScroll.fullScroll(ScrollView.FOCUS_DOWN));
         shell.prepare();
         executor.execute(() -> {
             String result = shell.execute(command);
             activity.runOnUiThread(() -> {
                 if (closed) return;
                 output.setText("$ " + command + "\n" + result);
+                int code = shell.exitCode();
+                status.setText(code >= 0 ? "Finished · exit code " + code : "Stopped, timed out or unavailable");
+                consoleScroll.post(() -> consoleScroll.fullScroll(ScrollView.FOCUS_DOWN));
                 busy = false;
                 run.setEnabled(true);
                 stop.setEnabled(false);
@@ -101,7 +120,12 @@ final class AndroidLocalTerminalUi {
         });
     }
 
-    private void cancel() { shell.stop(); }
+    private void cancel() {
+        if (!busy || closed) return;
+        status.setText("Stopping command...");
+        stop.setEnabled(false);
+        shell.stop();
+    }
 
     void stopRunningCommand() { shell.stop(); }
 
