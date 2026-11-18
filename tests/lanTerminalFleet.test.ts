@@ -23,6 +23,7 @@ const devices = [windows(a, "192.168.1.11"), windows(b, "192.168.1.12"), android
 const receipt = (id: string): LanTerminalSnapshot => ({
   jobId: id === a ? jA : jB, running: true, stopping: false, exitCode: null,
   reason: null, cursor: 0, nextCursor: 0, oldestCursor: 1, truncated: false, chunks: [],
+  mode: "pipe", cols: 80, rows: 24,
 });
 const deps = (override: Partial<LanTerminalFleetDeps> = {}): LanTerminalFleetDeps => ({
   list: () => devices,
@@ -229,7 +230,7 @@ describe("LAN terminal fleet: multi-device isolation and concurrency", () => {
     ]);
     const phone = response.results[1];
     expect(phone).toMatchObject({ deviceId: c, platform: "android", ok: true, outputTruncated: true });
-    if (phone.ok && phone.platform === "android") expect(phone.shell.stdout.length).toBe(4096);
+    if (phone.ok && "shell" in phone) expect(phone.shell.stdout.length).toBe(4096);
     expect(JSON.stringify(response)).not.toContain("sessionToken");
   });
 });
