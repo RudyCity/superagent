@@ -316,7 +316,7 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
         if (op === "terminal_start") {
           if (typeof req.command !== "string" || !req.command.trim() ||
               req.command.length > 2000) throw Error("Invalid terminal command.");
-          if (terminals.hasRunning()) throw Error("A terminal task is already running.");
+          if (busy || terminals.hasRunning()) throw Error("Another receiver command is running.");
           const approvedSession = session;
           const epoch = accessEpoch;
           const allowed = await options.onApproval({
@@ -518,7 +518,7 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
     if (op !== "exec" || typeof req.command !== "string" || !req.command.trim() || req.command.length > 2000) {
       fail(socket, "Unknown operation or command limit exceeded."); socket.end(); return;
     }
-    if (busy) { fail(socket, "Another command is running."); socket.end(); return; }
+    if (busy || terminals.hasRunning()) { fail(socket, "Another command is running."); socket.end(); return; }
     busy = true;
     const shell = process.platform === "win32" ? "powershell.exe" : "/bin/sh";
     const args = process.platform === "win32" ? ["-NoProfile", "-NonInteractive", "-Command", req.command] : ["-c", req.command];
