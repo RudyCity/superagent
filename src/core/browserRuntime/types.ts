@@ -113,6 +113,8 @@ export interface BrowserLaunchConfig {
 }
 
 export interface BrowserInstanceRecord {
+  /** True only for a verified healthy instance returned from a repeated launch. */
+  reused?: boolean;
   recordId: string;
   pid: number;
   creationIdentity: string | null;
