@@ -3,6 +3,30 @@
 The panel is in **Overview → Connected MCP agents** and
 **Runtime Detection → MCP → Connected MCP agents**.
 
+## Owner-given MCP connection names (one-time OAuth consent)
+
+When opening the SuperAgent OAuth consent page, enter a friendly **Connection name /
+Nama koneksi** next to the one-time bootstrap code. For example,
+`ChatGPT - Laptop Rudy` or `Gemini - PC Kantor`. The name is optional
+and the original OAuth linking flow remains compatible without it.
+
+This label is accepted only after the one-time bootstrap code is verified and
+is bound to that specific OAuth authorization and its access/refresh tokens,
+including token rotation. It is not taken from a client-controlled
+`clientInfo.name`, arbitrary `client_id`, request arguments or a renamed
+public MCP URL. Each authenticated credential remains a separate connection
+record even if multiple agents use the same URL.
+
+Tray shows the owner-given name first under **MCP Connections** and as the
+requester on **MCP Connection Controls** approval cards. The client's
+reported name remains a separately marked, untrusted hint. A genuine
+pending `MCP Connection Controls → Execute` request also creates a
+Security Approval notification using the owner-given name; opening it
+focuses the pending request but NEVER authorizes the action. Approval is
+still performed by a human in the native Tray review dialog. Naming,
+OAuth linking and client connection do **not** grant project or MCP
+execution permissions.
+
 ## Evidence rules
 
 - Source: current live MCP HTTP session registry in the independent MCP
