@@ -235,7 +235,7 @@ export function describePermanentFileToolReadiness(name:string):string {
   if(name==="superagent_tool_execute")
     return "Depends on the exact nested target and its arguments; the target is reauthorized independently.";
   if(name==="superagent_desktop_ui")
-    return "Only probe, bounded window/app inventory, find_window, live_inventory and security-prompt metadata are certified; snapshot, open and input remain restricted.";
+    return "Only probe, get_active_window, bounded list_windows/find_window/list_installed_apps, live_inventory, and inspect_security_prompts (without extra arguments) are certified. inspect_window returns UI content even without an image; open, snapshot, focus_window and input remain blocked under v2 until host-native file-aware mediation is implemented. MCP Execute approval is separate.";
   if(name==="superagent_chrome_cdp_observe")
     return "Only list_targets or transport_status with exact managed/Delegate arguments; HTTP(S) tab metadata is filtered, with no DOM read, navigation, evaluate, upload, or file:// access.";
   if(name==="superagent_chrome_cdp_web")
