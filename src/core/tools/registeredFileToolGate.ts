@@ -371,7 +371,19 @@ export function registeredFileToolGate(
   if(certifiedDelegateWebAction(call))return null;
   if(certifiedLanInventory(call.name,call.args))return null;
   if(certifiedSupervisedCoreMutation(call.name,call.args))return null;
-  if(call.name === "superagent_desktop_ui" && certifiedDesktopDiscovery(call.args))return null;
+  if(call.name === "superagent_desktop_ui"){
+    if(certifiedDesktopDiscovery(call.args))return null;
+    // A human-granted MCP Execute capability cannot override the independent
+    // host permanent-file policy. Distinguish a malformed metadata command
+    // from an inherently uncertified content/input command without echoing
+    // potentially sensitive caller arguments or paths.
+    const command=call.args && typeof call.args.command==="string"
+      ? call.args.command : call.args && typeof call.args.action==="string"
+        ? call.args.action : "";
+    if(CERTIFIED_DESKTOP_DISCOVERY.has(command))
+      return "Desktop UI metadata command has unsupported arguments for permanent file-policy certification; use only the documented fields.";
+    return "Desktop UI window content, session, lifecycle and input commands are not certified for permanent file access restrictions; MCP Execute approval does not replace host-native file-aware mediation.";
+  }
   if(call.name === "superagent_manage_services" && certifiedServiceInspection(call.args))
     return null;
   if(READ_SEARCH.has(call.name) &&
