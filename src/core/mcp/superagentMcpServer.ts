@@ -1558,8 +1558,16 @@ function extractMcpResultText(result: unknown): string {
               "close_app","restart_app","plan_package_change","apply_package_change"]);
             const hostBlock = filePolicyActive
               ? registeredFileToolGate({name:found.name,args:commandArgs},activeWorkspace) : null;
-            const granted = Boolean(callerIdentity?.subject &&
-              hasProjectAccess(callerIdentity,MCP_CONNECTION_PROJECT_ID,"execute"));
+            // A corrupt or unreadable grant store is not authorization.
+            // Keep diagnostics fail-closed and never expose its local path.
+            let connectionDecision: "granted" | "approval_required" | "unavailable" = "approval_required";
+            try {
+              if (callerIdentity?.subject &&
+                  hasProjectAccess(callerIdentity,MCP_CONNECTION_PROJECT_ID,"execute"))
+                connectionDecision = "granted";
+            } catch {
+              connectionDecision = "unavailable";
+            }
             preflight = {
               command: knownCommands.has(command) ? command : "unrecognized",
               hostFilePolicy: {
@@ -1570,7 +1578,7 @@ function extractMcpResultText(result: unknown): string {
                     : "not_certified_or_denied"
                   : null,
               },
-              mcpConnectionExecute: { decision: granted ? "granted" : "approval_required" },
+              mcpConnectionExecute: { decision: connectionDecision },
               oauthScope: { decision: "visible_under_current_token" },
               nativeHostApproval: { decision: "not_checked" },
               performedExecution: false,
