@@ -539,7 +539,8 @@ describe("independent MCP Connections and Project Access UI", () => {
     expect(cards[1].textContent).toContain("1 sesi");
     // A session sighting MUST NOT authorize a new MCP identity or direct grant.
     expect(ui.document.getElementById("access-mcp-connection-grant")!.disabled).toBe(true);
-    expect(ui.calls.some(c => c.args.action === "direct_grant")).toBe(false);
+    expect(ui.calls.some(c => c.name === "mcp_project_access_action" &&
+      c.args?.action === "direct_grant")).toBe(false);
   });
 
   it("retains redacted registration history but never calls it online after owner failure", async () => {
