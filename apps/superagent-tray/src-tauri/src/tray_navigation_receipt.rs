@@ -26,12 +26,25 @@ fn safe_id(id: &str, max: usize) -> bool {
     id.bytes().all(|b| b.is_ascii_alphanumeric() ||
         matches!(b, b'-' | b'_' | b':' | b'.'))
 }
+// Legacy daemon incident keys include one of two fixed English labels. They
+// must never grant arbitrary spaces, slashes, URLs or user-selected labels.
+fn safe_event_id(id:&str)->bool {
+    if safe_id(id,180) {return true;}
+    for suffix in [":Scheduled run needs attention",
+        ":Scheduled notification delivery failed"] {
+        if let Some(prefix)=id.strip_suffix(suffix) {
+            return id.len()<=180 && prefix.strip_prefix("daemon-run:")
+                .is_some_and(|run|safe_id(run,160));
+        }
+    }
+    false
+}
 fn hash_id(id: &str) -> String { format!("{:x}", Sha256::digest(id.as_bytes())) }
 
 /// All routes are constants. Titles, bodies, caller-provided paths and URLs
 /// never become navigation destinations.
 fn fixed_route(source: &str, id: &str) -> Option<(&'static str, Option<(String, &'static str)>)> {
-    if !safe_id(id, 180) { return None; }
+    if !safe_event_id(id) { return None; }
     if source == "security" && id.starts_with("mcp-pending:") {
         let rest = &id["mcp-pending:".len()..];
         let (tab, request) = if let Some(rest) = rest.strip_prefix("connections:") {
@@ -60,8 +73,8 @@ fn fixed_route(source: &str, id: &str) -> Option<(&'static str, Option<(String, 
         ("reminder", id) if id.starts_with("reminder:") => "history",
         ("reminder", _) => "jobs",
         ("jobs", id) if id.starts_with("daemon-run:") &&
-            (id.ends_with(":Scheduled.run.needs.attention") ||
-             id.ends_with(":Scheduled.notification.delivery.failed")) => "history",
+            (id.ends_with(":Scheduled run needs attention") ||
+             id.ends_with(":Scheduled notification delivery failed")) => "history",
         ("jobs", _) => "jobs",
         ("updates", _) => "updates",
         ("shutdown", _) | ("overview", _) => "overview",
@@ -116,6 +129,9 @@ mod tests {
         assert_eq!(fixed_route("security","mcp-pending:connections:req_012")
             .unwrap().0,"security:connections");
         assert_eq!(fixed_route("core","health:core").unwrap().0,"runtime:core");
+        assert_eq!(fixed_route("jobs","daemon-run:run_42:Scheduled run needs attention")
+            .unwrap().0,"history");
+        assert!(fixed_route("jobs","daemon-run:run_42:fake arbitrary label").is_none());
         assert!(fixed_route("security","mcp-pending:connections:../abc").is_none());
         assert!(fixed_route("security","mcp-pending:connections:http://other").is_none());
         assert!(fixed_route("core","../../private").is_none());

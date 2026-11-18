@@ -288,6 +288,7 @@ describe("Tray Notification Manager", () => {
     mounted.window.__superagentAccessManagerFocusRequest = focus;
     open.trigger("click");
     expect(mounted.nav).toHaveBeenCalledWith("security");
+    await new Promise<void>((resolve)=>setImmediate(resolve));
     expect(focus).toHaveBeenCalledWith("request-42", null);
     expect(mounted.mockInvocations.some(call => call.action === "approve")).toBe(false);
     const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
@@ -318,6 +319,7 @@ describe("Tray Notification Manager", () => {
     const focus = vi.fn(async () => undefined);
     mounted.window.__superagentAccessManagerFocusRequest = focus;
     open.trigger("click");
+    await new Promise<void>((resolve)=>setImmediate(resolve));
     expect(focus).toHaveBeenCalledWith("req_x7", tab);
     expect(mounted.mockInvocations.some(call => call.action === "approve")).toBe(false);
   });
@@ -397,7 +399,7 @@ describe("Tray Notification Manager", () => {
 
   it("deep-links to an exact MCP approval without invoking approve/deny", () => {
     const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
-    expect(js).toContain("window.__superagentAccessManagerFocusRequest(");
+    expect(js).toContain("const focus = window.__superagentAccessManagerFocusRequest;");
     expect(access).toContain("window.__superagentAccessManagerFocusRequest = async (requestId, tabHint = null)");
     expect(access).toContain("card.dataset.requestId = String(req.requestId ||");
     expect(access).toContain("row.dataset.requestId = String(req.requestId ||");
@@ -469,6 +471,8 @@ describe("Tray Notification Manager", () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
       const card = mounted.get("tray-notification-recent").children[0];
       const open = card.children[1].children[3].children[0];
+      mounted.window.__superagentAccessManagerFocusRequest = vi.fn(async () =>
+        ({targetFound:true,tab:"connections"}));
       if (mode === "card") card.trigger("click", { target: { closest: () => null } });
       else open.trigger("click");
       expect(mounted.nav).toHaveBeenCalledWith("security:connections");

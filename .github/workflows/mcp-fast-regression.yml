@@ -10,6 +10,7 @@ on:
       - "scripts/report-mcp-policy-readiness.ts"
       - "src/core/runtime/mcpManagedTunnelOwner.ts"
       - "src/core/runtime/serviceManager.ts"
+      - "src/core/runtime/serviceOwnerAttestation.ts"
       - "src/core/desktopUi/liveActivationGate.ts"
       - "tests/desktop-ui-activation/live-activation-gate.test.ts"
       - "src/core/tools/registeredFileToolGate.ts"
@@ -62,6 +63,7 @@ on:
       - "scripts/report-mcp-policy-readiness.ts"
       - "src/core/runtime/mcpManagedTunnelOwner.ts"
       - "src/core/runtime/serviceManager.ts"
+      - "src/core/runtime/serviceOwnerAttestation.ts"
       - "src/core/desktopUi/liveActivationGate.ts"
       - "tests/desktop-ui-activation/live-activation-gate.test.ts"
       - "src/core/tools/registeredFileToolGate.ts"
@@ -144,6 +146,8 @@ jobs:
             tests/mcpPolicyReadinessReport.test.ts \
             tests/mcpApprovalAndFilePolicy.test.ts \
             tests/mcpPermissionDecision.test.ts \
+            tests/serviceOwnerAttestation.test.ts \
+            tests/serviceManagerMcp.test.ts \
             tests/mcpExactFileSearch.test.ts \
             tests/mcpExplicitGrepIntegration.test.ts \
             tests/mcpPolicyHttpSmoke.test.ts \
@@ -192,6 +196,8 @@ jobs:
           bun --bun x vitest run --maxWorkers=2
           tests/mcpApprovalAndFilePolicy.test.ts
           tests/mcpPermissionDecision.test.ts
+          tests/serviceOwnerAttestation.test.ts
+          tests/serviceManagerMcp.test.ts
           tests/mcpOAuthStore.test.ts
           tests/desktopTrayNotificationsUi.test.ts
           tests/desktopTrayFeedback.test.ts
