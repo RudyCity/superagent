@@ -59,7 +59,7 @@ describe("Android + Windows LAN file transfer security and interoperability cont
   it("Windows requires explicit local selection and target APPROVE before sharing", () => {
     expect(lanCli).toContain('command.startsWith("share ")');
     expect(lanCli).toContain("client.shareSelectedFile(chosen)");
-    expect(lanCli).toContain('if (request.detail) console.log("File: " + request.detail)');
+    expect(lanCli).toContain('request.kind === "terminal" ? "Terminal command/input: " : "File: "');
     expect(transport).toContain('kind: direction === "upload" ? "file-upload" : "file-download"');
     expect(transport).toContain("await options.onApproval");
     expect(transport).toContain("files.clear()");
