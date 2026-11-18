@@ -104,10 +104,10 @@ describe("MCP Connection Controls independent from host file-policy certificatio
         name:"superagent_desktop_ui",checkArguments:[],
       });
       expect(invalid.isError).toBe(true);
-      const unavailable=await invoke(server,"superagent_tool_describe",{
+      const unsupportedTool=await invoke(server,"superagent_tool_describe",{
         name:"superagent_server_health",checkArguments:{command:"probe"},
       });
-      expect(unavailable.isError).toBe(true);
+      expect(unsupportedTool.isError).toBe(true);
     }finally{unsubscribe();await server.close();}
   });
 

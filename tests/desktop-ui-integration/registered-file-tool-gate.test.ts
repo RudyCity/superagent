@@ -195,7 +195,11 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       {command:"find_window",query:"Chrome",pid:-1},
       {command:"list_windows",limit:1000},
       {command:"live_inventory",sessionToken:"a".repeat(64)},
-    ])expect(gate(args)).toMatch(/not certified/);
+    ])expect(gate(args)).toMatch(/not certified|unsupported arguments/);
+    // Malformed metadata arguments are schema failures, not missing grants.
+    const malformed=gate({command:"inspect_security_prompts",limit:10,privatePath:"DO_NOT_ECHO"});
+    expect(malformed).toMatch(/unsupported arguments/);
+    expect(malformed).not.toContain("DO_NOT_ECHO");
   });
 
   it("explains Desktop UI file-policy refusal without weakening authorization or echoing private arguments",()=>{

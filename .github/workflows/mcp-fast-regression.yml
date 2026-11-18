@@ -39,6 +39,8 @@ on:
       - "src/core/lanRemote/fileRelayManager.ts"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
       - "tests/desktopAccessManagerTrayUi.test.ts"
+      - "tests/desktopTrayNotificationsUi.test.ts"
+      - "tests/desktopTrayFeedback.test.ts"
       - "tests/desktopRuntimeUi.test.ts"
       - "apps/superagent-tray/ui/runtime.js"
       - "tests/projectOperatorProof.test.ts"
@@ -89,6 +91,8 @@ on:
       - "src/core/lanRemote/fileRelayManager.ts"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
       - "tests/desktopAccessManagerTrayUi.test.ts"
+      - "tests/desktopTrayNotificationsUi.test.ts"
+      - "tests/desktopTrayFeedback.test.ts"
       - "tests/desktopRuntimeUi.test.ts"
       - "apps/superagent-tray/ui/runtime.js"
       - "tests/projectOperatorProof.test.ts"
@@ -150,6 +154,8 @@ jobs:
             tests/mcpResponseLease.test.ts \
             tests/desktopOverviewOperations.test.ts \
             tests/desktopAccessManagerTrayUi.test.ts \
+            tests/desktopTrayNotificationsUi.test.ts \
+            tests/desktopTrayFeedback.test.ts \
             tests/desktopRuntimeUi.test.ts \
             tests/mcpProjectAccessOperatorRoutes.test.ts \
             tests/projectOperatorProof.test.ts \
@@ -184,6 +190,9 @@ jobs:
         run: >
           bun --bun x vitest run --maxWorkers=2
           tests/mcpApprovalAndFilePolicy.test.ts
+          tests/mcpOAuthStore.test.ts
+          tests/desktopTrayNotificationsUi.test.ts
+          tests/desktopTrayFeedback.test.ts
           tests/desktop-ui-integration/persistent-access-policy.test.ts
           tests/desktop-ui-integration/trusted-desktop-input.test.ts
           tests/lanFileQueueRecovery.test.ts

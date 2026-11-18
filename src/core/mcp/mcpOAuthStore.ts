@@ -383,6 +383,8 @@ export class McpOAuthStore {
     const newRefreshToken = randomToken(32);
     this.accessTokens.set(sha256Hex(accessToken), {
       tokenHash: sha256Hex(accessToken),
+      // Preserve the operator-approved label on refresh, not as authority.
+      ownerConnectionName: rec.ownerConnectionName,
       clientId: rec.clientId,
       scope: rec.scope,
       resource: rec.resource,
