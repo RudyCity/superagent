@@ -18,6 +18,7 @@ type AndroidReceipt = Awaited<ReturnType<typeof execAndroidShellCommand>>;
 export type FleetTerminalResult =
   | { deviceId: string; platform: "windows" | "android"; ok: true; session: { connected: boolean } }
   | { deviceId: string; platform: "windows"; ok: true; terminal: LanTerminalSnapshot }
+  | { deviceId: string; platform: "windows"; ok: false; error: string; terminal: LanTerminalSnapshot }
   | { deviceId: string; platform: "android"; ok: true; shell: AndroidReceipt; outputTruncated: boolean }
   | { deviceId: string; platform: "android"; ok: false; shell: AndroidReceipt; outputTruncated: boolean; error: string }
   | { deviceId: string; platform: "windows" | "android"; ok: false; error: string };
@@ -204,12 +205,24 @@ export class LanTerminalFleet {
             : { deviceId: t.deviceId, platform: "android", ok: false, shell: boundedShell,
                 outputTruncated, error: "Android sandbox command failed or was cancelled." };
         }
-        const terminal = action === "start" ? await this.deps.start(t.deviceId, t.command!)
+        let terminal = action === "start" ? await this.deps.start(t.deviceId, t.command!)
           : action === "read" ? await this.deps.read(t.deviceId, t.jobId!, t.cursor!)
           : action === "input" ? await this.deps.input(t.deviceId, t.jobId!, t.text!, t.appendNewline!)
           : action === "key" ? await this.deps.key(t.deviceId, t.jobId!, t.key!)
           : action === "resize" ? await this.deps.resize(t.deviceId, t.jobId!, t.cols!, t.rows!)
           : await this.deps.stop(t.deviceId, t.jobId!);
+        if (action === "stop" && terminal.running) {
+          // Stop is an acknowledged request until the *same target* reports
+          // process exit. Only read/poll, never replay stop after ambiguity.
+          const limit = Date.now() + 4_000;
+          while (terminal.running && Date.now() < limit) {
+            await new Promise<void>(resolve => setTimeout(resolve, 120));
+            terminal = await this.deps.read(t.deviceId, t.jobId!, terminal.nextCursor);
+          }
+          if (terminal.running)
+            return { deviceId: t.deviceId, platform: "windows", ok: false,
+              error: "Stop requested but process exit not yet verified on this device.", terminal };
+        }
         return { deviceId: t.deviceId, platform: "windows", ok: true, terminal };
       } catch (error) {
         return { deviceId: t.deviceId, platform: device.platform, ok: false, error: message(error) };
