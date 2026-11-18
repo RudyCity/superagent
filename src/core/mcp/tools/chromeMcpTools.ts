@@ -4,7 +4,7 @@
 
 import { McpToolResult } from "../types.js";
 import { fileRulesRegistered } from "../../tools/registeredFileToolGate.js";
-import { certifiedBrowserObservation, certifiedDelegateWebAction } from "../../tools/browserFilePolicyCertification.js";
+import { certifiedBrowserObservation, certifiedDelegateWebAction, certifiedRemoteWebUrl } from "../../tools/browserFilePolicyCertification.js";
 import { safeManagedChromeObservation } from "../../tools/safeManagedChromeObservation.js";
 import { safeDelegateChromeObservation } from "../../tools/safeDelegateChromeObservation.js";
 import { delegateCdpTransport } from "../../delegate/cdpTransport.js";
@@ -73,11 +73,8 @@ async function assertLiveDelegateWebTarget(args: Record<string, unknown>): Promi
   const current = targets.find(item => item.tabId === target.tabId &&
     item.connectionId === target.connectionId);
   if (!current?.url) throw new Error("DELEGATE_WEB_TARGET_NOT_VISIBLE");
-  let url: URL;
-  try { url = new URL(current.url); }
-  catch { throw new Error("DELEGATE_WEB_TARGET_NOT_HTTP"); }
-  if (url.protocol !== "http:" && url.protocol !== "https:")
-    throw new Error("DELEGATE_WEB_TARGET_NOT_HTTP");
+  if (!certifiedRemoteWebUrl(current.url))
+    throw new Error("DELEGATE_WEB_TARGET_NOT_PUBLIC_HTTP");
 }
 
 /** Validated direct MCP entrypoint; implementation uses the EXISTING signed
