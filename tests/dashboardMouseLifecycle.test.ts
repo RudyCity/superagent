@@ -41,7 +41,7 @@ describe("dashboard mouse lifecycle and keyboard responsiveness", () => {
     try {
       await new Promise((resolve) => setTimeout(resolve, 30));
       const initialListeners = onSpy.mock.calls.filter(([event]) => event === "data").length;
-      const initialEnableWrites = writeSpy.mock.calls.filter(([data]) => String(data).includes("\\x1b[?1000h")).length;
+      const initialEnableWrites = writeSpy.mock.calls.filter(([data]) => String(data).includes("\x1b[?1000h")).length;
       expect(initialListeners).toBe(1);
       expect(initialEnableWrites).toBe(1);
 
@@ -51,7 +51,7 @@ describe("dashboard mouse lifecycle and keyboard responsiveness", () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
       expect(onSpy.mock.calls.filter(([event]) => event === "data")).toHaveLength(1);
       expect(offSpy.mock.calls.filter(([event]) => event === "data")).toHaveLength(0);
-      expect(writeSpy.mock.calls.filter(([data]) => String(data).includes("\\x1b[?1000h"))).toHaveLength(1);
+      expect(writeSpy.mock.calls.filter(([data]) => String(data).includes("\x1b[?1000h"))).toHaveLength(1);
     } finally {
       view.unmount();
     }
