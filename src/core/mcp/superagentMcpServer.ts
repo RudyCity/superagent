@@ -10,7 +10,7 @@ import { registeredFileToolGate, fileRulesRegistered, getPermanentFileToolReadin
 
 import fs from "fs";
 import { blockedYoloToolCall } from "../yoloBlocklist.js";
-import { MCP_CONNECTION_PROJECT_ID } from "../project/projectAccessRequestStore.js";
+import { MCP_CONNECTION_PROJECT_ID, createProjectAccessRequest } from "../project/projectAccessRequestStore.js";
 import path from "path";
 import os from "os";
 import crypto from "node:crypto";
@@ -1352,7 +1352,27 @@ function extractMcpResultText(result: unknown): string {
         && toolName !== "superagent_revoke_project_access"
         && (!callerIdentity?.subject ||
           !hasProjectAccess(callerIdentity, MCP_CONNECTION_PROJECT_ID, "execute"))) {
-      const reason = "[MCP_APPROVAL_REQUIRED] This operation requires the 'execute' capability on MCP Connection Controls, approved by the human in SuperAgent Tray. Chat YOLO does not authorize MCP.";
+      // An authorization error alone is invisible to the native Tray inbox.
+      // Queue a bounded, identity-bound request only after OAuth write-scope
+      // validation. This NEVER grants access, replays the tool, or consults YOLO.
+      // The broker reuses an existing pending request for the same principal.
+      let pendingRequestId: string | undefined;
+      if (callerIdentity?.subject) {
+        try {
+          const pending = createProjectAccessRequest(callerIdentity, {
+            projectId: MCP_CONNECTION_PROJECT_ID,
+            capabilities: ["execute"],
+            reason: "Authenticated MCP connection requested an operator-approved execution capability.",
+          });
+          if (pending.code === "APPROVAL_PENDING") pendingRequestId = pending.requestId;
+        } catch {
+          // A broken/unavailable request store must never let execution through.
+          // Do not leak local storage paths or the identity credential binding.
+        }
+      }
+      const reason = "[MCP_APPROVAL_REQUIRED] This operation requires the 'execute' capability on MCP Connection Controls, approved by the human in SuperAgent Tray. Chat YOLO does not authorize MCP." +
+        (pendingRequestId ? " Approval pending: " + pendingRequestId + "." :
+          " Submit an explicit superagent_request_project_access request if no approval is visible.");
       auditContext.authorizationDecision = "denied";
       auditContext.errorCode = "mcp_approval_required";
       emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
