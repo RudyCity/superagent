@@ -116,12 +116,38 @@
     button.disabled = state.busy;
     container.append(button);
   }
+  // Route only to local, fixed Tray pages. An MCP pending request is carried
+  // across asynchronous Access Manager initialization; clicking never grants
+  // a project or connection capability.
+  function openDestination(item) {
+    const page = destination[item.source];
+    if (!page) return;
+    const requestId = item.source === "security" && item.id.startsWith("mcp-pending:")
+      ? item.id.slice("mcp-pending:".length) : "";
+    if (requestId) window.__superagentPendingAccessNotificationId = requestId;
+    close();
+    if (typeof window.navigateToPage === "function") window.navigateToPage(page);
+    else if (window.location) window.location.hash = "#" + page;
+    if (requestId && typeof window.__superagentAccessManagerFocusRequest === "function") {
+      void Promise.resolve(window.__superagentAccessManagerFocusRequest(requestId)).catch(() => {});
+    }
+  }
   function noteCard(item, compact) {
     const wrapper = element("article",
       "notification-item severity-" + item.severity +
       (item.readAt ? " is-read" : " is-unread") +
       (item.resolvedAt ? " is-resolved" : "") +
       (item.archivedAt ? " is-archived" : ""));
+    const page = destination[item.source];
+    if (page) {
+      wrapper.className += " is-navigable";
+      // The card body is a navigation affordance; individual lifecycle
+      // action buttons retain their own behavior and must not navigate.
+      wrapper.addEventListener("click", (event) => {
+        if (event.target?.closest?.("button, a, input, select, textarea")) return;
+        openDestination(item);
+      });
+    }
     const indicator = element("span", "notification-item-indicator");
     indicator.setAttribute("aria-hidden", "true");
     const copy = element("div", "notification-item-copy");
@@ -140,20 +166,14 @@
     }
     copy.append(heading, meta, element("p", "notification-item-text", item.body));
     const actions = element("div", "notification-item-actions");
-    const page = destination[item.source];
     if (page) {
-      const open = element("button", "notification-link", "View " + page.replaceAll("-", " "));
+      const isPendingAccess = item.source === "security" && item.id.startsWith("mcp-pending:");
+      const label = isPendingAccess ? "Review pending access"
+        : item.source === "security" ? "Open Security Approval"
+          : "View " + page.replaceAll("-", " ");
+      const open = element("button", "notification-link", label);
       open.type = "button";
-      open.addEventListener("click", () => {
-        close();
-        window.navigateToPage?.(page);
-        // The opaque request ID already belongs to the authenticated native
-        // inbox. Focus only; approval remains a separate human action.
-        if (item.source === "security" && item.id.startsWith("mcp-pending:")) {
-          void Promise.resolve(window.__superagentAccessManagerFocusRequest?.(
-            item.id.slice("mcp-pending:".length))).catch(() => {});
-        }
-      });
+      open.addEventListener("click", () => openDestination(item));
       actions.append(open);
     }
     addAction(actions, item.readAt ? "Mark unread" : "Mark read",
