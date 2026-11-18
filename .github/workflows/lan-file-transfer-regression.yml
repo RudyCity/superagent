@@ -20,6 +20,8 @@ on:
       - "apps/superagent-tray/ui/lan-transfer-diagnostics.js"
       - "apps/superagent-tray/ui/lan-sha256.js"
       - "apps/superagent-tray/ui/lan-devices.js"
+      - "apps/superagent-tray/ui/lan-terminal-task.js"
+      - "tests/lanTerminal*.test.ts"
       - "apps/superagent-tray/ui/lan-devices.css"
       - "apps/superagent-tray/ui/index.html"
       - "apps/superagent-tray/src-tauri/src/main.rs"
@@ -62,6 +64,8 @@ on:
       - "apps/superagent-tray/ui/lan-transfer-diagnostics.js"
       - "apps/superagent-tray/ui/lan-sha256.js"
       - "apps/superagent-tray/ui/lan-devices.js"
+      - "apps/superagent-tray/ui/lan-terminal-task.js"
+      - "tests/lanTerminal*.test.ts"
       - "apps/superagent-tray/ui/lan-devices.css"
       - "apps/superagent-tray/ui/index.html"
       - "apps/superagent-tray/src-tauri/src/main.rs"
@@ -107,6 +111,7 @@ jobs:
           node --check apps/superagent-tray/ui/lan-transfer-diagnostics.js
           node --check apps/superagent-tray/ui/lan-sha256.js
           node --check apps/superagent-tray/ui/lan-devices.js
+          node --check apps/superagent-tray/ui/lan-terminal-task.js
       - name: Run transfer, folder, owner-approval and UI regressions
         if: ${{ always() && !cancelled() }}
         run: >-
@@ -138,6 +143,9 @@ jobs:
           tests/androidLanLargeSourceContract.test.ts
           tests/androidLanBackgroundTransferContract.test.ts
           tests/trayLanBridge.test.ts
+          tests/lanTerminalTasks.test.ts
+          tests/lanTerminalMcpContract.test.ts
+          tests/lanTerminalTrayUi.test.ts
 
   android-java:
     name: Android native Java compile
