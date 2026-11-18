@@ -144,6 +144,18 @@ are not saved as history. A Bluetooth keyboard makes terminal entry easier on TV
 This is an app-sandbox shell, not an unrestricted Android system shell or an
 authenticated remote terminal to the PC.
 
+### Android local terminal usability (source update 2026-11-18)
+
+The local **Terminal** tab now uses a bounded, independently scrollable
+220dp console viewport; shows running, stop-requested and exit-code status;
+and keeps its output selectable for copying. Stop disables repeated clicks
+until the worker completes. This is a UI improvement only; the shell remains
+a foreground, app-UID /system/bin/sh sandbox limited to **10 seconds and
+24 KiB**, not a root shell or a persistent interactive PTY. The local terminal
+is still blocked while remote support/screen sharing is active. Packaging
+and compatibility must be checked on physical Android phones and TVs before
+declaring the change released.
+
 ## Native Android dashboard (0.10.0)
 
 The companion now uses a native, accessible, five-tab mobile dashboard:
