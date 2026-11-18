@@ -42,6 +42,8 @@ describe("2 independently approved LAN receiver terminal sessions", () => {
       list: listLanDevices, open: openLanSession, close: closeLanSession,
       start: startLanTerminal, read: readLanTerminal,
       input: inputLanTerminal, stop: stopLanTerminal, android: execAndroidShellCommand,
+      key: async () => { throw Error("No ConPTY key needed in this two-receiver test."); },
+      resize: async () => { throw Error("No ConPTY resize needed in this two-receiver test."); },
       fullYolo: () => true, destructive: () => false,
     });
     const command = process.platform === "win32" ? "Start-Sleep -Seconds 20" : "sleep 20";
