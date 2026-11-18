@@ -85,8 +85,7 @@ export function describeBoundedServicePermission(args:unknown,filePolicyActive:b
     layers:({oauthScope:"granted",connectionExecute:"not_checked",
       projectCapability:"not_checked",
       hostFilePolicy:!filePolicyActive?"not_checked":valid?"granted":"blocked",
-      nativeConsent:"not_checked",targetIdentity:"not_checked",hostOwner:"not_checked"}
-      satisfies Record<string,McpPermissionLayerState>),
+      nativeConsent:"not_checked",targetIdentity:"not_checked",hostOwner:"not_checked"} satisfies Record<string,McpPermissionLayerState>),
     remediation:valid
       ?"Metadata-only advisory. Runtime still validates action, owner and target."
       :"Only bounded read-only action, service, port and limit are permitted; no approval changes the schema.",
