@@ -33,6 +33,7 @@ export function certifiedBrowserObservation(call:BrowserCall):boolean{
  */
 export function certifiedRemoteWebUrl(raw:unknown):boolean {
  if(typeof raw!=="string"||!raw||raw.length>4096)return false;
+ if(raw.includes(String.fromCharCode(92))||/[\u0000-\u001f]/.test(raw))return false;
  try {
    const url=new URL(raw);
    if(url.protocol!=="http:"&&url.protocol!=="https:")return false;
