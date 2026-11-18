@@ -3715,15 +3715,23 @@ async fn poll_pending_security_requests(app: &tauri::AppHandle) -> Result<(), St
         .ok_or("Security inventory malformed")?;
     let mut active = HashSet::new();
     for request in requests.iter().take(300) {
-        if request.get("status").and_then(Value::as_str) != Some("pending") { continue; }
         let Some(id) = request.get("requestId").and_then(Value::as_str) else { continue; };
         if id.is_empty() || id.len() > 150 || id.chars().any(char::is_control) { continue; }
-        // Encode the exact native Access Manager tab in the incident identity.
-        // Only authenticated request metadata controls the tab; the label/body
-        // remain informational and cannot approve access.
+        // Identity and lifecycle are from authenticated Core inventory, not the
+        // notification body or a WebView-supplied approval result.
         let tab = if request.get("projectId").and_then(Value::as_str)
             == Some("mcp-connection") { "connections" } else { "mcp" };
         let key = format!("mcp-pending:{tab}:{id}");
+        let status = request.get("status").and_then(Value::as_str).unwrap_or("");
+        if status != "pending" {
+            let changed = if status == "expired" {
+                tray_notification_center::expire_verified(&config_dir()?, &key)?
+            } else if ["approved", "denied", "cancelled", "rejected", "revoked"].contains(&status) {
+                tray_notification_center::resolve(&config_dir()?, &key)?
+            } else { false };
+            if changed { let _ = app.emit("tray-notifications-changed", ()); }
+            continue;
+        }
         active.insert(key.clone());
         // Informational only. The label was bound to a verified OAuth token
         // after owner consent; it is NEVER an approval or client identity.
@@ -4193,6 +4201,29 @@ fn main() {
                     security_log.report("Security notification projection", &security);
                     reminder_log.report("Reminder notification projection", &reminders);
                     health_log.report("Operational notification projection", &health);
+                    // A digest is claimed in durable native storage before
+                    // delivery, so restarts or overlapping UI refreshes cannot
+                    // send the same daily summary twice. This never grants
+                    // access or includes private incident payloads.
+                    if preferences.notifications_enabled {
+                        if let Ok(dir) = config_dir() {
+                            match tray_notification_center::take_daily_digest(&dir) {
+                                Ok(Some((actions, information))) => {
+                                    let body = format!(
+                                        "{actions} action-required and {information} informational events in the last 24 hours. Open SuperAgent Tray for details."
+                                    );
+                                    if let Err(error) = handle.notification().builder()
+                                        .title("SuperAgent daily digest")
+                                        .body(&body).show() {
+                                        eprintln!("[tray] Daily digest OS delivery failed: {error}");
+                                    }
+                                    let _ = handle.emit("tray-notifications-changed", ());
+                                },
+                                Ok(None) => {},
+                                Err(error) => eprintln!("[tray] Daily digest unavailable: {error}"),
+                            }
+                        }
+                    }
                     tokio::time::sleep(Duration::from_secs(preferences.notification_poll_seconds))
                         .await;
                 }
