@@ -6,7 +6,7 @@ import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.j
 import { setFullYoloMode, setYoloMode, isPathWithinMcpScope, isToolCallWithinMcpScope } from "../src/core/permissions.js";
 import { registerProject } from "../src/core/project/projectRegistry.js";
 import { grantProjectAccess, revokeProjectAccess, hasProjectAccess } from "../src/core/project/projectAccessPolicy.js";
-import { MCP_CONNECTION_PROJECT_ID } from "../src/core/project/projectAccessRequestStore.js";
+import { MCP_CONNECTION_PROJECT_ID, listProjectAccessRequests } from "../src/core/project/projectAccessRequestStore.js";
 
 describe("MCP authorization is independent from chat YOLO", () => {
   let root = "";
@@ -138,11 +138,33 @@ describe("MCP authorization is independent from chat YOLO", () => {
     const server = makeServer();
     try {
       await expect(call(server, "superagent_delegate_send_message", {}))
-        .rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
+        .rejects.toThrow(/MCP_APPROVAL_REQUIRED.*Approval pending: req_/);
+      const pending = listProjectAccessRequests({status: "pending", projectId: MCP_CONNECTION_PROJECT_ID});
+      expect(pending).toHaveLength(1);
+      expect(pending[0].capabilities).toEqual(["execute"]);
+      expect(pending[0].subject).toBe(identity().subject);
       expect(hasProjectAccess(identity(), MCP_CONNECTION_PROJECT_ID, "execute")).toBe(false);
+      // Repeated denies must reuse the same request, not flood the Tray inbox.
+      await expect(call(server, "superagent_delegate_send_message", {}))
+        .rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
+      expect(listProjectAccessRequests({status: "pending", projectId: MCP_CONNECTION_PROJECT_ID})
+        .map(request => request.requestId)).toEqual([pending[0].requestId]);
       grantProjectAccess(identity(), MCP_CONNECTION_PROJECT_ID, ["execute"]);
       expect(hasProjectAccess(identity(), MCP_CONNECTION_PROJECT_ID, "execute")).toBe(true);
     } finally { await server.close(); }
+  });
+
+  it("insufficient OAuth write scope never queues a misleading approval request", async () => {
+    const reader = createSuperagentMcpServer({
+      workspace: root, authMode: "oauth", toolExposure: "full",
+      getIdentity: () => ({...identity(), scopes: ["mcp:tools"]}),
+    });
+    try {
+      await expect(call(reader, "superagent_delegate_send_message", {}))
+        .rejects.toThrow(/mcp:tools:write/);
+      expect(listProjectAccessRequests({status: "pending", projectId: MCP_CONNECTION_PROJECT_ID}))
+        .toEqual([]);
+    } finally { await reader.close(); }
   });
 
   it("gateway recursion cannot bypass a missing project grant", async () => {
