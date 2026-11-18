@@ -437,6 +437,42 @@
       if (!registryValid(registry)) throw Error("Respons registrasi tidak valid");
       state.registry = registry;
       renderRegistry();
+      // Register navigation before any optional/slow OS app discovery. Without
+      // this, notification clicks during Tray startup silently lose their target.
+      // Navigation only. Runtime Detection cannot issue or modify grants.
+      window.__superagentAccessManagerOpenTab = (tabName) => {
+        if (tabName !== "connections" && tabName !== "mcp") return;
+        setActiveTab(tabName);
+        void refreshMcpRequests();
+      };
+      // Navigation-only notification affordance. The actual approval/deny
+      // buttons remain protected by their existing native human review.
+      window.__superagentAccessManagerFocusRequest = async (requestId) => {
+        if (typeof requestId !== "string" || !requestId || requestId.length > 150 ||
+          /[\\x00-\\x1f]/.test(requestId)) return;
+        if (window.__superagentPendingAccessNotificationId === requestId)
+          window.__superagentPendingAccessNotificationId = null;
+        mcpNotificationFocus.id = requestId;
+        mcpNotificationFocus.didFocus = false;
+        // Show the requests pane even while the authenticated Core lookup runs.
+        // Once found, Connection Controls requests switch to Connections.
+        setActiveTab("mcp");
+        await refreshMcpRequests();
+        highlightMcpNotificationRequest();
+      };
+      window.__superagentAccessManagerRefresh = () => {
+        // Pending MCP approvals may have arrived since the page was first built.
+        // Refresh the actual request list on every Security page entry.
+        void refreshMcpRequests();
+        void refreshRegistry().catch(() => {});
+        void refreshWindows().catch(() => {});
+        void refreshInstalledApps().catch(() => {});
+        void refreshAuditLog().catch(() => {});
+        updateTabFromHash();
+      };
+      const pendingNotificationId = window.__superagentPendingAccessNotificationId;
+      if (typeof pendingNotificationId === "string")
+        void window.__superagentAccessManagerFocusRequest(pendingNotificationId);
       void refreshAuditLog();
       status("Aturan permanen tersimpan. Berlaku sampai kamu mencabutnya.", "success");
     } catch (error) {
@@ -1860,32 +1896,7 @@
           void refreshAuditLog().catch(() => {});
         }
       });
-      // Navigation only. Runtime Detection cannot issue or modify grants.
-      window.__superagentAccessManagerOpenTab = (tabName) => {
-        if (tabName !== "connections" && tabName !== "mcp") return;
-        setActiveTab(tabName);
-        void refreshMcpRequests();
-      };
-      // Navigation-only notification affordance. The actual approval/deny
-      // buttons remain protected by their existing native human review.
-      window.__superagentAccessManagerFocusRequest = async (requestId) => {
-        if (typeof requestId !== "string" || !requestId || requestId.length > 150 ||
-          /[\\x00-\\x1f]/.test(requestId)) return;
-        mcpNotificationFocus.id = requestId;
-        mcpNotificationFocus.didFocus = false;
-        await refreshMcpRequests();
-        highlightMcpNotificationRequest();
-      };
-      window.__superagentAccessManagerRefresh = () => {
-        // Pending MCP approvals may have arrived since the page was first built.
-        // Refresh the actual request list on every Security page entry.
-        void refreshMcpRequests();
-        void refreshRegistry().catch(() => {});
-        void refreshWindows().catch(() => {});
-        void refreshInstalledApps().catch(() => {});
-        void refreshAuditLog().catch(() => {});
-        updateTabFromHash();
-      };
+
     } catch {
       // Older installed Tray: preserve legacy panel, never fake active v2.
     }
