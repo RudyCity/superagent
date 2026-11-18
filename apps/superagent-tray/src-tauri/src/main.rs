@@ -797,7 +797,7 @@ async fn lan_support_action(
     action: String,
     payload: Option<Value>,
 ) -> Result<Value, String> {
-    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_stop", "close", "revoke", "screen", "input", "schema", "element", "control_request", "control_status", "control_revoke", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort", "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort",
+    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_stop", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_stop", "close", "revoke", "screen", "input", "schema", "element", "control_request", "control_status", "control_revoke", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort", "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort",
         "file_relay_start", "file_relay_status", "file_relay_cancel",
         "file_receive_v2_start", "file_receive_v2_status", "file_receive_v2_cancel"];
     if !ALL.contains(&action.as_str()) { return Err("Unsupported LAN action".into()); }
@@ -815,6 +815,7 @@ async fn lan_support_action(
         "tunnel_pair_request" => &["tunnelId", "fingerprint", "controller"],
         "tunnel_revoke" => &["tunnelId"],
         "exec" | "terminal_start" => &["deviceId", "command"],
+        "terminal_fleet_start" | "terminal_fleet_read" | "terminal_fleet_input" | "terminal_fleet_stop" => &["targets"],
         "terminal_read" => &["deviceId", "jobId", "cursor"],
         "terminal_input" => &["deviceId", "jobId", "text", "appendNewline"],
         "terminal_stop" => &["deviceId", "jobId"],
@@ -921,7 +922,8 @@ async fn lan_support_action(
         }
     } else if !["discover", "list", "tunnel_invite", "apk_download_qr", "tunnel_list",
         "file_relay_start", "file_relay_status", "file_relay_cancel",
-        "file_receive_v2_start", "file_receive_v2_status", "file_receive_v2_cancel"].contains(&action.as_str()) {
+        "file_receive_v2_start", "file_receive_v2_status", "file_receive_v2_cancel",
+        "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_stop"].contains(&action.as_str()) {
         let id = data["deviceId"].as_str().ok_or("Device ID required")?;
         if id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
             return Err("Invalid device ID".into());
@@ -955,6 +957,55 @@ async fn lan_support_action(
                text.chars().any(|c| c.is_control() && c != '\n' && c != '\t') ||
                data.get("appendNewline").is_some_and(|v| !v.is_boolean()) {
                 return Err("Invalid terminal input".into());
+            }
+        }
+    }
+    if action.starts_with("terminal_fleet_") {
+        let targets = data["targets"].as_array().ok_or("Terminal fleet targets required")?;
+        if !(2..=8).contains(&targets.len()) {
+            return Err("Fleet requires 2–8 distinct device targets".into());
+        }
+        let mut ids = std::collections::HashSet::new();
+        for target in targets {
+            let fields = target.as_object().ok_or("Invalid terminal fleet target")?;
+            let valid: &[&str] = match action.as_str() {
+                "terminal_fleet_start" => &["deviceId", "command"],
+                "terminal_fleet_read" => &["deviceId", "jobId", "cursor"],
+                "terminal_fleet_input" => &["deviceId", "jobId", "text", "appendNewline"],
+                "terminal_fleet_stop" => &["deviceId", "jobId"],
+                _ => return Err("Unknown terminal fleet action".into()),
+            };
+            if fields.keys().any(|key| !valid.contains(&key.as_str())) {
+                return Err("Unexpected terminal fleet field".into());
+            }
+            let device = target["deviceId"].as_str().ok_or("Target deviceId required")?;
+            if device.len() != 36 || !device.bytes().all(|byte| byte.is_ascii_hexdigit() || byte == b'-') ||
+                !ids.insert(device.to_owned()) {
+                return Err("Invalid or repeated target deviceId".into());
+            }
+            if action == "terminal_fleet_start" {
+                let command = target["command"].as_str().ok_or("Target command required")?;
+                if command.trim().is_empty() || command.chars().count() > 2000 ||
+                    command.chars().any(|value| value.is_control()) {
+                    return Err("Invalid target command".into());
+                }
+            } else {
+                let job = target["jobId"].as_str().ok_or("Target terminal jobId required")?;
+                if job.len() != 36 || !job.bytes().all(|byte| byte.is_ascii_hexdigit() || byte == b'-') {
+                    return Err("Invalid target terminal jobId".into());
+                }
+                if action == "terminal_fleet_read" && target.get("cursor").is_some() &&
+                    target["cursor"].as_u64().is_none() {
+                    return Err("Invalid target cursor".into());
+                }
+                if action == "terminal_fleet_input" {
+                    let input = target["text"].as_str().ok_or("Target terminal input required")?;
+                    if input.is_empty() || input.chars().count() > 1024 ||
+                        input.chars().any(|value| value.is_control()) ||
+                        target.get("appendNewline").is_some_and(|value| !value.is_boolean()) {
+                        return Err("Invalid target terminal input".into());
+                    }
+                }
             }
         }
     }
@@ -2655,12 +2706,12 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
         // Pairing / session approval is a physical action at the target console.
         // Avoid replaying ambiguous requests when the owner is slow to approve.
         match body.as_ref().and_then(|b| b.get("action")).and_then(Value::as_str) {
-            Some("pair" | "open" | "file_offer" | "terminal_start" | "terminal_input") => Duration::from_secs(125),
+            Some("pair" | "open" | "file_offer" | "terminal_start" | "terminal_input" | "terminal_fleet_start" | "terminal_fleet_input") => Duration::from_secs(125),
             // HTTPS quick tunnel provisioning may take 30s, followed by public readiness checks.
             // A slow QR operation must not be mistaken for an unreachable Core.
             Some("tunnel_invite" | "apk_download_qr") => Duration::from_secs(75),
             Some("file_put" | "file_get" | "file_finish" | "file_abort") => Duration::from_secs(18),
-            Some("terminal_read" | "terminal_stop") => Duration::from_secs(15),
+            Some("terminal_read" | "terminal_stop" | "terminal_fleet_read" | "terminal_fleet_stop") => Duration::from_secs(15),
             Some("exec") if body.as_ref().and_then(|b| b.get("command"))
                 .and_then(Value::as_str).is_some_and(|command|
                     command.starts_with("android.action.")) => Duration::from_secs(120),
