@@ -254,10 +254,26 @@ describe("Tray Notification Manager", () => {
     expect(focus).toHaveBeenCalledWith("req_x7", tab);
     expect(mounted.mockInvocations.some(call => call.action === "approve")).toBe(false);
   });
-  it("preserves allowlisted Security sub-tab routes across router initialization and hash changes", () => {
+  it("uses allowlisted deep links for every supported tabbed Tray page", () => {
     const app = fs.readFileSync(path.join(base, "ui/app.js"), "utf8");
+    const runtime = fs.readFileSync(path.join(base, "ui/runtime.js"), "utf8");
     const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
-    expect(app).toContain('^security:(connections|mcp|register|rules|audit)
+    expect(app).toContain('const route = subTab ? target + ":" + subTab : target;');
+    expect(app).toContain('security: ["connections", "mcp", "register", "rules", "audit"]');
+    expect(app).toContain('runtime: ["core", "mcp", "cloudflare", "muse", "chrome", "processes", "hosts"]');
+    expect(app).toContain('"lan-devices": ["devices", "terminal", "files", "screen"]');
+    expect(app).toContain('window.__superagentRuntimeOpenTab?.(subTab)');
+    expect(app).toContain('window.delegateSwitchTab?.(subTab)');
+    expect(app).toContain('window.lanSwitchTab?.(subTab)');
+    expect(app).toContain('window.settingsSwitchTab(subTab || currentTab)');
+    expect(runtime).toContain('window.__superagentRuntimeOpenTab = (tab)');
+    expect(access).toContain('const pendingNotificationTab = window.__superagentPendingAccessNotificationTab;');
+    expect(access).toContain('setActiveTab(tab || "mcp");');
+    expect(access).toContain('const tab = target.projectId === "mcp-connection" ? "connections" : "mcp";');
+    expect(access).not.toContain('/[\\\\x00-\\\\x1f]/.test(requestId)');
+  });
+
+  it("deep-links to an exact MCP approval without invoking approve/deny", () => {
     const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
     expect(js).toContain("window.__superagentAccessManagerFocusRequest(");
     expect(access).toContain("window.__superagentAccessManagerFocusRequest = async (requestId, tabHint = null)");
@@ -266,6 +282,56 @@ describe("Tray Notification Manager", () => {
     expect(access).toContain("entry.classList.add(\"access-mcp-request-highlight\")");
     expect(js).not.toContain('mcp_project_access_action');
   });
+
+  it.each([
+    ["core", "health:core", "runtime:core"],
+    ["security", "tray-ui:security:warning:1", "security"],
+    ["mcp", "health:mcp-owner", "runtime:mcp"],
+    ["tunnel", "health:tunnel", "runtime:cloudflare"],
+    ["delegate", "health:delegate-listener", "delegate:diagnostics"],
+    ["delegate", "tray-ui:delegate:error:1", "delegate:connection"],
+    ["runtime", "health:muse", "runtime:muse"],
+    ["runtime", "health:telegram", "settings:muse"],
+    ["runtime", "health:channel-hosts", "runtime:hosts"],
+    ["runtime", "tray-ui:runtime:error:1", "runtime:core"],
+    ["desktop-live", "tray-ui:desktop-live:error:1", "desktop-live"],
+    ["terminal", "tray-ui:terminal:error:1", "terminal"],
+    ["lan-devices", "tray-ui:lan-devices:warning:1", "lan-devices:devices"],
+    ["reminder", "reminder:run_42", "history"],
+    ["reminder", "reminder-legacy", "jobs"],
+    ["jobs", "daemon-run:run_42:Scheduled run needs attention", "history"],
+    ["jobs", "daemon-run:run_42:Scheduled notification delivery failed", "history"],
+    ["jobs", "tray-ui:jobs:warning:1", "jobs"],
+    ["updates", "tray-ui:updates:error:1", "updates"],
+    ["shutdown", "tray-ui:shutdown:error:1", "overview"],
+    ["settings", "tray-ui:settings:error:1", "settings:general"],
+    ["muse-files", "tray-ui:muse-files:warning:1", "muse-files"],
+    ["overview", "tray-ui:overview:warning:1", "overview"],
+    ["logs", "tray-ui:logs:error:1", "logs"],
+  ])("routes %s event %s to %s", async (source, id, route) => {
+    const mounted = mount([{
+      id, source, severity: "warning", title: "System event", body: "Review",
+      createdAt: Date.now(), readAt: null, archivedAt: null,
+    }]);
+    await Promise.resolve(); await Promise.resolve();
+    const card = mounted.get("tray-notification-recent").children[0];
+    card.trigger("click", { target: { closest: () => null } });
+    expect(mounted.nav).toHaveBeenCalledWith(route);
+    if (route === "history") {
+      expect(mounted.window.__superagentPendingRunNotificationId).toBe("run_42");
+    }
+    expect(mounted.mockInvocations.some(call => ["approve", "deny", "run"].includes(call.action))).toBe(false);
+  });
+
+  it("focuses a known run and explains when the run no longer exists", () => {
+    const app = fs.readFileSync(path.join(base, "ui/app.js"), "utf8");
+    expect(app).toContain('const targetId = window.__superagentPendingRunNotificationId;');
+    expect(app).toContain('selected && selected.runId === run.runId');
+    expect(app).toContain('The execution from this notification was not found in recent history.');
+    expect(html).toContain('id="history-notification-feedback"');
+    expect(rust).toContain('Review its execution in History.');
+  });
+
   it("uses generic OS alerts and explicit policy instead of leaking Core errors", () => {
     expect(rust).toContain('static OS_ALERT_BUDGET:');
     expect(rust).toContain('os_alert_budget_available()');
