@@ -67,7 +67,7 @@ async function main() {
       pending = { resolve, timer, request };
       console.log("\nINCOMING " + request.kind.toUpperCase() + " REQUEST");
       console.log("Controller: " + request.controller + " | LAN IP: " + request.ip);
-      if (request.detail) console.log("File: " + request.detail);
+      if (request.detail) console.log((request.kind === "terminal" ? "Terminal command/input: " : "File: ") + request.detail);
       console.log("Type APPROVE to allow, or DENY to reject (90 seconds).");
     });
   };
