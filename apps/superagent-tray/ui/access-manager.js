@@ -1858,16 +1858,19 @@
       };
       // Navigation-only notification affordance. The actual approval/deny
       // buttons remain protected by their existing native human review.
-      window.__superagentAccessManagerFocusRequest = async (requestId) => {
+      window.__superagentAccessManagerFocusRequest = async (requestId, tabHint = null) => {
         if (typeof requestId !== "string" || !requestId || requestId.length > 150 ||
-          /[\\x00-\\x1f]/.test(requestId)) return;
-        if (window.__superagentPendingAccessNotificationId === requestId)
+          /[\x00-\x1f]/.test(requestId)) return;
+        const tab = tabHint === "connections" || tabHint === "mcp" ? tabHint : null;
+        if (window.__superagentPendingAccessNotificationId === requestId) {
           window.__superagentPendingAccessNotificationId = null;
+          window.__superagentPendingAccessNotificationTab = null;
+        }
         mcpNotificationFocus.id = requestId;
         mcpNotificationFocus.didFocus = false;
-        // Show the requests pane even while the authenticated Core lookup runs.
-        // Once found, Connection Controls requests switch to Connections.
-        setActiveTab("mcp");
+        // The native incident identifies the tab even if Core is still loading.
+        // Authenticated request data can correct stale hints on refresh.
+        setActiveTab(tab || "mcp");
         await refreshMcpRequests();
         highlightMcpNotificationRequest();
       };
@@ -1882,8 +1885,9 @@
         updateTabFromHash();
       };
       const pendingNotificationId = window.__superagentPendingAccessNotificationId;
+      const pendingNotificationTab = window.__superagentPendingAccessNotificationTab;
       if (typeof pendingNotificationId === "string")
-        void window.__superagentAccessManagerFocusRequest(pendingNotificationId);
+        void window.__superagentAccessManagerFocusRequest(pendingNotificationId, pendingNotificationTab);
       void refreshAuditLog();
       showInitialSetupReminder();
       await refreshWindows();
