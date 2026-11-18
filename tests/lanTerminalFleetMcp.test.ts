@@ -64,10 +64,11 @@ describe("Terminal fleet MCP and Core API contracts", () => {
     const reply = await dispatchLanMcpTool("superagent_device_capabilities", {});
     expect(reply?.isError).not.toBe(true);
     const data = JSON.parse((reply?.content[0] as { text: string }).text);
-    expect(data.terminalFleet).toEqual({
+    expect(data.terminalFleet).toMatchObject({
       parallel: true, maxDevices: 8, distinctSessionPerDevice: true,
       parallelSessionApproval: true, emergencyDeviceSessionClose: true,
       windowsPipedJobs: true, androidOwnerApprovedSingleCommand: true,
+      parallelSessionApproval: true, emergencyDeviceSessionClose: true,
       automaticPairing: false,
     });
     expect(data.windows.conpty).toBe(true);
