@@ -41,6 +41,8 @@ describe("MCP full-catalog host file-policy transparency", () => {
     expect(getPermanentFileToolReadiness("superagent_delegate_sync_history")).toBe("certified_app_storage");
     expect(getPermanentFileToolReadiness("superagent_lan_capabilities")).toBe("certified_metadata");
     expect(getPermanentFileToolReadiness("superagent_tool_execute")).toBe("action_dependent");
+    expect(MCP_TOOL_CLASSIFICATION["superagent_chrome_cdp_observe"]).toBe("safe");
+    expect(getPermanentFileToolReadiness("superagent_chrome_cdp_observe")).toBe("certified_metadata");
   });
 
   it("reports active v2 restrictions for discovery without treating certification as authorization", async () => {
@@ -103,6 +105,32 @@ describe("MCP full-catalog host file-policy transparency", () => {
       const processStats = await invoke(server, "superagent_process_pool_status");
       expect(processStats.isError).not.toBe(true);
       expect(JSON.stringify(processStats)).toContain("ephemeral-os-process");
+    } finally { await server.close(); }
+  });
+
+  it("advertises narrow CDP observation directly to read-only MCP clients", async () => {
+    previous = process.env.SUPERAGENT_CONFIG_DIR;
+    config = fs.mkdtempSync(path.join(os.tmpdir(), "sa-mcp-cdp-observe-"));
+    process.env.SUPERAGENT_CONFIG_DIR = config;
+    fs.writeFileSync(path.join(config,"desktop-access-registry.json"),
+      JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
+    const server = createSuperagentMcpServer({
+      toolExposure: "gateway",
+      authMode: "oauth",
+      getIdentity: () => ({mode:"oauth",subject:"cdp-metadata-reader",scopes:["mcp:tools"]}),
+    });
+    try {
+      const tools = (await listing(server)).tools as Array<any>;
+      const observe = tools.find(x => x.name === "superagent_chrome_cdp_observe");
+      expect(observe).toBeDefined();
+      expect(observe._meta.filePolicy).toMatchObject({active:true,readiness:"certified_metadata"});
+      expect(observe._meta.mcpApproval).toMatchObject({kind:"read_only",oauthScope:"mcp:tools"});
+      expect(observe.annotations).toMatchObject({readOnlyHint:true,destructiveHint:false});
+      expect(tools.some(x => x.name === "superagent_chrome_cdp")).toBe(false);
+      const rejected = await invoke(server,"superagent_chrome_cdp_observe",
+        {command:"evaluate",transport:"delegate"});
+      expect(rejected.isError).toBe(true);
+      expect(JSON.stringify(rejected)).toMatch(/not certified|Uncertified|denied/i);
     } finally { await server.close(); }
   });
 });
