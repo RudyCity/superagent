@@ -548,15 +548,11 @@ pub(crate) async fn pick_permanent_access_executable(
     focused(&window, false)?;
     let win = window.clone();
     let selection = tauri::async_runtime::spawn_blocking(move || {
-        let mut builder = app.dialog().file().set_parent(&win);
+        let builder = app.dialog().file().set_parent(&win);
         #[cfg(windows)]
-        {
-            builder = builder.add_filter("Executable (*.exe)", &["exe"]);
-        }
+        let builder = builder.add_filter("Executable (*.exe)", &["exe"]);
         #[cfg(target_os = "macos")]
-        {
-            builder = builder.add_filter("Application (*.app)", &["app"]);
-        }
+        let builder = builder.add_filter("Application (*.app)", &["app"]);
         builder.blocking_pick_file()
     }).await.map_err(|_| "Native executable picker failed")?;
     focused(&window, false)?;
