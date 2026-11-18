@@ -273,7 +273,8 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(unverified.byId("runtime-named-mcp-status").innerHTML).not.toContain("Copy URL");
   });
 
-  it("separates Core, MCP, Cloudflare, Muse, Processes and Hosts into accessible tabs", async () => {
+  it("separates Core, MCP, Cloudflare, Muse, Chrome CDP, Processes and Hosts into accessible tabs", async () => {
+    const chromeRefresh = vi.fn();
     const ui = mountRuntime({
       scannedAt: Date.now(), healthyCoreCount: 1, activeProcessCount: 1,
       selectedCorePort: 7888,
@@ -288,12 +289,14 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
         {kind: "muse-watch", port: 9225, pid: 5555, state: "online"},
       ],
     });
+    (ui.context.window as any).__superagentManagedChromeRefresh = chromeRefresh;
     await new Promise(resolve => setImmediate(resolve));
     expect(ui.byId("runtime-remote").innerHTML).toContain('data-runtime-service-kind="mcp"');
     expect(ui.byId("runtime-remote").innerHTML).toContain('data-runtime-service-kind="cloudflare"');
     expect(ui.byId("runtime-remote").innerHTML).toContain('data-runtime-service-kind="muse-watch"');
     expect(ui.byId("runtime-remote").dataset.runtimeView).toBe("core");
     expect(ui.byId("runtime-remote-panel").hidden).toBe(false);
+    expect(ui.byId("runtime-chrome-panel").hidden).toBe(true);
 
     vm.runInContext('runtimeSelectTab("mcp")', ui.context);
     expect(ui.byId("runtime-servers-panel").hidden).toBe(true);
@@ -309,16 +312,25 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     keydown?.({currentTarget: {dataset: {runtimeTab: "mcp"}}, key: "ArrowRight", preventDefault});
     expect(preventDefault).toHaveBeenCalledOnce();
     expect(ui.byId("runtime-remote").dataset.runtimeView).toBe("cloudflare");
+    expect(ui.byId("runtime-cloudflare-endpoints").hidden).toBe(false);
     expect(ui.byId("runtime-tab-cloudflare").focus).toHaveBeenCalledOnce();
 
     vm.runInContext('runtimeSelectTab("muse")', ui.context);
     expect(ui.byId("runtime-muse-panel").hidden).toBe(false);
+    expect(ui.byId("runtime-cloudflare-endpoints").hidden).toBe(true);
     expect(ui.byId("runtime-muse-local").innerHTML).toContain("Stop Muse");
     expect(ui.byId("runtime-remote").dataset.runtimeView).toBe("muse");
     expect(ui.byId("runtime-muse-local").innerHTML).toContain("Regenerate Muse Token");
 
+    vm.runInContext('runtimeSelectTab("chrome")', ui.context);
+    expect(ui.byId("runtime-chrome-panel").hidden).toBe(false);
+    expect(ui.byId("runtime-remote-panel").hidden).toBe(true);
+    expect(ui.byId("runtime-tab-chrome").attributes["aria-selected"]).toBe("true");
+    expect(chromeRefresh).toHaveBeenCalledOnce();
+
     vm.runInContext('runtimeSelectTab("processes")', ui.context);
     expect(ui.byId("runtime-processes-panel").hidden).toBe(false);
+    expect(ui.byId("runtime-chrome-panel").hidden).toBe(true);
     expect(ui.byId("runtime-remote-panel").hidden).toBe(true);
     vm.runInContext('runtimeSelectTab("hosts")', ui.context);
     expect(ui.byId("runtime-hosts-panel").hidden).toBe(false);

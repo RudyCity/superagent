@@ -388,11 +388,11 @@ html, body {
   display: none !important;
 }
 .runtime-create-panel {
-  padding: 18px;
-  margin: 12px 0 20px;
+  padding: 18px 20px;
+  margin: 16px 24px;
   border: 1px solid var(--border-medium);
   background: var(--bg-surface-raised);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
 }
 .runtime-create-heading, .runtime-create-footer {
   display: flex;
@@ -1926,6 +1926,8 @@ tbody tr:hover {
 .runtime-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
 }
 
@@ -1967,11 +1969,12 @@ tbody tr:hover {
  */
 .runtime-service-tabs {
   display: flex;
-  gap: 4px;
-  padding: 12px 24px 0;
-  border-bottom: 1px solid var(--border-medium);
-  overflow-x: auto;
-  scrollbar-width: thin;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 24px;
+  background: rgba(7, 9, 14, 0.35);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .runtime-service-tab {
   appearance: none;
@@ -1980,35 +1983,37 @@ tbody tr:hover {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 42px;
-  padding: 8px 14px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
 }
 .runtime-service-tab:hover:not(:disabled) {
   color: var(--text-primary);
   background: var(--bg-surface-raised);
+  border-color: var(--border-subtle);
 }
 .runtime-service-tab:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -3px;
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
 }
 .runtime-service-tab:active:not(:disabled) {
   background: var(--accent-muted);
+  transform: translateY(1px);
 }
 .runtime-service-tab[aria-selected="true"] {
-  color: var(--accent-hover);
-  border-bottom-color: var(--accent);
-  background: var(--bg-surface-raised);
+  color: #ffffff;
+  background: var(--bg-surface-elevated);
+  border-color: var(--border-medium);
+  box-shadow: inset 0 -2px 0 var(--accent), 0 1px 4px rgba(0, 0, 0, 0.22);
 }
 .runtime-service-tab:disabled {
   opacity: 0.45;
@@ -2016,23 +2021,38 @@ tbody tr:hover {
 }
 .runtime-tab-count {
   display: inline-flex;
-  min-width: 19px;
+  min-width: 20px;
   justify-content: center;
-  padding: 2px 5px;
-  border-radius: var(--radius-xs);
-  background: var(--bg-surface);
-  color: var(--text-muted);
-  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 .runtime-service-tab[aria-selected="true"] .runtime-tab-count {
-  color: var(--text-primary);
+  color: var(--accent-hover);
   background: var(--accent-muted);
 }
 .runtime-content > [hidden],
 #runtime-remote-empty[hidden],
+#runtime-cloudflare-endpoints[hidden],
 #runtime-tray-gateway[hidden],
 #runtime-named-mcp-status[hidden] { display: none !important; }
+.runtime-host-grid > .empty-state {
+  grid-column: 1 / -1;
+}
+.runtime-action-feedback {
+  margin: 14px 24px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-raised);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .runtime-endpoint {
   display: flex;
   align-items: center;
@@ -2299,8 +2319,14 @@ tbody tr:hover {
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   border-top: 1px solid var(--border-subtle);
   padding-top: 12px;
+}
+
+.runtime-instance-footer .runtime-lifecycle-group {
+  margin-right: auto;
 }
 
 .runtime-select {
@@ -2314,13 +2340,36 @@ tbody tr:hover {
   color: var(--success);
 }
 
-.runtime-notes {
-  padding: 14px 24px;
+.runtime-notes-disclosure {
   border-top: 1px solid var(--border-subtle);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.runtime-notes-disclosure summary {
+  padding: 11px 24px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style-position: inside;
+  user-select: none;
+  transition: color var(--transition-fast);
+}
+
+.runtime-notes-disclosure summary:hover {
+  color: var(--text-primary);
+}
+
+.runtime-notes-disclosure summary:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.runtime-notes {
+  padding: 0 24px 14px;
   color: var(--text-muted);
   font-size: 11.5px;
-  line-height: 1.5;
-  background: rgba(0, 0, 0, 0.1);
+  line-height: 1.55;
 }
 
 /* Modal Dialog */

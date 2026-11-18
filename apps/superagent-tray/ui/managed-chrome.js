@@ -62,6 +62,12 @@
     if (tabs) tabs.textContent = current?.reachable ? String(current.targetCount ?? 0) : "—";
     const browser = $("managed-chrome-browser");
     if (browser) browser.textContent = current?.browserVersion || "Browser not verified";
+    const tabCount = $("runtime-tab-chrome-count");
+    if (tabCount) {
+      const ownedCount = current?.owned === true ? "1" : "0";
+      tabCount.dataset.ownedCount = ownedCount;
+      tabCount.textContent = ownedCount;
+    }
     updateButtons();
     if (occupied && !running)
       feedback("The port belongs to an unverified process. Choose a free port; SuperAgent will not adopt or stop it.", true);

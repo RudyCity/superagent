@@ -78,6 +78,7 @@ describe("Managed Chrome CDP Tray",()=>{
     ui.replies.status={...ui.replies.launch,targetCount:1,browserVersion:"Chrome/136"};
     await ui.refresh();await flush();
     expect(ui.byId("managed-chrome-pid").textContent).toBe("44123");
+    expect(ui.byId("runtime-tab-chrome-count").textContent).toBe("1");
     expect(ui.byId("managed-chrome-stop").disabled).toBe(false);
     ui.byId("managed-chrome-stop").trigger("click");
     await flush();

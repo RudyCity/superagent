@@ -699,7 +699,7 @@ window.__superagentMuseQuickAction = async (action) => {
   }) } });
 };
 
-const runtimeTabNames = ["core", "mcp", "cloudflare", "muse", "processes", "hosts"];
+const runtimeTabNames = ["core", "mcp", "cloudflare", "muse", "chrome", "processes", "hosts"];
 const runtimeRemoteTabs = {
   core: { kind: "core-supervisor", title: "Independent Core Supervisors", tag: "Owner-verified",
     empty: "No independent Core supervisor registered outside the Core list." },
@@ -755,6 +755,7 @@ function runtimeApplyTab() {
     cloudflare: remote.filter(s => s.kind === "cloudflare").length,
     muse: remote.filter(s => s.kind === "muse-watch").length +
       (typeof runtimeSelectedMuseCore(snapshot)?.services?.muse?.watcherActive === "boolean" ? 1 : 0),
+    chrome: Number(rt("runtime-tab-chrome-count")?.dataset?.ownedCount || 0) || 0,
     processes: snapshot.processes?.length || 0,
     hosts: snapshot.independentHosts?.length || 0,
   };
@@ -771,6 +772,7 @@ function runtimeApplyTab() {
     "runtime-servers-panel": tab === "core",
     "runtime-processes-panel": tab === "processes",
     "runtime-muse-panel": tab === "muse",
+    "runtime-chrome-panel": tab === "chrome",
     "runtime-remote-panel": Boolean(config) && (tab !== "core" || matched.length > 0),
     "runtime-hosts-panel": tab === "hosts",
   };
@@ -782,6 +784,8 @@ function runtimeApplyTab() {
   if (remoteNode?.dataset) remoteNode.dataset.runtimeView = tab;
   const namedEntry=rt("runtime-named-tunnel-entry");
   if (namedEntry) namedEntry.hidden = tab !== "cloudflare";
+  const cfEndpoints = rt("runtime-cloudflare-endpoints");
+  if (cfEndpoints) cfEndpoints.hidden = tab !== "cloudflare";
   const trayCard = rt("runtime-tray-gateway");
   const namedCard = rt("runtime-named-mcp-status");
   if (trayCard) trayCard.hidden = tab !== "cloudflare";
@@ -810,6 +814,7 @@ function runtimeSelectTab(tab, focus = false) {
   runtimeActiveTab = tab;
   runtimeApplyTab();
   if (tab === "mcp") void runtimeRefreshMcpSecurity();
+  if (tab === "chrome") window.__superagentManagedChromeRefresh?.();
   if (focus) rt("runtime-tab-" + tab)?.focus?.();
 }
 
@@ -1066,6 +1071,7 @@ function runtimeOpenConnectionResult() {
   runtimeResultReturnFocus = rt("runtime-create-toggle") || document.activeElement;
   const createPanel = rt("runtime-create-panel");
   if (createPanel) createPanel.hidden = true;
+  rt("runtime-create-toggle")?.setAttribute?.("aria-expanded", "false");
   dialog.hidden = false;
   rt("runtime-result-close")?.focus?.();
 }
@@ -1521,11 +1527,15 @@ window.__superagentRuntimeRefresh = runtimeRefresh;
 function runtimeInstall() {
   rt("runtime-create-toggle")?.addEventListener("click", () => {
     const panel = rt("runtime-create-panel");
-    if (panel) panel.hidden = !panel.hidden;
+    if (panel) {
+      panel.hidden = !panel.hidden;
+      rt("runtime-create-toggle")?.setAttribute?.("aria-expanded", String(!panel.hidden));
+    }
     runtimeCreateKindChanged();
   });
   rt("runtime-create-close")?.addEventListener("click", () => {
     if (rt("runtime-create-panel")) rt("runtime-create-panel").hidden = true;
+    rt("runtime-create-toggle")?.setAttribute?.("aria-expanded", "false");
   });
   rt("runtime-result-close")?.addEventListener("click", runtimeCloseConnectionResult);
   rt("runtime-result-done")?.addEventListener("click", runtimeCloseConnectionResult);

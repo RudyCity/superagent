@@ -1,10 +1,10 @@
 /* Managed CDP uses the same neutral, compact hierarchy as Runtime Detection. */
 .managed-chrome-card {
-  margin: 18px 0 22px;
+  margin: 0;
   padding: 18px;
-  border: 1px solid var(--border, #283141);
-  border-radius: 14px;
-  background: var(--surface-elevated, #101723);
+  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-surface-raised, #141c2e);
 }
 .managed-chrome-heading {
   display: flex;
@@ -13,34 +13,35 @@
   align-items: flex-start;
   gap: 12px;
 }
-.managed-chrome-heading h3 {margin: 5px 0 4px;font-size: 16px;font-weight: 650;letter-spacing: -0.015em;}
-.managed-chrome-heading p {margin: 0;color: var(--text-muted, #a0aabb);font-size: 12px;line-height: 1.55;}
+.managed-chrome-heading h4 {margin: 5px 0 4px;font-size: 15px;font-weight: 700;letter-spacing: -0.015em;color: var(--text-primary, #f8fafc);}
+.managed-chrome-heading p {margin: 0;color: var(--text-secondary, #94a3b8);font-size: 12px;line-height: 1.55;}
 .managed-chrome-status {
   white-space: nowrap;
-  border: 1px solid var(--border, #344157);
+  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
   border-radius: 999px;
-  padding: 6px 10px;
+  padding: 5px 10px;
   font-size: 11px;
-  color: var(--text-muted, #aab5c5);
+  font-weight: 600;
+  color: var(--text-secondary, #94a3b8);
 }
-.managed-chrome-status[data-state="healthy"] {color: #a4e0be;border-color: #32644c;}
-.managed-chrome-status[data-state="occupied"] {color: #efc49b;border-color: #8c5e37;}
+.managed-chrome-status[data-state="healthy"] {color: #34d399;border-color: rgba(16, 185, 129, 0.35);background: rgba(16, 185, 129, 0.12);}
+.managed-chrome-status[data-state="occupied"] {color: #fbbf24;border-color: rgba(245, 158, 11, 0.35);background: rgba(245, 158, 11, 0.12);}
 .managed-chrome-form {
   display: grid;
   grid-template-columns: minmax(105px, 0.7fr) minmax(155px, 1fr) minmax(220px, 2.4fr);
   gap: 12px;
   margin-top: 16px;
 }
-.managed-chrome-field {display: flex;flex-direction: column;gap: 6px;font-size: 12px;color: var(--text-muted, #9cacc0);}
+.managed-chrome-field {display: flex;flex-direction: column;gap: 6px;font-size: 12px;color: var(--text-secondary, #94a3b8);}
 .managed-chrome-field input,
 .managed-chrome-field select {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  border: 1px solid var(--border, #354155);
-  border-radius: 8px;
-  background: var(--surface, #0b111b);
-  color: var(--text, #f0f4f9);
+  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-surface, #0f1523);
+  color: var(--text-primary, #f8fafc);
   padding: 9px 10px;
   font: inherit;
   font-size: 12px;
@@ -49,7 +50,7 @@
 .managed-chrome-field input:focus-visible,
 .managed-chrome-field select:focus-visible,
 .managed-chrome-actions button:focus-visible {
-  outline: 2px solid var(--accent, #74aaff);
+  outline: 2px solid var(--border-focus, #3b82f6);
   outline-offset: 2px;
 }
 .managed-chrome-actions {
@@ -59,20 +60,20 @@
   align-items: center;
   gap: 8px;
 }
-.managed-chrome-actions button:disabled {opacity: 0.55;cursor: not-allowed;}
+.managed-chrome-actions button:disabled {opacity: 0.5;cursor: not-allowed;}
 .managed-chrome-details {
-  border-top: 1px solid var(--border, #283141);
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.07));
   margin-top: 14px;
   padding-top: 13px;
   display: flex;
   flex-wrap: wrap;
   gap: 9px 19px;
   font-size: 11px;
-  color: var(--text-muted, #98a6b9);
+  color: var(--text-secondary, #94a3b8);
 }
-.managed-chrome-details strong {font-size: 12px;font-weight: 600;color: var(--text, #e7effc);}
-.managed-chrome-feedback {margin: 10px 0 0;color: var(--text-muted, #9dacc0);font-size: 11px;line-height: 1.5;}
-.managed-chrome-feedback[data-error="true"] {color: #efb2a9;}
+.managed-chrome-details strong {font-size: 12px;font-weight: 600;color: var(--text-primary, #f8fafc);}
+.managed-chrome-feedback {margin: 10px 0 0;color: var(--text-secondary, #94a3b8);font-size: 11.5px;line-height: 1.5;}
+.managed-chrome-feedback[data-error="true"] {color: var(--danger-hover, #f87171);}
 @media (max-width: 760px) {
   .managed-chrome-form {grid-template-columns: repeat(2, minmax(0, 1fr));}
   .managed-chrome-url {grid-column: 1 / -1;}

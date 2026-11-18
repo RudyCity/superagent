@@ -1211,52 +1211,10 @@
               <p>Inspect authenticated Core APIs, CLI sessions, MCP servers, schedulers, gateways, and tunnel connections.</p>
             </div>
             <div class="runtime-toolbar">
-              <button id="runtime-create-toggle" type="button" class="button primary">+ New Connection</button>
+              <button id="runtime-create-toggle" type="button" class="button primary" aria-expanded="false" aria-controls="runtime-create-panel">+ New Connection</button>
               <span id="runtime-scanned" class="subtle-badge">Not scanned yet</span>
             </div>
           </div>
-
-          <!-- Attended managed CDP launcher; no Delegate or personal Chrome takeover. -->
-          <section class="managed-chrome-card" aria-labelledby="managed-chrome-title">
-            <div class="managed-chrome-heading">
-              <div>
-                <span class="panel-eyebrow">BROWSER RUNTIME</span>
-                <h3 id="managed-chrome-title">Managed Chrome CDP</h3>
-                <p>Launch a dedicated Chrome debug profile. Chrome Delegate stays independent.</p>
-              </div>
-              <span id="managed-chrome-status" class="managed-chrome-status" role="status">Not checked</span>
-            </div>
-            <form id="managed-chrome-form" class="managed-chrome-form" autocomplete="off">
-              <label class="managed-chrome-field" for="managed-chrome-port">
-                <span>Debug port</span>
-                <input type="number" min="1024" max="65535" step="1" id="managed-chrome-port" value="9222" required />
-              </label>
-              <label class="managed-chrome-field" for="managed-chrome-mode">
-                <span>Display mode</span>
-                <select id="managed-chrome-mode">
-                  <option value="headed">Visible window</option>
-                  <option value="headless">Headless</option>
-                  <option value="auto">Auto</option>
-                </select>
-              </label>
-              <label class="managed-chrome-field managed-chrome-url" for="managed-chrome-url">
-                <span>Startup URL</span>
-                <input type="url" id="managed-chrome-url" value="https://tab.ub.ac.id/" placeholder="https://example.com/" maxlength="2048" />
-              </label>
-              <div class="managed-chrome-actions">
-                <button type="submit" id="managed-chrome-launch" class="button primary">Launch Chrome CDP</button>
-                <button type="button" id="managed-chrome-refresh" class="button ghost">Check status</button>
-                <button type="button" id="managed-chrome-stop" class="button ghost" disabled>Stop owned Chrome</button>
-              </div>
-            </form>
-            <div class="managed-chrome-details">
-              <span>Endpoint <strong id="managed-chrome-endpoint">127.0.0.1:9222</strong></span>
-              <span>PID <strong id="managed-chrome-pid">—</strong></span>
-              <span>Tabs <strong id="managed-chrome-tabs">—</strong></span>
-              <span id="managed-chrome-browser">Browser not verified</span>
-            </div>
-            <p id="managed-chrome-feedback" class="managed-chrome-feedback" role="status" aria-live="polite">Check status to inspect the selected port. Launch and Stop require native approval.</p>
-          </section>
 
           <div class="runtime-summary">
             <div class="metric-cell">
@@ -1355,12 +1313,13 @@
               </footer>
             </section>
           </div>
-          <p id="runtime-action-feedback" class="runtime-notes" role="status" aria-live="polite" hidden></p>
+          <p id="runtime-action-feedback" class="runtime-action-feedback" role="status" aria-live="polite" hidden></p>
           <div class="runtime-service-tabs" role="tablist" aria-label="Runtime service categories">
             <button id="runtime-tab-core" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="core" aria-controls="runtime-servers-panel" aria-selected="true" tabindex="0">Core <span id="runtime-tab-core-count" class="runtime-tab-count">0</span></button>
             <button id="runtime-tab-mcp" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="mcp" aria-controls="runtime-remote-panel" aria-selected="false" tabindex="-1">MCP <span id="runtime-tab-mcp-count" class="runtime-tab-count">0</span></button>
             <button id="runtime-tab-cloudflare" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="cloudflare" aria-controls="runtime-remote-panel" aria-selected="false" tabindex="-1">Cloudflare <span id="runtime-tab-cloudflare-count" class="runtime-tab-count">0</span></button>
             <button id="runtime-tab-muse" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="muse" aria-controls="runtime-muse-panel" aria-selected="false" tabindex="-1">Muse <span id="runtime-tab-muse-count" class="runtime-tab-count">0</span></button>
+            <button id="runtime-tab-chrome" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="chrome" aria-controls="runtime-chrome-panel" aria-selected="false" tabindex="-1">Chrome CDP <span id="runtime-tab-chrome-count" class="runtime-tab-count">0</span></button>
             <button id="runtime-tab-processes" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="processes" aria-controls="runtime-processes-panel" aria-selected="false" tabindex="-1">Processes <span id="runtime-tab-processes-count" class="runtime-tab-count">0</span></button>
             <button id="runtime-tab-hosts" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="hosts" aria-controls="runtime-hosts-panel" aria-selected="false" tabindex="-1">Hosts <span id="runtime-tab-hosts-count" class="runtime-tab-count">0</span></button>
           </div>
@@ -1380,7 +1339,7 @@
                 <h3>CLI &amp; Process Journal</h3>
                 <span class="column-tag">Heartbeats</span>
               </div>
-              <div id="runtime-processes" class="runtime-items">
+              <div id="runtime-processes" class="runtime-items runtime-host-grid">
                 <p class="empty-state">Checking process journal...</p>
               </div>
             </div>
@@ -1394,6 +1353,55 @@
                 <p class="empty-state">Checking selected Core Muse Watch...</p>
               </div>
             </div>
+
+            <div id="runtime-chrome-panel" class="runtime-column runtime-full" role="tabpanel" aria-labelledby="runtime-tab-chrome" hidden>
+              <div class="column-header">
+                <h3>Managed Chrome CDP</h3>
+                <span class="column-tag">Browser Runtime</span>
+              </div>
+              <!-- Attended managed CDP launcher; no Delegate or personal Chrome takeover. -->
+              <section class="managed-chrome-card" aria-labelledby="managed-chrome-title">
+                <div class="managed-chrome-heading">
+                  <div>
+                    <span class="panel-eyebrow">BROWSER RUNTIME</span>
+                    <h4 id="managed-chrome-title">Managed Chrome CDP</h4>
+                    <p>Launch a dedicated Chrome debug profile. Chrome Delegate stays independent.</p>
+                  </div>
+                  <span id="managed-chrome-status" class="managed-chrome-status" role="status">Not checked</span>
+                </div>
+                <form id="managed-chrome-form" class="managed-chrome-form" autocomplete="off">
+                  <label class="managed-chrome-field" for="managed-chrome-port">
+                    <span>Debug port</span>
+                    <input type="number" min="1024" max="65535" step="1" id="managed-chrome-port" value="9222" required />
+                  </label>
+                  <label class="managed-chrome-field" for="managed-chrome-mode">
+                    <span>Display mode</span>
+                    <select id="managed-chrome-mode">
+                      <option value="headed">Visible window</option>
+                      <option value="headless">Headless</option>
+                      <option value="auto">Auto</option>
+                    </select>
+                  </label>
+                  <label class="managed-chrome-field managed-chrome-url" for="managed-chrome-url">
+                    <span>Startup URL</span>
+                    <input type="url" id="managed-chrome-url" value="https://tab.ub.ac.id/" placeholder="https://example.com/" maxlength="2048" />
+                  </label>
+                  <div class="managed-chrome-actions">
+                    <button type="submit" id="managed-chrome-launch" class="button primary">Launch Chrome CDP</button>
+                    <button type="button" id="managed-chrome-refresh" class="button ghost">Check status</button>
+                    <button type="button" id="managed-chrome-stop" class="button ghost" disabled>Stop owned Chrome</button>
+                  </div>
+                </form>
+                <div class="managed-chrome-details">
+                  <span>Endpoint <strong id="managed-chrome-endpoint">127.0.0.1:9222</strong></span>
+                  <span>PID <strong id="managed-chrome-pid">—</strong></span>
+                  <span>Tabs <strong id="managed-chrome-tabs">—</strong></span>
+                  <span id="managed-chrome-browser">Browser not verified</span>
+                </div>
+                <p id="managed-chrome-feedback" class="managed-chrome-feedback" role="status" aria-live="polite">Check status to inspect the selected port. Launch and Stop require native approval.</p>
+              </section>
+            </div>
+
             <div id="runtime-remote-panel" class="runtime-column runtime-full" role="tabpanel" aria-labelledby="runtime-tab-mcp" hidden>
               <div class="column-header">
                 <h3><span id="runtime-remote-heading">Independent MCP Owners</span> <span id="runtime-remote-count" class="subtle-badge"></span></h3>
@@ -1419,8 +1427,10 @@
                 <p class="op-note">Client names are self-reported. OAuth/Bearer identity is verified separately.
                   Only live registry sessions appear; previous authentication requests do not count as online agents.</p>
               </section>
-              <div id="runtime-tray-gateway" class="runtime-items runtime-host-grid" hidden aria-label="SuperAgent Tray management URL"></div>
-              <div id="runtime-named-mcp-status" class="runtime-items runtime-host-grid" hidden aria-label="MCP Named Tunnel URL"></div>
+              <div id="runtime-cloudflare-endpoints" class="runtime-host-grid" hidden>
+                <div id="runtime-tray-gateway" class="runtime-items" hidden aria-label="SuperAgent Tray management URL"></div>
+                <div id="runtime-named-mcp-status" class="runtime-items" hidden aria-label="MCP Named Tunnel URL"></div>
+              </div>
               <div id="runtime-remote" class="runtime-items runtime-host-grid" data-runtime-view="mcp">
                 <p class="empty-state">Checking registered MCP tunnels and Muse watchers...</p>
               </div>
@@ -1602,7 +1612,10 @@
               </section>
             </div>
           </section>
-          <div id="runtime-notes" class="runtime-notes" hidden></div>
+          <details class="runtime-notes-disclosure">
+            <summary>Verification &amp; security notes</summary>
+            <div id="runtime-notes" class="runtime-notes" hidden></div>
+          </details>
         </section>
       </div>
 
