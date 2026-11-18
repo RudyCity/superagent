@@ -112,7 +112,7 @@ function drawRuns() {
     ? [selected, ...latest.slice(0, 9)] : latest;
   $("runs").innerHTML = runs.length ? runs.map((run) => `<li
     data-run-id="${escapeHtml(run.runId || "")}"
-    class="${selected?.runId === run.runId ? "notification-run-highlight" : ""}">
+    class="${selected && selected.runId === run.runId ? "notification-run-highlight" : ""}">
     <div>
       <span class="run-name">${escapeHtml(names.get(run.jobId) || run.jobId)}</span>
       <span class="run-meta"> · ${escapeHtml(dateTime(run.completedAt || run.startedAt))}</span>
