@@ -58,6 +58,9 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
   contextRef.current = ctx;
 
   useEffect(() => {
+    // Emergency keyboard-first mode for terminals where SGR mouse handling
+    // conflicts with input. The CLI remains usable without mouse support.
+    if (process.env.SUPERAGENT_CLI_DISABLE_MOUSE === "1") return;
     const enableMouseTracking = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
     const disableMouseTracking = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 
