@@ -204,6 +204,15 @@
     }
     return null;
   }
+  // The incident identity and native-verified deviceId must agree exactly.
+  // A label, notification title or message never selects a LAN device.
+  function lanDeviceTarget(item) {
+    if (item.source !== "lan-devices" ||
+        typeof item.deviceId !== "string" ||
+        !/^[a-zA-Z0-9._-]{1,64}$/.test(item.deviceId)) return null;
+    return item.id === "lan:device:" + item.deviceId + ":disconnected"
+      ? item.deviceId : null;
+  }
   function incidentRoute(item) {
     const base = destination[item.source];
     if (!base) return null;
@@ -231,6 +240,7 @@
     }
     const runId = runTarget(item);
     if (runId) window.__superagentPendingRunNotificationId = runId;
+    const deviceId = lanDeviceTarget(item);
     let delivered = false;
     try {
       if (typeof window.navigateToPage === "function") {
@@ -257,6 +267,11 @@
         const focus = window.__superagentAccessManagerFocusRequest;
         if (typeof focus !== "function") return;
         const focused = await focus(pending.requestId, pending.tab);
+        targetFound = focused?.targetFound === true;
+      } else if (deviceId) {
+        const focus = window.__superagentLanFocusNotificationDevice;
+        if (typeof focus !== "function") return;
+        const focused = await focus(deviceId);
         targetFound = focused?.targetFound === true;
       }
       if (!targetFound) return;
@@ -314,6 +329,7 @@
         : pending?.tab === "mcp" ? "Review MCP Project Access"
           : pending ? "Review pending access"
             : item.source === "security" ? "Open Security Approval"
+              : lanDeviceTarget(item) ? "Review LAN device"
               : "View " + page.replace(":", " · ").replaceAll("-", " ");
       const open = element("button", "notification-link", label);
       open.type = "button";
