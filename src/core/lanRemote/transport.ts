@@ -308,10 +308,9 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
       abortChild(); send(socket, { ok: true });
       socket.end(); notice("Support session closed."); return;
     }
-    // Independently approved, session-bound piped terminal. Never expose an
-    // unrestricted PTY or credentials; status can be polled after a dropped
-    // request, but only while the SAME approved support session remains valid.
-    if (["terminal_start", "terminal_read", "terminal_input", "terminal_stop"].includes(String(op))) {
+    // Approved, session-bound ConPTY (bounded pipes outside native Bun).
+    // Status/resize are allowed only inside the SAME approved support session.
+    if (["terminal_start", "terminal_read", "terminal_input", "terminal_resize", "terminal_stop"].includes(String(op))) {
       try {
         if (op === "terminal_start") {
           if (typeof req.command !== "string" || !req.command.trim() ||
@@ -337,6 +336,12 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
               throw Error("Invalid terminal cursor.");
             send(socket, { ok: true, terminal: terminals.read(session.id, req.jobId,
               req.cursor === undefined ? 0 : Number(req.cursor)) });
+          } else if (op === "terminal_resize") {
+            if (!Number.isSafeInteger(req.cols) || Number(req.cols) < 20 || Number(req.cols) > 300 ||
+                !Number.isSafeInteger(req.rows) || Number(req.rows) < 5 || Number(req.rows) > 120)
+              throw Error("Invalid terminal dimensions.");
+            send(socket, { ok: true, terminal: terminals.resize(session.id, req.jobId,
+              Number(req.cols), Number(req.rows)) });
           } else if (op === "terminal_input") {
             if (typeof req.text !== "string" || !req.text ||
                 req.text.length > 1024 || !/^[^\x00-\x08\x0b-\x1f\x7f]+$/.test(req.text) ||
