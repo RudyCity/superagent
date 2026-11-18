@@ -459,6 +459,19 @@ export function grantProjectAccessToIdentity(
     decidedBy: options?.decidedBy || "human-tray",
   };
   doc.requests.unshift(newRequest);
+  // A manual direct grant may satisfy an already pending MCP request. Keep
+  // the older request as an audit record, but stop projecting it as an active
+  // notification only when ALL its requested capabilities were actually
+  // granted. A narrower grant must not silently complete a broader request.
+  for (const pending of doc.requests) {
+    if (pending.status !== "pending" ||
+        pending.identityHandle !== identityHandle || pending.projectId !== projectId ||
+        !pending.capabilities.every(capability => grant.capabilities.includes(capability))) continue;
+    pending.status = "approved";
+    pending.decidedAt = newRequest.decidedAt;
+    pending.decidedBy = newRequest.decidedBy;
+    pending.decisionReason = "Satisfied by direct operator grant";
+  }
   writeAccessRequests(doc, options?.requestStorePath);
   return newRequest;
 }
