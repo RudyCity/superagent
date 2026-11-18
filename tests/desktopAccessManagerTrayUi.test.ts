@@ -470,6 +470,48 @@ describe("independent MCP Connections and Project Access UI", () => {
     expect(ui.document.getElementById("access-mcp-connection-pending-list")!.children).toHaveLength(1);
   });
 
+  it("loads both pending approval lists from their own Load buttons without granting access", async () => {
+    const ui = boot(true, fixtures);
+    await flush();
+    const project = ui.document.getElementById("access-mcp-project-pending-load")!;
+    const connection = ui.document.getElementById("access-mcp-connection-pending-load")!;
+    expect(project.textContent).toBe("Load");
+    expect(connection.textContent).toBe("Load");
+    const requestCallCount = () => ui.calls.filter(c =>
+      c.name === "mcp_project_access_action" && c.args.action === "requests").length;
+    const initialCalls = requestCallCount();
+    project.click();
+    expect(project.disabled).toBe(true);
+    expect(connection.disabled).toBe(true);
+    expect(project.textContent).toBe("Memuat…");
+    await flush();
+    expect(project.disabled).toBe(false);
+    expect(connection.disabled).toBe(false);
+    expect(project.textContent).toBe("Load");
+    expect(requestCallCount()).toBe(initialCalls + 1);
+    connection.click();
+    await flush();
+    expect(requestCallCount()).toBe(initialCalls + 2);
+    expect(ui.document.getElementById("access-mcp-pending-count")!.textContent).toBe("1 permintaan");
+    expect(ui.document.getElementById("access-mcp-connection-count")!.textContent).toBe("1 permintaan");
+    expect(ui.calls.some(c => c.name === "mcp_project_access_action" &&
+      ["approve", "deny", "direct_grant"].includes(c.args.action))).toBe(false);
+  });
+
+  it("re-enables section Load buttons when Core request loading fails", async () => {
+    const ui = boot(true, {...fixtures, failActions: ["requests"]});
+    await flush();
+    const load = ui.document.getElementById("access-mcp-connection-pending-load")!;
+    load.click();
+    expect(load.disabled).toBe(true);
+    await flush();
+    expect(load.disabled).toBe(false);
+    expect(load.textContent).toBe("Load");
+    expect(ui.document.getElementById("access-mcp-connection-pending-list")!.textContent)
+      .toContain("belum dapat dimuat");
+    expect(ui.document.getElementById("access-mcp-connection-load-error")!.hidden).toBe(false);
+  });
+
   it("shows live MCP sessions even when there is no Core-approved identity", async () => {
     const ui=boot(true,{
       requests:[],identities:[],projects:[],
