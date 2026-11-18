@@ -133,6 +133,10 @@ function drawRuns() {
     if (selected) $("runs").querySelector?.(".notification-run-highlight")
       ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
     window.__superagentPendingRunNotificationId = null;
+  } else if (feedback) {
+    // Keep an old notification's transient status out of later History visits.
+    feedback.hidden = true;
+    feedback.textContent = "";
   }
 }
 
