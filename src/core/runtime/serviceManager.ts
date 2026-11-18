@@ -31,6 +31,7 @@ import {planManagedGuardian,executeManagedGuardian,inspectManagedGuardian} from 
 import {planDaemonLifecycle,executeDaemonLifecycle,inspectDaemonScheduler} from "./managedDaemonControl.js";
 import {
   planManagedTray,executeManagedTray,inspectManagedTray,
+  inspectManagedTrayAttestation,
   planManagedTrayRelease,executeManagedTrayRelease,legacyTrayProcessPids,
   reviewStaleTrayReceiptWithVerifiedSuccessor,
 } from "./managedTrayControl.js";
@@ -49,6 +50,8 @@ import {planGlobalLifecycleRecycle,executeGlobalLifecycleRecycle,reconcileGlobal
 
 import { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
 import { summarizeServiceOwnerAttestation } from "./serviceOwnerAttestation.js";
+import { readCheckoutRevision } from "./checkoutRevision.js";
+import { getPackageRootDir } from "../config/paths.js";
 export { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
 export type ServiceAction =
   "inventory"|"status"|"owner_status"|"plan"|"restart"|"rollback"|"drain"|"reload"|"start"|"stop"|"doctor"
@@ -318,6 +321,12 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
         {workerPid:s.active.pid,retainedWorkers:s.retained.length,
           sessionCount:s.affinitySessions,buildFresh,
           runtimeVersion,sourceVersion,versionDrift,
+          // Supervisor content digests prove which worker generation is
+          // actually loaded, not merely matching package.json versions.
+          sourceBuildDigest:verified && /^[a-f0-9]{64}$/.test(s.currentBuild?.digest??"")
+            ?s.currentBuild!.digest:null,
+          activeBuildDigest:verified && /^[a-f0-9]{64}$/.test(s.active.buildDigest??"")
+            ?s.active.buildDigest:null,
           ownerManagedRecovery:verified?"verified_rollback_monitor":null,
           runtimeWarning:buildFresh===false?"SOURCE_DIST_DRIFT":versionDrift?"VERSION_DRIFT":null,
           kernelListenerPid:owner,
@@ -542,8 +551,20 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
   if(action==="status"||action==="inventory")
     return {action,readOnly:true,services:await inspectServices(service,port),
       note:"Owner-scoped status; no process/tunnel mutation."};
-  if(action==="owner_status")return summarizeServiceOwnerAttestation(
-    await inspectServices(service,port));
+  if(action==="owner_status"){
+    const states=await inspectServices(service,port);
+    const tray=states.find(s=>s.service==="tray");
+    if(tray?.ownershipVerified){
+      try {
+        const owner=await inspectManagedTrayAttestation();
+        tray.details={...tray.details,...owner,
+          sourceRevision:readCheckoutRevision(getPackageRootDir())};
+      }catch {
+        // An unavailable native owner/build receipt fails closed.
+      }
+    }
+    return summarizeServiceOwnerAttestation(states);
+  }
   if(action==="watchdog"){
     const {runLifecycleWatchdog}=await import("./lifecycleWatchdog.js");
     return runLifecycleWatchdog({

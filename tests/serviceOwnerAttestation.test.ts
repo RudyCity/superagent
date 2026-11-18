@@ -28,7 +28,16 @@ describe("owner_status fail-closed parity",()=>{
       installedReleaseDigest:a,sourceBuildDigest:a}})]).services[0].code)
       .toBe("WEBVIEW_DIGEST_UNAVAILABLE");
     expect(summarizeServiceOwnerAttestation([status({service:"tray",details:{
-      installedReleaseDigest:a,sourceBuildDigest:a,webviewBundleDigest:b}})]).ready).toBe(true);
+      installedReleaseDigest:a,sourceBuildDigest:a,webviewBundleDigest:b}})])
+      .services[0].code).toBe("SOURCE_REVISION_UNAVAILABLE");
+    expect(summarizeServiceOwnerAttestation([status({service:"tray",details:{
+      installedReleaseDigest:a,sourceBuildDigest:a,webviewBundleDigest:b,
+      sourceRevision:"c".repeat(40),loadedSourceRevision:"d".repeat(40)}})])
+      .services[0].code).toBe("SOURCE_CHANGED_NOT_LOADED");
+    expect(summarizeServiceOwnerAttestation([status({service:"tray",details:{
+      installedReleaseDigest:a,sourceBuildDigest:a,webviewBundleDigest:b,
+      sourceRevision:"c".repeat(40),loadedSourceRevision:"c".repeat(40)}})]).ready)
+      .toBe(true);
   });
   it("never leaks arbitrary paths, tokens, private details or operation IDs",()=>{
     const result=summarizeServiceOwnerAttestation([status({details:{
