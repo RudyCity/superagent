@@ -236,7 +236,7 @@ export function describePermanentFileToolReadiness(name:string):string {
   if(name==="superagent_desktop_ui")
     return "Only probe, bounded window/app inventory, find_window, live_inventory and security-prompt metadata are certified; snapshot, open and input remain restricted.";
   if(BROWSER_OBSERVATION_TOOLS.has(name))
-    return "Only certified managed/Delegate HTTP(S) target metadata, local Chrome process inventory, or browser gateway identity/policy actions; no navigation, evaluate, upload, or file:// browsing.";
+    return "Only certified managed/Delegate HTTP(S) target metadata, local Chrome process inventory, or browser gateway identity/policy actions; no navigation, no evaluate, no upload, or file:// browsing.";
   if(CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name))
     return "Requires exact port, confirm:true, operationId and expectedBuildDigest; MCP Connection Controls and authenticated Core supervisor still required.";
   if(CERTIFIED_LAN_INVENTORY.has(name) || CERTIFIED_PAIR_STATUS.has(name))
