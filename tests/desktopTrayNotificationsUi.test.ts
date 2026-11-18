@@ -35,12 +35,23 @@ function mount(items: Record<string, unknown>[] = []) {
   const domEvents = new Map<string, (...args: any[]) => any>();
   const mockInvocations: { action: string; id?: string | null }[] = [];
   const nav = vi.fn();
+  let preferences: any = {
+    minSeverity: "warning", osCritical: true, osWarnings: false,
+    categories: ["security", "core", "mcp", "reminder"], retentionDays: 30,
+    sourceLevels: {}, dndEnabled: false, dndUntil: null, dndCriticalBypass: true,
+    digestEnabled: false, digestNextAt: null,
+  };
+  const snapshot = () => ({
+    items, preferences, unreadCount: items.filter((item) => !item.readAt && !item.archivedAt).length,
+    actionCount: items.filter((item) => !item.resolvedAt && !item.archivedAt && item.severity !== "info").length,
+    history: [], digest: { last24hAction: 0, last24hInformation: 0, lastSentAt: null },
+  });
   const filters = ["all", "unread", "important", "open", "acknowledged", "resolved", "archived"].map((filter) => {
     const n = makeNode();
     n.dataset = { notificationFilter: filter };
     return n;
   });
-  const quickFilters = ["action", "information", "unread", "open", "important", "resolved"].map((filter) => {
+  const quickFilters = ["action", "information", "unread", "open", "important", "resolved", "in-progress", "snoozed", "expired"].map((filter) => {
     const n = makeNode();
     n.dataset = { notificationQuickFilter: filter };
     return n;
@@ -82,8 +93,13 @@ function mount(items: Record<string, unknown>[] = []) {
     window: {
       __TAURI__: {
         core: { invoke: vi.fn(async (name: string, args: any) => {
-          expect(name).toMatch(/^tray_notification_center_(action|ui_alert|refresh_security|begin_navigation|ack_navigation|take_os_activation)$/);
+          expect(name).toMatch(/^tray_notification_center_(action|preferences|ui_alert|refresh_security|begin_navigation|ack_navigation|take_os_activation)$/);
           if (name.endsWith("take_os_activation")) return {status:"NONE"};
+          if (name.endsWith("preferences")) {
+            preferences = args.preferences;
+            mockInvocations.push({action:"save-preferences"});
+            return snapshot();
+          }
           if (name.endsWith("ui_alert")) return {};
           if (name.endsWith("begin_navigation")) {
             mockInvocations.push({action:"navigation-begin",id:args.incidentId});
@@ -103,7 +119,7 @@ function mount(items: Record<string, unknown>[] = []) {
           }
           if (name.endsWith("refresh_security")) {
             mockInvocations.push({action: "sync-security"});
-            return {items, unreadCount: items.filter((item) => !item.readAt).length, securitySync: "ok"};
+            return {...snapshot(), securitySync: "ok"};
           }
           mockInvocations.push(args);
           if (args.action === "read" && args.id) {
@@ -112,7 +128,8 @@ function mount(items: Record<string, unknown>[] = []) {
           if (args.action === "read-all") {
             items = items.map((item) => ({ ...item, readAt: 1700000000100 }));
           }
-          if (args.id && ["archive", "restore", "acknowledge", "resolve", "reopen"].includes(args.action)) {
+          if (args.id && ["archive", "restore", "acknowledge", "resolve", "reopen",
+            "in-progress", "pause-work", "snooze-15m", "snooze-1h", "snooze-1d", "unsnooze"].includes(args.action)) {
             items = items.map((item) => item.id === args.id ? {
               ...item,
               readAt: item.readAt ?? 1700000000100,
@@ -121,12 +138,16 @@ function mount(items: Record<string, unknown>[] = []) {
               resolvedAt: args.action === "resolve" ? 1700000000100
                 : args.action === "reopen" ? null : item.resolvedAt,
               acknowledgedAt: args.action === "acknowledge" ? 1700000000100 : item.acknowledgedAt,
+              actionStartedAt: args.action === "in-progress" ? Date.now()
+                : args.action === "pause-work" ? null : item.actionStartedAt,
+              snoozedUntil: args.action.startsWith("snooze-") ? Date.now() + 3600000
+                : args.action === "unsnooze" ? null : item.snoozedUntil,
             } : item);
           }
           if (args.action === "unread" && args.id) {
             items = items.map((item) => item.id === args.id ? { ...item, readAt: null } : item);
           }
-          return { items, unreadCount: items.filter((item) => !item.readAt && !item.archivedAt).length };
+          return snapshot();
         }) },
         event: { listen: vi.fn(async () => () => {}) },
       },
@@ -187,8 +208,8 @@ describe("Tray Notification Manager", () => {
       { id: "reminder:completed", source: "reminder", severity: "info",
         title: "Reminder complete", body: "Done", createdAt: now,
         readAt: null, archivedAt: null, acknowledgedAt: null, resolvedAt: null },
-      { id: "mcp-pending:connections:req-23", source: "security", severity: "critical",
-        title: "Permission required", body: "Review access", createdAt: now - 100,
+      { id: "security:attention-23", source: "security", severity: "critical",
+        title: "Security warning", body: "Review access", createdAt: now - 100,
         readAt: now - 50, archivedAt: null, acknowledgedAt: now - 30, resolvedAt: null },
       { id: "health:core", source: "core", severity: "warning",
         title: "Core recovered", body: "Recovered", createdAt: now - 200,
@@ -203,7 +224,7 @@ describe("Tray Notification Manager", () => {
       .toBe("1 need action · 2 information");
     // Actionable incidents appear first in the bell even if an info event is newer.
     const first = mounted.get("tray-notification-recent").children[0];
-    expect(first.children[1].children[0].children[0].textContent).toBe("Permission required");
+    expect(first.children[1].children[0].children[0].textContent).toBe("Security warning");
     expect(first.children[1].children[0].children.some((node: any) =>
       node.className === "notification-item-kind is-action")).toBe(true);
 
@@ -231,6 +252,81 @@ describe("Tray Notification Manager", () => {
     mounted.quickFilters[1].trigger("click");
     expect(mounted.get("notification-inbox-list").children).toHaveLength(3);
     expect(mounted.mockInvocations.some((call) => call.action === "approve")).toBe(false);
+  });
+
+  it("exposes persistent triage, action badges and safe managed incident controls", async () => {
+    const mounted = mount([
+      { id:"mcp-pending:mcp:request-8", source:"security", severity:"critical",
+        title:"MCP Approval", body:"Review", createdAt:Date.now(),
+        readAt:null, archivedAt:null, acknowledgedAt:null, resolvedAt:null },
+      { id:"health:core", source:"core", severity:"warning",
+        title:"Core offline", body:"Investigate", createdAt:Date.now(),
+        readAt:null, archivedAt:null, acknowledgedAt:null, resolvedAt:null },
+      { id:"reminder:finished", source:"reminder", severity:"info",
+        title:"Completed", body:"Done", createdAt:Date.now(),
+        readAt:null, archivedAt:null, acknowledgedAt:null, resolvedAt:null },
+    ]);
+    await new Promise<void>((done) => setImmediate(done));
+    expect(mounted.get("tray-notification-action-count").textContent).toBe("2");
+    expect(mounted.get("tray-notification-action-count").hidden).toBe(false);
+    expect(html).toContain('id="notification-device"');
+    expect(html).toContain('id="notification-history-list"');
+    expect(html).toContain('id="notification-digest-summary"');
+    expect(html).toContain('id="notification-rule-add"');
+    expect(html).toContain('id="notification-dnd-mode"');
+    expect(store).toContain("Managed incidents require verified native resolution");
+    expect(store).toContain("pub fn expire_verified(");
+    expect(store).toContain("pub fn take_daily_digest(");
+    expect(rust).toContain("tray_notification_center::take_daily_digest");
+    const pending = mounted.get("notification-inbox-list").children[0];
+    const actions = pending.children[1].children[3].children;
+    expect(actions.some((x: any) => x.textContent === "Resolve")).toBe(false);
+    expect(actions.some((x: any) => x.textContent === "Start working")).toBe(true);
+    const work = actions.find((x: any) => x.textContent === "Start working");
+    work.trigger("click");
+    await new Promise<void>((done) => setImmediate(done));
+    expect(mounted.mockInvocations.some((x) => x.action === "in-progress")).toBe(true);
+    mounted.quickFilters[6].trigger("click");
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(1);
+  });
+
+  it("supports persisted snooze, source grouping, devices, DND and digest controls", async () => {
+    const mounted = mount([
+      { id:"warn-a", source:"core", severity:"critical",
+        title:"Service A", body:"Review", createdAt:Date.now(),
+        deviceId:"desktop-a", readAt:null, archivedAt:null, resolvedAt:null },
+      { id:"warn-b", source:"core", severity:"warning",
+        title:"Service B", body:"Review", createdAt:Date.now(),
+        deviceId:"desktop-b", readAt:null, archivedAt:null, resolvedAt:null },
+      { id:"notice", source:"jobs", severity:"info",
+        title:"Reminder finished", body:"Done", createdAt:Date.now(),
+        deviceId:"local", readAt:null, archivedAt:null, resolvedAt:null },
+    ]);
+    await new Promise<void>((done) => setImmediate(done));
+    mounted.get("notification-group-toggle").trigger("click");
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(2);
+    mounted.get("notification-device").trigger("change", {target:{value:"desktop-a"}});
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(1);
+    mounted.get("notification-device").trigger("change", {target:{value:"all"}});
+    mounted.get("notification-group-toggle").trigger("click");
+    const actions = mounted.get("notification-inbox-list").children[0].children[1].children[3].children;
+    const snoozeSelect = actions.find((node: any) => node.className === "notification-snooze-select");
+    expect(snoozeSelect).toBeDefined();
+    snoozeSelect.trigger("change", {target:{value:"snooze-15m"}});
+    await new Promise<void>((done) => setImmediate(done));
+    mounted.quickFilters[7].trigger("click");
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(1);
+    mounted.get("notification-rule-source").value = "core";
+    mounted.get("notification-rule-level").value = "critical";
+    mounted.get("notification-rule-add").trigger("click");
+    mounted.get("notification-dnd-mode").value = "1h";
+    mounted.get("notification-dnd-mode").trigger("change");
+    mounted.get("notification-digest-enabled").checked = true;
+    mounted.get("notification-digest-enabled").trigger("change");
+    mounted.get("notification-save-preferences").trigger("click");
+    await new Promise<void>((done) => setImmediate(done));
+    expect(mounted.mockInvocations.some((x) => x.action === "save-preferences")).toBe(true);
+    expect(mounted.get("notification-source-rules").children.length).toBeGreaterThan(0);
   });
 
   it("uses native acknowledgment instead of browser localStorage", async () => {
