@@ -381,6 +381,7 @@
           connected ? "Session active" : "Paired / approval required",
           device.id === state.selected
         );
+        div.dataset.lanDeviceId = device.id;
         actions.append(button(device.id === state.selected ? "Selected" : "Select",
           () => { state.selected = device.id; state.selectedByRoute[state.route] = device.id; paint(); },
           false, state.busy || device.id === state.selected));
@@ -952,6 +953,30 @@
     .filter((device) => device.connected)
     .map((device) => ({ id: device.id, connected: true, label: device.label,
       platform: device.platform, transport: device.transport }));
+  // Exact deep link from the private, native-backed Notification Center.
+  // Never trust a title or arbitrary selector; the ID must still be present in
+  // the fresh authenticated paired-device inventory. No session is opened.
+  window.__superagentLanFocusNotificationDevice = async (deviceId) => {
+    if (typeof deviceId !== "string" ||
+        !/^[a-zA-Z0-9._-]{1,64}$/.test(deviceId)) return { targetFound: false };
+    await refresh();
+    const matches = state.paired.filter((entry) =>
+      entry?.id === deviceId && entry.paired === true);
+    if (matches.length !== 1) {
+      notice("The referenced paired device is no longer available in the verified inventory.", true);
+      return { targetFound: false };
+    }
+    const device = matches[0];
+    state.route = transportOf(device);
+    state.routeInitialized = true;
+    state.selected = device.id;
+    state.selectedByRoute[state.route] = device.id;
+    paint();
+    const row = Array.from(document.querySelectorAll("[data-lan-device-id]"))
+      .find((node) => node.dataset?.lanDeviceId === deviceId);
+    row?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    return { targetFound: Boolean(row) };
+  };
   window.__superagentLanRefresh = refresh;
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", install, { once: true });
   else install();

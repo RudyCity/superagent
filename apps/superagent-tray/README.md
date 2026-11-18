@@ -83,9 +83,11 @@ manual archiving of such incidents is rejected in native storage.
   inventory and creates device-specific warnings for verified connected →
   disconnected transitions; verified reconnection resolves those incidents.
   Core inventory failures and disappearing/unpaired devices do not trigger
-  guessed disconnect events. Further producers can use the native
-  `publish_for_device` contract; titles and message bodies are never parsed
-  to guess an identity.
+  guessed disconnect events. Opening one of these native incidents navigates
+  into LAN Devices and focuses its exact paired device after a fresh Core
+  inventory read; a missing/unverified device does not create a read receipt.
+  Further producers can use the native `publish_for_device` contract; titles
+  and message bodies are never parsed to guess an identity.
 - **Activity history:** bounded native audit events include create, reopen,
   acknowledgement, progress, read, snooze, resolve and archive transitions.
   Retention/size caps still apply; this is not an immutable forensic log.

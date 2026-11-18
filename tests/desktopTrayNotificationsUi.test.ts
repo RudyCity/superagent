@@ -294,6 +294,31 @@ describe("Tray Notification Manager", () => {
     expect(mounted.get("notification-inbox-list").children).toHaveLength(1);
   });
 
+  it("focuses the exact verified LAN device without opening a session", async () => {
+    const mounted = mount([{
+      id: "lan:device:desktop-5:disconnected", source: "lan-devices",
+      deviceId: "desktop-5", severity: "warning",
+      title: "Paired LAN device disconnected", body: "Review LAN Devices",
+      createdAt: Date.now(), readAt: null, archivedAt: null,
+      acknowledgedAt: null, resolvedAt: null,
+    }]);
+    const focus = vi.fn(async () => ({ targetFound: true }));
+    mounted.window.__superagentLanFocusNotificationDevice = focus;
+    await new Promise<void>((done) => setImmediate(done));
+    const card = mounted.get("tray-notification-recent").children[0];
+    const open = card.children[1].children[3].children[0];
+    expect(open.textContent).toBe("Review LAN device");
+    open.trigger("click");
+    await new Promise<void>((done) => setImmediate(done));
+    expect(mounted.nav).toHaveBeenCalledWith("lan-devices:devices");
+    expect(focus).toHaveBeenCalledWith("desktop-5");
+    expect(mounted.mockInvocations.some((x) => x.action === "read")).toBe(true);
+    const lan = fs.readFileSync(path.join(base, "ui/lan-devices.js"), "utf8");
+    expect(lan).toContain("window.__superagentLanFocusNotificationDevice = async");
+    expect(lan).toContain('entry.paired === true');
+    expect(lan).toContain('row?.scrollIntoView?.');
+  });
+
   it("supports persisted snooze, source grouping, devices, DND and digest controls", async () => {
     const mounted = mount([
       { id:"warn-a", source:"core", severity:"critical",
