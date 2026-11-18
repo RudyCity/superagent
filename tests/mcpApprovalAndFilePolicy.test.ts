@@ -96,6 +96,10 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       expect(revokeProjectAccess(identity,MCP_CONNECTION_PROJECT_ID)).toBe(true);
       expect((await describe({command:"probe"})).mcpConnectionExecute.decision).toBe("approval_required");
       expect(listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID})).toHaveLength(0);
+      fs.writeFileSync(path.join(isolated,"project-access.json"),"{invalid_private_policy_path");
+      const unavailable=await describe({command:"probe"});
+      expect(unavailable.mcpConnectionExecute.decision).toBe("unavailable");
+      expect(JSON.stringify(unavailable)).not.toContain(isolated);
       const invalid=await invoke(server,"superagent_tool_describe",{
         name:"superagent_desktop_ui",checkArguments:[],
       });
