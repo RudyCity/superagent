@@ -2709,6 +2709,94 @@ fn set_yolo_mode(mode: String) -> Result<String, String> {
     Ok(mode)
 }
 
+/// Native operator-only Managed CDP launch, status and exact-owner stop.
+#[tauri::command]
+async fn managed_chrome_action(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    action: String,
+    payload: Option<Value>,
+) -> Result<Value, String> {
+    if window.label() != "main" || !window.is_visible().unwrap_or(false) ||
+        window.is_minimized().unwrap_or(true) {
+        return Err("MANAGED_CDP_NATIVE_TRAY_REQUIRED".into());
+    }
+    let input = payload.unwrap_or_else(|| json!({}));
+    let object = input.as_object().ok_or("MANAGED_CDP_INVALID_REQUEST")?;
+    let allowed: &[&str] = match action.as_str() {
+        "status" => &["port"],
+        "launch" => &["port", "mode", "url"],
+        "stop" => &["port", "expectedPid", "recordId"],
+        _ => return Err("MANAGED_CDP_UNKNOWN_ACTION".into()),
+    };
+    if object.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err("MANAGED_CDP_UNEXPECTED_FIELD".into());
+    }
+    let port = object.get("port").and_then(Value::as_u64).unwrap_or(9222);
+    if !(1024..=65535).contains(&port) {
+        return Err("MANAGED_CDP_INVALID_PORT".into());
+    }
+    let mut body = json!({"action":action,"port":port});
+    if action == "launch" {
+        let mode = object.get("mode").and_then(Value::as_str).unwrap_or("headed");
+        if !["auto","headed","headless"].contains(&mode) {
+            return Err("MANAGED_CDP_INVALID_MODE".into());
+        }
+        let url = object.get("url").and_then(Value::as_str).unwrap_or("about:blank");
+        if url.len() > 2048 || url.chars().any(|c| c.is_control()) {
+            return Err("MANAGED_CDP_INVALID_URL".into());
+        }
+        if url != "about:blank" {
+            let parsed = reqwest::Url::parse(url).map_err(|_| "MANAGED_CDP_INVALID_URL")?;
+            if !["http","https"].contains(&parsed.scheme()) ||
+                !parsed.username().is_empty() || parsed.password().is_some() {
+                return Err("MANAGED_CDP_INVALID_URL".into());
+            }
+        }
+        body["mode"] = json!(mode);
+        body["url"] = json!(url);
+    } else if action == "stop" {
+        let pid = object.get("expectedPid").and_then(Value::as_u64)
+            .filter(|n| *n > 0 && *n <= u32::MAX as u64)
+            .ok_or("MANAGED_CDP_STOP_IDENTITY_REQUIRED")?;
+        let record_id = object.get("recordId").and_then(Value::as_str)
+            .filter(|id| (6..=180).contains(&id.len()) &&
+                id.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_:".contains(&b)))
+            .ok_or("MANAGED_CDP_STOP_IDENTITY_REQUIRED")?;
+        body["expectedPid"] = json!(pid);
+        body["recordId"] = json!(record_id);
+    }
+    if action != "status" {
+        if !window.is_focused().unwrap_or(false) {
+            return Err("MANAGED_CDP_FOCUSED_TRAY_REQUIRED".into());
+        }
+        let description = if action == "launch" {
+            format!("Launch isolated Chrome CDP on 127.0.0.1:{port}?\\n\\nMode: {}\\nURL: {}\\n\\nYour personal Chrome windows will not be touched.",
+                body["mode"].as_str().unwrap_or("headed"), body["url"].as_str().unwrap_or("about:blank"))
+        } else {
+            format!("Stop only SuperAgent-owned Chrome CDP on port {port}?\\n\\nVerified PID: {}\\n\\nOther Chrome windows will not be touched.",
+                body["expectedPid"])
+        };
+        let dialog_app = app.clone();
+        let approved = tauri::async_runtime::spawn_blocking(move || {
+            use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+            dialog_app.dialog().message(description).buttons(
+                MessageDialogButtons::OkCancelCustom(
+                    "Approve action".into(), "Cancel".into()
+                )
+            ).blocking_show()
+        }).await.map_err(|_| "MANAGED_CDP_NATIVE_DIALOG_FAILED")?;
+        if !approved { return Err("MANAGED_CDP_OPERATOR_CANCELLED".into()); }
+        if !window.is_visible().unwrap_or(false) ||
+            window.is_minimized().unwrap_or(true) ||
+            !window.is_focused().unwrap_or(false) {
+            return Err("MANAGED_CDP_TRAY_FOCUS_LOST".into());
+        }
+        body["confirm"] = json!(true);
+    }
+    core_request(Method::POST, "/api/desktop/chrome-runtime", Some(body)).await
+}
+
 async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
     // path comes from the fixed match below, never from the webview.
     let info = server_info()?;
@@ -2734,6 +2822,16 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
     } else if path == "/api/desktop/regenerate-token" {
         // Local clipboard helper may require a short PowerShell invocation.
         Duration::from_secs(15)
+    } else if path == "/api/desktop/chrome-runtime" {
+        // Chrome launch waits up to 15 seconds for DevTools readiness.
+        // A timed-out mutation must be checked via status, never replayed.
+        if body.as_ref().and_then(|b| b.get("action")).and_then(Value::as_str) == Some("launch") {
+            Duration::from_secs(30)
+        } else if body.as_ref().and_then(|b| b.get("action")).and_then(Value::as_str) == Some("stop") {
+            Duration::from_secs(18)
+        } else {
+            Duration::from_secs(6)
+        }
     } else if path == "/api/desktop/create-connection" {
         // A managed MCP owner may take 60s for tunnel provisioning.
         // Never retry ambiguous create requests on timeout.
@@ -4052,6 +4150,7 @@ fn main() {
             delegate_action,
             recordings_action,
             desktop_live_action,
+            managed_chrome_action,
             lan_support_action,
             get_terminal_tasks,
             kill_terminal_task,
