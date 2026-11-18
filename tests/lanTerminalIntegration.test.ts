@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { lanInterfaces, startLanServer, type LanServerHandle } from "../src/core/lanRemote/transport.js";
 import {
   pairLanDevice, openLanSession, closeLanSession, revokeLanDevice,
-  startLanTerminal, inputLanTerminal, readLanTerminal, stopLanTerminal,
+  startLanTerminal, inputLanTerminal, keyLanTerminal, resizeLanTerminal, readLanTerminal, stopLanTerminal,
 } from "../src/core/lanRemote/controller.js";
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -44,6 +44,17 @@ describe("LAN attended terminal protocol (real pinned TLS on an available privat
       const input = await inputLanTerminal(device.id, started.jobId, "hello", true);
       expect(input.jobId).toBe(started.jobId);
       expect(approvals.filter(x => x.startsWith("terminal:")).length).toBe(4);
+      allowTerminal = false;
+      await expect(keyLanTerminal(device.id, started.jobId, "ArrowUp"))
+        .rejects.toThrow(/approved|denied/i);
+      expect(approvals.filter(x => x.startsWith("terminal:")).length).toBe(5);
+      if (started.mode === "conpty") {
+        const resized = await resizeLanTerminal(device.id, started.jobId, 100, 36);
+        expect(resized.cols).toBe(100);
+        expect(resized.rows).toBe(36);
+      } else {
+        await expect(resizeLanTerminal(device.id, started.jobId, 100, 36)).rejects.toThrow(/ConPTY/);
+      }
       const stopped = await stopLanTerminal(device.id, started.jobId);
       expect(stopped.stopping || !stopped.running).toBe(true);
       let ended = stopped;
