@@ -60,6 +60,28 @@ describe("McpSessionRegistry", () => {
     expect(reg.connectedAgentSessions()).toEqual([]);
   });
 
+  it("tracks separate OAuth token connections at one URL without changing client-id quotas", async () => {
+    const first = entry("oauth-chatgpt");
+    first.identity = {mode:"oauth",subject:"shared-registered-client",
+      credentialHash:"a".repeat(64),scopes:["mcp:tools"]};
+    first.claimedClientName = "ChatGPT";
+    const second = entry("oauth-gemini");
+    second.identity = {mode:"oauth",subject:"shared-registered-client",
+      credentialHash:"b".repeat(64),scopes:["mcp:tools"]};
+    second.claimedClientName = "Gemini";
+    reg.add(first);
+    reg.add(second);
+    const clients = reg.connectedAgentSessions();
+    expect(clients).toHaveLength(2);
+    expect(new Set(clients.map(c => c.sessionHandle)).size).toBe(2);
+    expect(new Set(clients.map(c => c.principalHandle)).size).toBe(2);
+    expect(clients.map(c => c.claimedClientName).sort()).toEqual(["ChatGPT","Gemini"]);
+    // Rate limits and grants still follow the authenticated OAuth client ID;
+    // the public labels and token-derived handles cannot elevate privileges.
+    expect(reg.snapshot().activePrincipals).toBe(1);
+    await reg.closeAll();
+  });
+
   it("sanitizes client-supplied labels and never treats them as authenticated app names", () => {
     expect(safeMcpClaimedClientLabel("  ChatGPT\u202e  ")).toBe("ChatGPT");
     expect(safeMcpClaimedClientLabel("<script>fake</script>")).toBe("<script>fake</script>");
