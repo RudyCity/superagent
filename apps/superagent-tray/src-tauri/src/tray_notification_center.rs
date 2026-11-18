@@ -436,7 +436,11 @@ pub fn take_daily_digest(dir: &Path) -> Result<Option<(usize, usize)>, String> {
     let _guard = LEDGER_LOCK.lock().map_err(|_| "Notification store locked")?;
     let mut ledger = read(dir)?;
     let now = now_ms();
-    if !ledger.preferences.digest_enabled ||
+    // A due summary remains queued during DND rather than silently
+    // consuming the delivery. It can be emitted on the next Tray poll.
+    let dnd_active = ledger.preferences.dnd_enabled &&
+        ledger.preferences.dnd_until.map_or(true, |until| until > now);
+    if dnd_active || !ledger.preferences.digest_enabled ||
         !ledger.preferences.digest_next_at.is_some_and(|at| at <= now) {
         return Ok(None);
     }
@@ -532,7 +536,9 @@ pub fn perform(dir: &Path, action: &str, id: Option<&str>) -> Result<Value, Stri
             if item.archived_at.is_some() { continue; }
             if action == "read-all" && item.read_at.is_none() {
                 item.read_at = Some(now); changed = true;
-            } else if action == "archive-read" && item.read_at.is_some() {
+            } else if action == "archive-read" && item.read_at.is_some() &&
+                (kind_of(item) == "information" || item.resolved_at.is_some()) {
+                // Bulk housekeeping must not silently hide active required actions.
                 item.archived_at = Some(now); changed = true;
             }
         }
@@ -565,6 +571,9 @@ mod tests {
         assert_eq!(perform(&dir, "list", None).unwrap()["items"][0]["occurrences"], 2);
         assert_eq!(perform(&dir, "unread", Some("core-1")).unwrap()["unreadCount"], 1);
         assert_eq!(perform(&dir, "read-all", None).unwrap()["unreadCount"], 0);
+        // Read does not mean resolved; bulk archive skips the open critical incident.
+        assert!(perform(&dir, "archive-read", None).unwrap()["items"][0]["archivedAt"].is_null());
+        perform(&dir, "resolve", Some("core-1")).unwrap();
         assert_eq!(perform(&dir, "archive-read", None).unwrap()["items"][0]["archivedAt"].is_null(), false);
         assert_eq!(perform(&dir, "restore", Some("core-1")).unwrap()["items"][0]["archivedAt"], Value::Null);
         let _ = fs::remove_dir_all(dir);
@@ -650,6 +659,59 @@ mod tests {
         assert_eq!(result["items"][0]["id"], "old");
         assert_eq!(result["items"][0]["occurrences"], 1);
         assert_eq!(result["preferences"]["minSeverity"], "warning");
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn triage_status_snooze_device_and_audit_persist() {
+        let dir = isolated();
+        publish(&dir, "security", "critical", "mcp-pending:req1", "Approval", "Review").unwrap();
+        assert!(perform(&dir, "resolve", Some("mcp-pending:req1")).is_err());
+        assert!(perform(&dir, "reopen", Some("mcp-pending:req1")).is_err());
+        let started = perform(&dir, "in-progress", Some("mcp-pending:req1")).unwrap();
+        assert_eq!(started["items"][0]["actionStatus"], "in_progress");
+        let snoozed = perform(&dir, "snooze-15m", Some("mcp-pending:req1")).unwrap();
+        assert_eq!(snoozed["items"][0]["isSnoozed"], true);
+        assert_eq!(snoozed["actionCount"], 1);
+        assert_eq!(snoozed["items"][0]["deviceId"], "local");
+        let resumed = perform(&dir, "unsnooze", Some("mcp-pending:req1")).unwrap();
+        assert_eq!(resumed["items"][0]["isSnoozed"], false);
+        assert!(resumed["history"].as_array().unwrap().len() >= 4);
+        assert!(expire_verified(&dir, "mcp-pending:req1").unwrap());
+        let ended = perform(&dir, "list", None).unwrap();
+        assert_eq!(ended["items"][0]["actionStatus"], "expired");
+        assert_eq!(ended["actionCount"], 0);
+        assert!(!expire_verified(&dir, "mcp-pending:req1").unwrap());
+        assert!(publish_for_device(&dir, "lan-devices", "warning", "dev:1",
+            "Disconnected", "Review", "desktop-5").unwrap());
+        assert_eq!(perform(&dir, "list", None).unwrap()["items"][0]["deviceId"], "desktop-5");
+        assert!(publish_for_device(&dir, "lan-devices", "warning", "invalid",
+            "Bad", "Bad", "../secret").is_err());
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn dnd_rules_and_digest_are_durable_and_respect_quiet_mode() {
+        let dir = isolated();
+        publish(&dir, "core", "warning", "warning1", "Warning", "Review").unwrap();
+        let mut prefs = NotificationPreferences::default();
+        prefs.os_warnings = true;
+        prefs.source_levels.insert("core".into(), "off".into());
+        assert!(!prefs.os_enabled("core", "warning"));
+        prefs.source_levels.clear();
+        prefs.dnd_enabled = true;
+        prefs.dnd_until = None;
+        assert!(!prefs.os_enabled("core", "warning"));
+        assert!(prefs.os_enabled("security", "critical"));
+        prefs.digest_enabled = true;
+        prefs.digest_next_at = Some(now_ms().saturating_sub(1));
+        save_preferences(&dir, prefs.clone()).unwrap();
+        assert!(take_daily_digest(&dir).unwrap().is_none());
+        prefs.dnd_enabled = false;
+        save_preferences(&dir, prefs).unwrap();
+        assert_eq!(take_daily_digest(&dir).unwrap(), Some((1, 0)));
+        assert_eq!(take_daily_digest(&dir).unwrap(), None);
+        let result = perform(&dir, "list", None).unwrap();
+        assert!(result["digest"]["lastSentAt"].is_number());
+        assert!(result["preferences"]["digestNextAt"].as_u64().unwrap() > now_ms());
         let _ = fs::remove_dir_all(dir);
     }
     #[test]
