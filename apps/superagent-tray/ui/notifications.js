@@ -1,9 +1,10 @@
 "use strict";
-/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 */
 /** Private native-backed incident inbox. Text-only event rendering and fixed navigation. */
 (() => {
   const $ = (id) => document.getElementById(id);
   const severity = Object.freeze({ info: "Information", warning: "Warning", critical: "Critical" });
+  const severityTag = Object.freeze({ info: "Info", warning: "Warning", critical: "Critical" });
   const sources = Object.freeze([
     "core", "security", "mcp", "tunnel", "delegate", "runtime", "desktop-live",
     "terminal", "lan-devices", "reminder", "jobs", "updates", "shutdown",
@@ -60,6 +61,20 @@
     });
     return items;
   };
+  const hasActiveFilters = () =>
+    state.filter !== "all" || state.source !== "all" || state.period !== "all" || Boolean(state.search);
+  const countsSnapshot = () => {
+    const current = active();
+    return {
+      all: current.length,
+      unread: current.filter((n) => !n.readAt).length,
+      important: current.filter((n) => n.severity !== "info").length,
+      open: current.filter((n) => !n.resolvedAt && !n.acknowledgedAt).length,
+      acknowledged: current.filter((n) => Boolean(n.acknowledgedAt) && !n.resolvedAt).length,
+      resolved: current.filter((n) => Boolean(n.resolvedAt)).length,
+      archived: state.items.filter((n) => Boolean(n.archivedAt)).length,
+    };
+  };
   const safeItems = (data) => {
     if (!data || !Array.isArray(data.items)) throw new Error("Invalid notification response");
     return data.items.slice(0, 300).filter((item) =>
@@ -93,8 +108,8 @@
     displayPrefs(readPrefs(data));
     render();
   }
-  function addAction(container, text, action, id, ariaText) {
-    const button = element("button", "notification-mini-button", text);
+  function addAction(container, text, action, id, ariaText, extraClass) {
+    const button = element("button", "notification-mini-button" + (extraClass ? " " + extraClass : ""), text);
     button.type = "button";
     if (ariaText) button.setAttribute("aria-label", ariaText);
     button.addEventListener("click", () => mutate(action, id));
@@ -105,19 +120,24 @@
     const wrapper = element("article",
       "notification-item severity-" + item.severity +
       (item.readAt ? " is-read" : " is-unread") +
-      (item.resolvedAt ? " is-resolved" : ""));
+      (item.resolvedAt ? " is-resolved" : "") +
+      (item.archivedAt ? " is-archived" : ""));
     const indicator = element("span", "notification-item-indicator");
     indicator.setAttribute("aria-hidden", "true");
     const copy = element("div", "notification-item-copy");
     const heading = element("div", "notification-item-heading");
     heading.append(element("h3", "", item.title));
     if (!item.readAt && !item.archivedAt) heading.append(element("span", "notification-item-new", "New"));
-    const tag = element("span", "notification-item-state", incidentState(item));
-    heading.append(tag);
-    const repeated = Number(item.occurrences) > 1 ? " · " + item.occurrences + " occurrences" : "";
-    const meta = element("p", "notification-item-meta",
-      severity[item.severity] + " · " + item.source.replaceAll("-", " ") +
-      " · " + formatTime(item.createdAt) + repeated);
+    heading.append(element("span", "notification-item-severity severity-" + item.severity, severityTag[item.severity]));
+    heading.append(element("span", "notification-item-state", incidentState(item)));
+    const meta = element("div", "notification-item-meta");
+    meta.append(element("span", "notification-item-source", item.source.replaceAll("-", " ")));
+    meta.append(element("span", "notification-item-dot", "·"));
+    meta.append(element("span", "notification-item-time", formatTime(item.createdAt)));
+    if (Number(item.occurrences) > 1) {
+      meta.append(element("span", "notification-item-dot", "·"));
+      meta.append(element("span", "notification-item-occurrences", item.occurrences + " occurrences"));
+    }
     copy.append(heading, meta, element("p", "notification-item-text", item.body));
     const actions = element("div", "notification-item-actions");
     const page = destination[item.source];
@@ -155,8 +175,32 @@
     return wrapper;
   }
   const empty = (message) => element("div", "notification-empty", message);
+  function inboxStateCard(kind, headingText, detailText, actionLabel, onAction) {
+    const card = element("div", "notification-state-card" + (kind ? " is-" + kind : ""));
+    card.append(element("strong", "notification-state-title", headingText));
+    card.append(element("p", "notification-state-detail", detailText));
+    if (actionLabel && typeof onAction === "function") {
+      const btn = element("button", "button secondary sm", actionLabel);
+      btn.type = "button";
+      btn.addEventListener("click", onAction);
+      card.append(btn);
+    }
+    return card;
+  }
+  function resetFilters() {
+    state.filter = "all";
+    state.source = "all";
+    state.period = "all";
+    state.search = "";
+    if ($("notification-search")) $("notification-search").value = "";
+    if ($("notification-period")) $("notification-period").value = "all";
+    if ($("notification-source")) $("notification-source").value = "all";
+    render();
+  }
   function render() {
     const count = state.unreadCount;
+    const counts = countsSnapshot();
+    const visibleItems = selected();
     for (const el of [$("tray-notification-count"), $("nav-notifications-count")]) {
       if (!el) continue;
       el.hidden = count === 0;
@@ -178,18 +222,70 @@
     }
     const inbox = $("notification-inbox-list");
     if (inbox) {
+      inbox.setAttribute("aria-busy", String(state.busy));
       inbox.replaceChildren();
-      if (state.error) inbox.append(empty(state.error));
-      else if (!selected().length) inbox.append(empty("No notifications match these filters."));
-      else selected().forEach((n) => inbox.append(noteCard(n, false)));
+      if (state.error) {
+        inbox.append(inboxStateCard("error", "Unable to load notifications", state.error, "Retry sync", () => refresh(true)));
+      } else if (state.busy && !state.items.length) {
+        inbox.append(empty("Loading incident history…"));
+      } else if (!visibleItems.length) {
+        if (hasActiveFilters()) {
+          inbox.append(inboxStateCard("empty", "No matching events",
+            "No notifications match the active filter, source, or search query.",
+            "Reset filters", resetFilters));
+        } else {
+          inbox.append(inboxStateCard("empty", "All caught up",
+            counts.archived > 0
+              ? "No active events right now. Switch to Archived to inspect " + counts.archived + " older item" + (counts.archived === 1 ? "." : "s.")
+              : "No active incidents or system notifications right now."));
+        }
+      } else {
+        visibleItems.forEach((n) => inbox.append(noteCard(n, false)));
+      }
     }
     const summary = $("notification-summary");
     if (summary) summary.textContent = count + " unread · " +
       active().filter((n) => !n.resolvedAt).length + " open · " +
       active().filter((n) => n.resolvedAt).length + " resolved · " +
-      (state.items.length - active().length) + " archived" +
+      counts.archived + " archived" +
       (state.evictedCount ? " · " + state.evictedCount + " older events pruned" : "") +
       (state.securitySync === "unavailable" ? " · Security requests could not sync with Core" : "");
+    const syncPill = $("notification-sync-pill");
+    if (syncPill) {
+      syncPill.setAttribute("data-state", state.securitySync === "ok" ? "ok" : state.securitySync === "unavailable" ? "warn" : "unknown");
+      syncPill.textContent = state.securitySync === "ok"
+        ? "Core synced"
+        : state.securitySync === "unavailable"
+          ? "Core sync unavailable"
+          : "Local inbox";
+    }
+    for (const [key, val] of Object.entries(counts)) {
+      const badge = $("notification-filter-count-" + key);
+      if (badge) badge.textContent = String(val);
+    }
+    if ($("notification-kpi-unread")) $("notification-kpi-unread").textContent = String(counts.unread);
+    if ($("notification-kpi-open")) $("notification-kpi-open").textContent = String(counts.open);
+    if ($("notification-kpi-important")) $("notification-kpi-important").textContent = String(counts.important);
+    if ($("notification-kpi-resolved")) $("notification-kpi-resolved").textContent = String(counts.resolved);
+    document.querySelectorAll("[data-notification-quick-filter]").forEach((card) => {
+      const activeCard = card.dataset.notificationQuickFilter === state.filter;
+      card.classList.toggle("is-active", activeCard);
+      card.setAttribute("aria-pressed", String(activeCard));
+    });
+    const viewLabel = $("notification-view-label");
+    if (viewLabel) {
+      viewLabel.textContent = state.error
+        ? "Feed unavailable"
+        : "Showing " + visibleItems.length + " event" + (visibleItems.length === 1 ? "" : "s");
+    }
+    const loadingPill = $("notification-loading-pill");
+    if (loadingPill) loadingPill.hidden = !state.busy;
+    const resetBtn = $("notification-reset-filters");
+    if (resetBtn) resetBtn.hidden = !hasActiveFilters();
+    const clearSearch = $("notification-search-clear");
+    if (clearSearch) clearSearch.hidden = !state.search;
+    const dirtyBadge = $("notification-prefs-dirty-badge");
+    if (dirtyBadge) dirtyBadge.hidden = !state.prefsDirty;
     document.querySelectorAll("[data-notification-filter]").forEach((button) => {
       const yes = button.dataset.notificationFilter === state.filter;
       button.classList.toggle("active", yes);
@@ -207,6 +303,7 @@
   async function refresh(syncSecurity = false) {
     if (state.busy) return;
     state.busy = true;
+    render();
     try {
       // Opening Notifications makes a fresh authenticated Core inventory
       // request; passive badge refreshes use only the native persisted inbox.
@@ -287,11 +384,26 @@
     $("tray-notification-read-all")?.addEventListener("click", () => mutate("read-all"));
     $("notification-read-all")?.addEventListener("click", () => mutate("read-all"));
     $("notification-archive-read")?.addEventListener("click", () => mutate("archive-read"));
-    $("notification-retry")?.addEventListener("click", refresh);
+    $("notification-retry")?.addEventListener("click", () => refresh(true));
+    $("notification-reset-filters")?.addEventListener("click", resetFilters);
+    $("notification-search-clear")?.addEventListener("click", () => {
+      state.search = "";
+      if ($("notification-search")) {
+        $("notification-search").value = "";
+        $("notification-search").focus();
+      }
+      render();
+    });
     $("notification-save-preferences")?.addEventListener("click", savePrefs);
     document.querySelectorAll("[data-notification-filter]").forEach((button) =>
       button.addEventListener("click", () => {
         state.filter = button.dataset.notificationFilter;
+        render();
+      }));
+    document.querySelectorAll("[data-notification-quick-filter]").forEach((card) =>
+      card.addEventListener("click", () => {
+        const next = card.dataset.notificationQuickFilter;
+        state.filter = state.filter === next ? "all" : next;
         render();
       }));
     $("notification-search")?.addEventListener("input", (event) => {

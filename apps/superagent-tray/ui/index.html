@@ -457,75 +457,159 @@
       <!-- Notification inbox has its own route; header bell is a quick preview only. -->
       <section id="page-notifications" class="page-view" aria-label="Notification Manager" hidden>
         <div class="notification-manager">
-          <div class="notification-manager-summary">
-            <div>
-              <h2>Notification Center</h2>
-              <p id="notification-summary" aria-live="polite">Loading local notification history…</p>
+          <div class="notification-hero-panel panel">
+            <div class="notification-manager-summary">
+              <div class="notification-summary-copy">
+                <div class="notification-summary-title-row">
+                  <h2>Inbox &amp; Incident Triage</h2>
+                  <span id="notification-sync-pill" class="notification-sync-pill" data-state="unknown">Local inbox</span>
+                </div>
+                <p id="notification-summary" aria-live="polite">Loading local notification history…</p>
+              </div>
+              <div class="notification-manager-actions">
+                <button id="notification-retry" class="button secondary sm" type="button">
+                  <svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M2.5 8a5.5 5.5 0 0 1 9.3-3.9l1.7-1.6V7H9M13.5 8a5.5 5.5 0 0 1-9.3 3.9L2.5 13.5V9H7" />
+                  </svg>
+                  <span>Refresh</span>
+                </button>
+                <button id="notification-read-all" class="button secondary sm" type="button">
+                  <svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M2.5 8.5 6 12l7.5-7.5" />
+                  </svg>
+                  <span>Mark all read</span>
+                </button>
+                <button id="notification-archive-read" class="button ghost sm" type="button">
+                  <svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="2" y="3" width="12" height="3" rx="1" />
+                    <path d="M3 6v6.5A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5V6" />
+                    <path d="M6.5 9.5h3" />
+                  </svg>
+                  <span>Archive read</span>
+                </button>
+              </div>
             </div>
-            <div class="notification-manager-actions">
-              <button id="notification-retry" class="button ghost" type="button">Refresh</button>
-              <button id="notification-read-all" class="button ghost" type="button">Mark all read</button>
-              <button id="notification-archive-read" class="button ghost" type="button">Archive read</button>
+            <div class="notification-kpi-strip" role="group" aria-label="Incident queue counters">
+              <button type="button" class="notification-kpi-card" data-notification-quick-filter="unread">
+                <span class="notification-kpi-label">Unread</span>
+                <strong id="notification-kpi-unread" class="notification-kpi-value">0</strong>
+                <span class="notification-kpi-hint">Needs review</span>
+              </button>
+              <button type="button" class="notification-kpi-card" data-notification-quick-filter="open">
+                <span class="notification-kpi-label">Open</span>
+                <strong id="notification-kpi-open" class="notification-kpi-value">0</strong>
+                <span class="notification-kpi-hint">Unacknowledged</span>
+              </button>
+              <button type="button" class="notification-kpi-card is-alert" data-notification-quick-filter="important">
+                <span class="notification-kpi-label">Warnings &amp; Critical</span>
+                <strong id="notification-kpi-important" class="notification-kpi-value">0</strong>
+                <span class="notification-kpi-hint">Elevated severity</span>
+              </button>
+              <button type="button" class="notification-kpi-card is-resolved" data-notification-quick-filter="resolved">
+                <span class="notification-kpi-label">Resolved</span>
+                <strong id="notification-kpi-resolved" class="notification-kpi-value">0</strong>
+                <span class="notification-kpi-hint">Completed items</span>
+              </button>
             </div>
           </div>
-          <div class="notification-filter-row" role="group" aria-label="Filter notifications">
-            <button class="notification-filter active" type="button" data-notification-filter="all" aria-pressed="true">All</button>
-            <button class="notification-filter" type="button" data-notification-filter="unread" aria-pressed="false">Unread</button>
-            <button class="notification-filter" type="button" data-notification-filter="important" aria-pressed="false">Important</button>
-            <button class="notification-filter" type="button" data-notification-filter="open" aria-pressed="false">Open</button>
-            <button class="notification-filter" type="button" data-notification-filter="acknowledged" aria-pressed="false">Acknowledged</button>
-            <button class="notification-filter" type="button" data-notification-filter="resolved" aria-pressed="false">Resolved</button>
-            <button class="notification-filter" type="button" data-notification-filter="archived" aria-pressed="false">Archived</button>
+
+          <div class="notification-controls-panel panel">
+            <div class="notification-filter-scroll">
+              <div class="notification-filter-row" role="group" aria-label="Filter notifications">
+                <button class="notification-filter active" type="button" data-notification-filter="all" aria-pressed="true"><span>All</span><span id="notification-filter-count-all" class="notification-filter-count">0</span></button>
+                <button class="notification-filter" type="button" data-notification-filter="unread" aria-pressed="false"><span>Unread</span><span id="notification-filter-count-unread" class="notification-filter-count">0</span></button>
+                <button class="notification-filter" type="button" data-notification-filter="important" aria-pressed="false"><span>Important</span><span id="notification-filter-count-important" class="notification-filter-count">0</span></button>
+                <button class="notification-filter" type="button" data-notification-filter="open" aria-pressed="false"><span>Open</span><span id="notification-filter-count-open" class="notification-filter-count">0</span></button>
+                <button class="notification-filter" type="button" data-notification-filter="acknowledged" aria-pressed="false"><span>Acknowledged</span><span id="notification-filter-count-acknowledged" class="notification-filter-count">0</span></button>
+                <button class="notification-filter" type="button" data-notification-filter="resolved" aria-pressed="false"><span>Resolved</span><span id="notification-filter-count-resolved" class="notification-filter-count">0</span></button>
+                <button class="notification-filter" type="button" data-notification-filter="archived" aria-pressed="false"><span>Archived</span><span id="notification-filter-count-archived" class="notification-filter-count">0</span></button>
+              </div>
+            </div>
+            <div class="notification-toolbar">
+              <label class="notification-tool-field notification-tool-search" for="notification-search">
+                <span class="notification-tool-label">Search events</span>
+                <div class="notification-search-wrap">
+                  <svg class="notification-search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="7" cy="7" r="4.5" />
+                    <path d="m10.5 10.5 3 3" />
+                  </svg>
+                  <input id="notification-search" type="search" placeholder="Search title, category or details" autocomplete="off" maxlength="80">
+                  <button id="notification-search-clear" class="notification-search-clear" type="button" aria-label="Clear search query" hidden>×</button>
+                </div>
+              </label>
+              <label class="notification-tool-field" for="notification-period">
+                <span class="notification-tool-label">Period</span>
+                <select id="notification-period">
+                  <option value="all">Any time</option>
+                  <option value="24h">Last 24 hours</option>
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d">Last 30 days</option>
+                  <option value="90d">Last 90 days</option>
+                </select>
+              </label>
+              <label class="notification-tool-field" for="notification-source">
+                <span class="notification-tool-label">Source</span>
+                <select id="notification-source">
+                  <option value="all">All sources</option>
+                  <option value="core">Core</option>
+                  <option value="security">Security Approval</option>
+                  <option value="mcp">MCP</option>
+                  <option value="tunnel">Tunnels</option>
+                  <option value="delegate">Delegate / CDP</option>
+                  <option value="runtime">Runtime</option>
+                  <option value="desktop-live">Desktop Live</option>
+                  <option value="terminal">Terminal</option>
+                  <option value="lan-devices">LAN Devices</option>
+                  <option value="reminder">Reminders</option>
+                  <option value="jobs">Schedules / Jobs</option>
+                  <option value="updates">Updates</option>
+                  <option value="shutdown">Shutdown</option>
+                  <option value="settings">Settings</option>
+                  <option value="muse-files">Muse Files</option>
+                  <option value="overview">Overview</option>
+                  <option value="logs">Logs</option>
+                </select>
+              </label>
+            </div>
           </div>
-          <div class="notification-toolbar">
-            <label class="notification-tool-field notification-tool-search">Search events
-              <input id="notification-search" type="search" placeholder="Search title, category or details" autocomplete="off" maxlength="80">
-            </label>
-            <label class="notification-tool-field">Period
-              <select id="notification-period">
-                <option value="all">Any time</option>
-                <option value="24h">Last 24 hours</option>
-                <option value="7d">Last 7 days</option>
-                <option value="30d">Last 30 days</option>
-                <option value="90d">Last 90 days</option>
-              </select>
-            </label>
-            <label class="notification-tool-field">Source
-              <select id="notification-source">
-                <option value="all">All sources</option>
-                <option value="core">Core</option>
-                <option value="security">Security Approval</option>
-                <option value="mcp">MCP</option>
-                <option value="tunnel">Tunnels</option>
-                <option value="delegate">Delegate / CDP</option>
-                <option value="runtime">Runtime</option>
-                <option value="desktop-live">Desktop Live</option>
-                <option value="terminal">Terminal</option>
-                <option value="lan-devices">LAN Devices</option>
-                <option value="reminder">Reminders</option>
-                <option value="jobs">Schedules / Jobs</option>
-                <option value="updates">Updates</option>
-                <option value="shutdown">Shutdown</option>
-                <option value="settings">Settings</option>
-                <option value="muse-files">Muse Files</option>
-                <option value="overview">Overview</option>
-                <option value="logs">Logs</option>
-              </select>
-            </label>
-          </div>
-          <details class="notification-preferences" id="notification-preferences">
-            <summary>Notification delivery &amp; retention <span>Customize OS alerts and inbox history</span></summary>
+
+          <section class="notification-inbox-shell panel" aria-label="Event feed">
+            <div class="notification-inbox-bar">
+              <div class="notification-inbox-bar-left">
+                <span id="notification-view-label" class="notification-view-label">Event Feed</span>
+                <span id="notification-loading-pill" class="notification-loading-pill" hidden>Syncing…</span>
+              </div>
+              <button id="notification-reset-filters" class="notification-text-button" type="button" hidden>Reset filters</button>
+            </div>
+            <div id="notification-inbox-list" class="notification-inbox-list" aria-live="polite" aria-busy="false"></div>
+          </section>
+
+          <details class="notification-preferences panel" id="notification-preferences">
+            <summary>
+              <div class="notification-prefs-summary-copy">
+                <span class="notification-prefs-title-wrap">
+                  <strong>Delivery &amp; retention rules</strong>
+                  <span id="notification-prefs-dirty-badge" class="notification-prefs-dirty" hidden>Unsaved</span>
+                </span>
+                <span class="notification-prefs-subtitle">Customize OS pop-up alerts and local inbox retention</span>
+              </div>
+              <svg class="notification-prefs-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m4 6 4 4 4-4" />
+              </svg>
+            </summary>
             <div class="notification-preferences-body">
               <p class="notification-setting-note">All important events remain visible in this private inbox. These settings control OS pop-up alerts only. Sound follows your operating system notification settings.</p>
               <div class="notification-preferences-top">
-                <label class="notification-tool-field">Minimum OS severity
+                <label class="notification-tool-field">
+                  <span class="notification-tool-label">Minimum OS severity</span>
                   <select id="notification-min-severity">
                     <option value="critical">Critical</option>
                     <option value="warning" selected>Warning</option>
                     <option value="info">All events</option>
                   </select>
                 </label>
-                <label class="notification-tool-field">Keep history for
+                <label class="notification-tool-field">
+                  <span class="notification-tool-label">Keep history for</span>
                   <select id="notification-retention-days">
                     <option value="7">7 days</option>
                     <option value="30" selected>30 days</option>
@@ -534,29 +618,29 @@
                 </label>
               </div>
               <div class="notification-toggle-list">
-                <label><input id="notification-os-critical" type="checkbox" checked> Desktop pop-ups for critical events</label>
-                <label><input id="notification-os-warnings" type="checkbox"> Desktop pop-ups for warnings and info</label>
+                <label class="notification-switch-card"><input id="notification-os-critical" type="checkbox" checked><span>Desktop pop-ups for critical events</span></label>
+                <label class="notification-switch-card"><input id="notification-os-warnings" type="checkbox"><span>Desktop pop-ups for warnings and info</span></label>
               </div>
               <fieldset class="notification-category-fieldset">
                 <legend>Categories allowed to show OS notifications</legend>
                 <div class="notification-category-grid">
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="core" checked> Core</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="security" checked> Security Approval</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="mcp" checked> MCP</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="tunnel" checked> Tunnels</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="delegate" checked> Delegate / CDP</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="runtime" checked> Runtime</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="desktop-live" checked> Desktop Live</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="terminal" checked> Terminal</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="lan-devices" checked> LAN Devices</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="reminder" checked> Reminders</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="jobs" checked> Schedules / Jobs</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="updates" checked> Updates</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="shutdown" checked> Shutdown</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="settings" checked> Settings</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="muse-files" checked> Muse Files</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="overview" checked> Overview</label>
-                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="logs" checked> Logs</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="core" checked><span>Core</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="security" checked><span>Security Approval</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="mcp" checked><span>MCP</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="tunnel" checked><span>Tunnels</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="delegate" checked><span>Delegate / CDP</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="runtime" checked><span>Runtime</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="desktop-live" checked><span>Desktop Live</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="terminal" checked><span>Terminal</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="lan-devices" checked><span>LAN Devices</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="reminder" checked><span>Reminders</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="jobs" checked><span>Schedules / Jobs</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="updates" checked><span>Updates</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="shutdown" checked><span>Shutdown</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="settings" checked><span>Settings</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="muse-files" checked><span>Muse Files</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="overview" checked><span>Overview</span></label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="logs" checked><span>Logs</span></label>
                 </div>
               </fieldset>
               <div class="notification-preferences-foot">
@@ -565,7 +649,6 @@
               </div>
             </div>
           </details>
-          <div id="notification-inbox-list" class="notification-inbox-list" aria-live="polite"></div>
         </div>
       </section>
 
