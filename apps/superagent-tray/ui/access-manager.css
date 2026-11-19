@@ -276,3 +276,36 @@
   .access-bulk-bar{flex-wrap:wrap;gap:8px}
   .access-bulk-actions{width:100%;justify-content:space-between}
 }
+
+
+/* Authenticated MCP tool inventory — source-derived, advisory, no grant writes. */
+.access-mcp-tools-card{display:grid;gap:13px}
+.access-mcp-tools-card .access-stored-head{flex-wrap:wrap;align-items:flex-start}
+.access-mcp-tools-card .access-stored-head>div:first-child{flex:1;min-width:200px}
+.access-mcp-tool-filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(185px,.42fr);gap:9px}
+.access-mcp-tool-list{display:grid;gap:9px;max-height:660px;overflow-y:auto;overscroll-behavior:contain;padding:1px 4px 1px 1px}
+.access-mcp-tool-row{display:grid;gap:7px;border:1px solid var(--border-subtle,rgba(255,255,255,.09));border-radius:11px;padding:13px;background:rgba(148,163,184,.035);min-width:0}
+.access-mcp-tool-row:focus-within{border-color:var(--accent,rgba(167,139,250,.65))}
+.access-mcp-tool-head{display:flex;gap:7px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;min-width:0}
+.access-mcp-tool-name{font:650 12px/1.45 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;overflow-wrap:anywhere}
+.access-mcp-tool-badges{display:flex;gap:5px;flex-wrap:wrap}
+.access-mcp-tool-badge{font-size:10px;font-weight:650;padding:3px 7px;border-radius:6px;border:1px solid rgba(142,157,181,.2);background:rgba(125,140,166,.08);color:var(--text-secondary,#c5d0df)}
+.access-mcp-tool-badge.is-risky{border-color:rgba(244,175,82,.28);color:#fbbf87;background:rgba(194,121,38,.09)}
+.access-mcp-tool-badge.is-blocked{border-color:rgba(244,114,114,.32);color:#fca5a5;background:rgba(163,45,45,.09)}
+.access-mcp-tool-description,.access-mcp-tool-grant{margin:0;font-size:11px;line-height:1.55;color:var(--text-secondary,#b8c5d9);overflow-wrap:anywhere}
+.access-mcp-tool-grant{font-weight:650;color:var(--text-primary,#dae5f1)}
+.access-mcp-tool-row>.access-hint{margin:0;overflow-wrap:anywhere;line-height:1.55}
+.access-mcp-tool-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.access-mcp-tool-actions .access-audit-refresh{min-height:34px}
+.access-mcp-tool-actions .access-select{width:auto;min-width:145px;max-width:100%}
+#access-mcp-tool-more{justify-self:start}
+#access-mcp-tool-more[hidden],#access-mcp-legacy-requests[hidden]{display:none!important}
+#access-mcp-tool-summary{line-height:1.55;margin:0}
+@media(max-width:640px){
+  .access-mcp-tool-filters{grid-template-columns:minmax(0,1fr)}
+  .access-mcp-tool-head{display:grid}
+  .access-mcp-tool-actions{display:grid;grid-template-columns:minmax(0,1fr)}
+  .access-mcp-tool-actions .access-select{width:100%}
+  .access-mcp-tool-list{max-height:570px}
+  .access-mcp-tool-actions .access-audit-refresh{min-height:44px}
+}
