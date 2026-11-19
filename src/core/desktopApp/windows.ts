@@ -129,7 +129,7 @@ export function createWindowsDesktopAppProvider(
 ): DesktopAppLifecycleProvider {
   const runPowerShell = (script: string, payload: unknown) => runner.run({
     executable: WINDOWS_POWERSHELL,
-    args: ["-NoProfile", "-NonInteractive", "-EncodedCommand", encodePowerShell(script)],
+    args: ["-NoProfile", "-NonInteractive", "-EncodedCommand", encodePowerShell("[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n" + script)],
     env: { SUPERAGENT_DESKTOP_APP_PAYLOAD: JSON.stringify(payload) },
     timeoutMs: 10_000,
   });
