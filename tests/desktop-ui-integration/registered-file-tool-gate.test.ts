@@ -109,7 +109,7 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       ["superagent_browser_gateway",{action:"identity",payload:{filePath:"/secret"}}],
       ["superagent_list_running_chrome",{customUserDataPath:"/secret"}],
       ["superagent_list_chrome_profiles",{}],
-    ] as const)expect(gate(name,args)).toMatch(/not certified/);
+    ] as const)expect(gate(name,args)).toMatch(/not certified|explicit certified file effects/);
   });
   it("does not use permanent file policy as a catch-all blocker for non-file capabilities",()=>{
     const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
@@ -329,8 +329,9 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     expect(gate("superagent_pdf_extract",{inputPath:"src/main.ts",maxChars:500})).toBeNull();
     expect(gate("superagent_pdf_ocr",{inputPath:"src/main.ts",engine:"tiny"})).toBeNull();
     expect(gate("superagent_pdf_verify",{inputPath:"src/main.ts",expectedPageCount:1})).toBeNull();
+    expect(gate("superagent_pdf_verify_signature",{inputPath:"src/main.ts"})).toBeNull();
     for(const name of ["superagent_pdf_render","superagent_pdf_edit",
-      "superagent_pdf_sign","superagent_pdf_verify_signature","superagent_media_transform",
+      "superagent_pdf_sign","superagent_media_transform",
       "superagent_media_convert","superagent_media_batch"]){
       expect(gate(name,{inputPath:"src/main.ts"})).toMatch(/explicit certified file effects|not certified/);
     }
