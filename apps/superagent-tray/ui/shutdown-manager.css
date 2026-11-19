@@ -1,28 +1,34 @@
 /* Shutdown Manager is a native Tray overlay, not a remote or browser-side kill surface. */
 #shutdown-manager-dialog[hidden], #shutdown-progress[hidden] {display:none !important}
 #shutdown-manager-dialog {
-  z-index:175;
-  padding:clamp(8px,1.4vw,18px);
+  /* Keep the native title bar available, but always cover the app footer,
+     toasts, page chrome and fixed status surfaces. */
+  z-index:1900;
+  inset:var(--tray-titlebar-height,44px) 0 0;
+  padding:clamp(8px,1.1vw,14px);
+  background:rgba(4,7,14,.92);
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
 }
 .shutdown-manager.modal-dialog {
   width:min(1680px,calc(100vw - 32px));
   max-width:none;
-  height:min(980px,calc(100vh - 32px));
-  max-height:calc(100vh - 32px);
+  height:min(920px,calc(100vh - var(--tray-titlebar-height,44px) - 20px));
+  max-height:calc(100vh - var(--tray-titlebar-height,44px) - 20px);
   margin:auto;
   background:#101720;
   border:1px solid #334255;
   box-shadow:0 36px 90px rgba(0,0,0,.65);
 }
-.shutdown-manager .modal-header {padding:22px 26px 17px}
+.shutdown-manager .modal-header {padding:17px 22px 13px;flex:none}
 .shutdown-manager h2 {font-size:20px;letter-spacing:-.025em}
 .shutdown-manager .modal-eyebrow {font-size:10px;letter-spacing:.16em;color:#9fb3cb;font-weight:800}
-.shutdown-description {font-size:12px;color:#a5b5ca;line-height:1.6;max-width:96ch;margin:7px 0 0}
-.shutdown-manager .modal-body {overflow:auto;min-height:0;padding:20px 26px;display:flex;flex-direction:column;gap:14px}
+.shutdown-description {font-size:11px;color:#a5b5ca;line-height:1.5;max-width:100ch;margin:5px 0 0}
+.shutdown-manager .modal-body {overflow:auto;overscroll-behavior:contain;min-height:0;padding:16px 22px;display:flex;flex:1 1 auto;flex-direction:column;gap:10px}
 .shutdown-stats {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px}
-.shutdown-stat {padding:15px 16px;background:#172230;border:1px solid #2a3b4c;border-radius:11px}
-.shutdown-stat strong {display:block;font-size:23px;line-height:1.1;font-variant-numeric:tabular-nums}
-.shutdown-stat span {display:block;margin-top:6px;font-size:11px;color:#a5b5ca}
+.shutdown-stat {padding:11px 14px;background:#172230;border:1px solid #2a3b4c;border-radius:10px}
+.shutdown-stat strong {display:block;font-size:20px;line-height:1.05;font-variant-numeric:tabular-nums}
+.shutdown-stat span {display:block;margin-top:4px;font-size:10px;color:#a5b5ca}
 .shutdown-stat.blocked strong {color:#ffb4a5}
 .shutdown-panel-heading {display:flex;align-items:center;justify-content:space-between;gap:12px}
 .shutdown-panel-heading h3 {font-size:13px;letter-spacing:-.01em;margin:0;color:#eef5ff}
@@ -35,10 +41,11 @@
   max-height:none;
   overflow:visible;
   padding-right:0;
+  overscroll-behavior:contain;
 }
-.shutdown-service {display:flex;align-items:flex-start;gap:12px;padding:12px 13px;
+.shutdown-service {display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
   background:#141e2a;border:1px solid #2b3a4a;border-radius:10px;min-width:0;
-  transition:border-color .12s ease,background .12s ease}
+  transition:border-color .12s ease,background .12s ease;content-visibility:auto;contain-intrinsic-size:72px}
 .shutdown-service[data-state="ready"]:hover {border-color:#58738f;background:#182537}
 .shutdown-service[data-state="blocked"] {border-color:#63454b;background:#241c25}
 .shutdown-service[data-state="force"] {border-color:#6f6247;background:#25241f}
@@ -57,20 +64,20 @@
 .shutdown-service[data-state="manual"] .shutdown-status {color:#f6b9cc;background:rgba(194,81,117,.16)}
 .shutdown-service[data-state="inactive"] .shutdown-status {color:#adb5c3;background:rgba(128,142,160,.13)}
 .shutdown-empty {padding:20px;text-align:center;font-size:12px;color:#a5b5ca}
-.shutdown-note {padding:10px 12px;background:#172230;border:1px solid #2a3b4c;border-radius:8px;
-  font-size:11px;color:#a5b5ca;line-height:1.55}
+.shutdown-note {padding:8px 11px;background:#172230;border:1px solid #2a3b4c;border-radius:8px;
+  font-size:10px;color:#a5b5ca;line-height:1.45}
 .shutdown-feedback {border-radius:9px;background:#1e2e40;border:1px solid #345069;
-  font-size:12px;line-height:1.55;color:#c5d9ed;padding:10px 13px;overflow-wrap:anywhere}
+  font-size:11px;line-height:1.45;color:#c5d9ed;padding:8px 11px;overflow-wrap:anywhere}
 .shutdown-feedback[data-tone="error"] {background:#30212a;border-color:#754f58;color:#f3b1b3}
 .shutdown-force-panel {
   display:grid;grid-template-columns:minmax(0,1fr) minmax(165px,.7fr);
   align-items:end;column-gap:16px;row-gap:8px;
-  border:1px solid #65474d;border-radius:10px;padding:13px 15px;
+  border:1px solid #65474d;border-radius:10px;padding:10px 12px;
   background:linear-gradient(130deg,#291d28,#1a202c);
 }
 .shutdown-force-copy {display:flex;flex-direction:column;gap:4px;grid-row:span 2}
 .shutdown-force-copy strong {color:#f3b9b6;font-size:12px}
-.shutdown-force-copy small {color:#b9b4c3;font-size:11px;line-height:1.5}
+.shutdown-force-copy small {color:#b9b4c3;font-size:10px;line-height:1.4}
 .shutdown-force-panel label {font-size:11px;color:#d1c0c7}
 .shutdown-force-panel label code {font-size:10px;color:#f5c1c1}
 .shutdown-force-panel input {
@@ -88,13 +95,13 @@
   font-size:10px;font-weight:750}
 .shutdown-manual-choice input {width:14px;height:14px;accent-color:#dc728e;cursor:pointer;margin:0}
 .shutdown-manual-choice:focus-within {outline:2px solid #8bc4ff;outline-offset:2px}
-.shutdown-manual-panel {display:flex;flex-direction:column;gap:9px;padding:14px 15px;
+.shutdown-manual-panel {display:flex;flex-direction:column;gap:7px;padding:10px 12px;
   border:1px solid #87505f;border-radius:10px;
   background:linear-gradient(130deg,#2b1e2b,#19202d)}
 .shutdown-manual-heading {display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
 .shutdown-manual-heading > div {display:flex;flex:1;flex-direction:column;gap:5px}
 .shutdown-manual-heading strong {font-size:12px;color:#f6c4cd}
-.shutdown-manual-heading small {font-size:11px;color:#bbaebc;line-height:1.55}
+.shutdown-manual-heading small {font-size:10px;color:#bbaebc;line-height:1.4}
 .shutdown-manual-heading button {flex:none;font-size:11px;padding:7px 11px}
 .shutdown-manual-panel > label {font-size:11px;color:#d8b8c6}
 .shutdown-manual-panel code {font-size:10px;color:#ffd0dd}
@@ -102,7 +109,7 @@
   border:1px solid #885365;border-radius:7px;padding:8px 11px;
   background:#121923;color:#fff;font-size:12px;letter-spacing:.03em}
 .shutdown-manual-panel > input:focus-visible {outline:2px solid #8bc4ff;outline-offset:2px}
-.shutdown-progress {border:1px solid #334657;border-radius:10px;padding:14px;background:#111d29}
+.shutdown-progress {border:1px solid #334657;border-radius:10px;padding:11px;background:#111d29;overflow:auto;overscroll-behavior:contain;max-height:180px}
 .shutdown-progress h3 {font-size:12px;margin:0 0 10px;color:#f4f8fc}
 .shutdown-progress ol {list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
 .shutdown-step {display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:9px 10px;
@@ -120,7 +127,7 @@
   flex-wrap:wrap;
   align-items:center;
   gap:10px;
-  padding:17px 26px;
+  padding:12px 22px;
   flex:none;
   background:#111b28;
   border-top:1px solid #26384a;
@@ -132,13 +139,15 @@
 .shutdown-manager .shutdown-danger:hover:not(:disabled) {background:#ad3d50}
 #shutdown-manager-dialog :focus-visible {outline:2px solid #8bc4ff;outline-offset:3px}
 @media(min-width:1080px){
-  .shutdown-manager .modal-header {padding:22px 28px 18px}
+  .shutdown-manager .modal-header {padding:16px 24px 12px}
   .shutdown-manager .modal-body {
-    padding:22px 28px;
-    gap:16px;
+    padding:14px 24px 12px;
+    gap:9px;
+    overflow:hidden;
     display:grid;
     grid-template-columns:repeat(2,minmax(0,1fr));
-    align-content:start;
+    grid-template-rows:auto auto auto minmax(150px,1fr) auto auto;
+    align-content:stretch;
   }
   .shutdown-stats,
   .shutdown-panel-heading,
@@ -146,21 +155,38 @@
   .shutdown-services,
   .shutdown-note,
   .shutdown-progress {grid-column:1/-1}
-  .shutdown-service {padding:13px 15px;gap:14px}
+  .shutdown-services {
+    min-height:150px;
+    overflow:auto;
+    scrollbar-gutter:stable;
+    padding-right:5px;
+    contain:layout paint;
+  }
+  .shutdown-service {padding:10px 12px;gap:11px}
   .shutdown-force-panel {
     grid-column:1;
-    grid-template-columns:minmax(0,1fr);
+    grid-template-columns:minmax(0,1fr) minmax(150px,.65fr);
     align-content:start;
   }
-  .shutdown-force-copy {grid-row:auto}
-  .shutdown-manual-panel {grid-column:2}
+  .shutdown-force-copy {grid-row:span 2}
+  .shutdown-manual-panel {
+    grid-column:2;
+    display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(150px,.65fr);
+    column-gap:12px;
+    align-items:end;
+  }
+  .shutdown-manual-heading {grid-column:1/-1}
+  .shutdown-manual-panel > label {grid-column:1}
+  .shutdown-manual-panel > input {grid-column:2}
+  .shutdown-progress {max-height:140px}
 }
 @media(max-width:680px){
   #shutdown-manager-dialog {padding:7px}
   .shutdown-manager.modal-dialog {
     width:calc(100vw - 14px);
-    height:calc(100vh - 14px);
-    max-height:calc(100vh - 14px);
+    height:calc(100vh - var(--tray-titlebar-height,44px) - 10px);
+    max-height:calc(100vh - var(--tray-titlebar-height,44px) - 10px);
   }
   .shutdown-manager .modal-header,.shutdown-manager .modal-footer {padding:15px}
   .shutdown-manager .modal-body {padding:15px}
