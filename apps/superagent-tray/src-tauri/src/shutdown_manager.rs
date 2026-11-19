@@ -1211,9 +1211,15 @@ pub async fn shutdown_manager_action(
             if !window.is_focused().unwrap_or(false) {
                 return Err("SHUTDOWN_FOCUSED_NATIVE_WINDOW_REQUIRED".into());
             }
-            let required_phrase=if action=="force_selected" {"FORCE SELECTED"} else {"KILL SELECTED"};
-            if exit_after.is_some() ||
-                force_confirmation.as_deref()!=Some(required_phrase) {
+            let direct_force=action=="force_selected";
+            if exit_after.is_some() {
+                return Err("SHUTDOWN_UNEXPECTED_ARGUMENT".into());
+            }
+            if direct_force {
+                if force_confirmation.is_some() {
+                    return Err("SHUTDOWN_UNEXPECTED_ARGUMENT".into());
+                }
+            } else if force_confirmation.as_deref()!=Some("KILL SELECTED") {
                 return Err("SHUTDOWN_MANUAL_TYPED_APPROVAL_REQUIRED".into());
             }
             let token=preview_id.ok_or("SHUTDOWN_PREVIEW_REQUIRED")?;
@@ -1228,45 +1234,46 @@ pub async fn shutdown_manager_action(
                 return Err("SHUTDOWN_PREVIEW_EXPIRED".into());
             }
             let chosen=manual_candidates(&original,&ids)?;
-            let mut summary=format!(
-                "FORCE KILL {} SELECTED OS PROCESS(ES)?\n\n\
-                Ownership status is intentionally ignored. Each target is revalidated\n\
-                by exact PID, executable and process start time immediately before kill.\n\
-                Active jobs, sessions and tunnels may be interrupted.\n\n",
-                chosen.len());
-            for item in chosen.iter().take(16) {
-                summary.push_str(&format!("PID {} · {} · {}\n",
-                    item.pid.unwrap_or(0),
-                    item.process_name.as_deref().unwrap_or("unknown"),
-                    item.label));
-                if let Some(path)=item.process_path.as_deref() {
-                    summary.push_str(&format!("  Executable: {}\n",path.chars().take(240).collect::<String>()));
+            if !direct_force {
+                let mut summary=format!(
+                    "FORCE KILL {} SELECTED OS PROCESS(ES)?\n\n\
+                    Ownership status is intentionally ignored. Each target is revalidated\n\
+                    by exact PID, executable and process start time immediately before kill.\n\
+                    Active jobs, sessions and tunnels may be interrupted.\n\n",
+                    chosen.len());
+                for item in chosen.iter().take(16) {
+                    summary.push_str(&format!("PID {} · {} · {}\n",
+                        item.pid.unwrap_or(0),
+                        item.process_name.as_deref().unwrap_or("unknown"),
+                        item.label));
+                    if let Some(path)=item.process_path.as_deref() {
+                        summary.push_str(&format!("  Executable: {}\n",path.chars().take(240).collect::<String>()));
+                    }
                 }
+                if chosen.len()>16 {
+                    summary.push_str(&format!("...and {} more selected process(es).\n",
+                        chosen.len()-16));
+                }
+                summary.push_str(
+                    "\nOnly the exact OS PIDs selected in this preview are targeted. \
+                    No process tree is killed. Continue?");
+                let dialog=app.clone();
+                let dialog_parent=window.clone();
+                let approved=tauri::async_runtime::spawn_blocking(move||{
+                    use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
+                    dialog.dialog().message(summary)
+                        .title("SuperAgent · Shutdown Manager")
+                        .parent(&dialog_parent)
+                        .buttons(
+                        MessageDialogButtons::OkCancelCustom(
+                            "Force selected processes".into(),"Cancel".into()
+                        )).blocking_show()
+                }).await.map_err(|_|"SHUTDOWN_NATIVE_APPROVAL_FAILED")?;
+                if !approved{return Err("SHUTDOWN_OPERATOR_CANCELLED".into());}
             }
-            if chosen.len()>16 {
-                summary.push_str(&format!("...and {} more selected process(es).\n",
-                    chosen.len()-16));
-            }
-            summary.push_str(
-                "\nOnly the exact OS PIDs selected in this preview are targeted. \
-                No process tree is killed. Continue?");
-            let dialog=app.clone();
-            let dialog_parent=window.clone();
-            let approved=tauri::async_runtime::spawn_blocking(move||{
-                use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
-                dialog.dialog().message(summary)
-                    .title("SuperAgent · Shutdown Manager")
-                    .parent(&dialog_parent)
-                    .buttons(
-                    MessageDialogButtons::OkCancelCustom(
-                        "Force selected processes".into(),"Cancel".into()
-                    )).blocking_show()
-            }).await.map_err(|_|"SHUTDOWN_NATIVE_APPROVAL_FAILED")?;
-            if !approved{return Err("SHUTDOWN_OPERATOR_CANCELLED".into());}
-            // The selected process identity was pinned during preview and
-            // displayed in the human approval dialog. A failed Core inventory
-            // must not veto this deliberate OS-only override, but process
-            // reuse, disappearance or executable changes still block it.
+            // The selected process identity was pinned during preview.
+            // Force Selected intentionally has no second confirmation step;
+            // process reuse, disappearance or executable changes still block it.
             if chosen.iter().any(|item|!manual_os_identity_matches(item)) {
                 return Err("SHUTDOWN_MANUAL_PROCESS_CHANGED_SINCE_PREVIEW".into());
             }
@@ -1276,7 +1283,7 @@ pub async fn shutdown_manager_action(
                     id:item.id.clone(),label:format!(
                         "{} · PID {}",item.label,item.pid.unwrap_or(0)),
                     status:"queued".into(),
-                    message:"Force selected approved; awaiting exact OS process verification".into(),
+                    message:"Force selected queued; awaiting exact OS process verification".into(),
                 }).collect(),error:None};
             {
                 let mut state=locked()?;
