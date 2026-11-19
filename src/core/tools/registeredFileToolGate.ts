@@ -238,7 +238,24 @@ const EXPLICIT_EFFECT_TOOLS = new Set([
 ]);
 
 /** No recursive traversal or regular expressions: search only granted file paths. */
-export function certifiedExplicitGrepSearchArgs(args:Args|undefined):boolean{
+export 
+function certifiedRegistryAwareDiscovery(name:string,args:Args|undefined):boolean{
+  if(!args||typeof args!=="object"||Array.isArray(args))return false;
+  if(name==="superagent_list_files"){
+    return Object.keys(args).every(key=>["dirPath","workspace","cwd","projectId"].includes(key)) &&
+      (args.dirPath===undefined||typeof args.dirPath==="string");
+  }
+  if(name==="superagent_find_files"){
+    if(Object.keys(args).some(key=>!["pattern","query","name","path","extension","maxDepth",
+      "workspace","cwd","projectId"].includes(key)))return false;
+    if(args.maxDepth!==undefined&&(!Number.isSafeInteger(args.maxDepth)||Number(args.maxDepth)<0||Number(args.maxDepth)>32))
+      return false;
+    return ["pattern","query","name","path","extension","workspace","cwd","projectId"].every(key=>
+      args[key]===undefined||typeof args[key]==="string");
+  }
+  return false;
+}
+function certifiedExplicitGrepSearchArgs(args:Args|undefined):boolean{
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
   const allowed=["filePaths","query","caseSensitive","isRegex","offset","limit",
     "workspace","cwd","projectId"];
@@ -537,6 +554,8 @@ export function describePermanentFileToolReadiness(name:string):string {
     return "Read-only Core-owned device inventory or opaque pairing status only; device shell, input, screenshots and file transfer remain restricted.";
   if(name==="superagent_grep_search")
     return "Recursive grep is denied; supply filePaths of explicitly approved files, a literal query, and bounded offset/limit.";
+  if(name==="superagent_list_files"||name==="superagent_find_files")
+    return "Directory discovery is performed by a registry-aware traversal that filters denied children and never reads file contents.";
   if(name==="superagent_manage_services")
     return "Read-only status, inventory, owner_status, doctor, health, dashboard, logs or profile actions only; lifecycle mutations remain restricted.";
   if(name==="superagent_use_skill")
@@ -581,7 +600,8 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
       CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name) || name === "superagent_desktop_ui" ||
       name==="superagent_use_skill" || name==="superagent_manage_worktrees" ||
       FIXED_PLANNING_TOOLS.has(name) || MIXED_ACTION_TOOLS.has(name) ||
-      name==="superagent_check_project_health" || name==="superagent_launch_chrome")
+      name==="superagent_check_project_health" || name==="superagent_launch_chrome" ||
+      name==="superagent_list_files" || name==="superagent_find_files")
     return "action_dependent";
   return "uncertified";
 }
@@ -677,6 +697,8 @@ export function registeredFileToolGate(
   if(CERTIFIED_APP_STORAGE_TOOLS.has(call.name))return null;
   if(call.name==="superagent_get_skills"&&certifiedSkillAccess(call.name,call.args))return null;
   if(call.name==="superagent_use_skill"&&certifiedSkillAccess(call.name,call.args))return null;
+  if((call.name==="superagent_list_files"||call.name==="superagent_find_files") &&
+     certifiedRegistryAwareDiscovery(call.name,call.args))return null;
   if(call.name==="superagent_manage_worktrees"&&certifiedWorktreeMetadata(call.args))return null;
   if(call.name==="superagent_launch_chrome"&&certifiedManagedChromeLaunch(call.args))return null;
   if(MIXED_ACTION_TOOLS.has(call.name)&&certifiedMixedAction(call.name,call.args))return null;
@@ -712,7 +734,9 @@ export function registeredFileToolGate(
     return "Service inspection is not certified with unsupported arguments; use only the documented read-only fields.";
   }
   if(READ_SEARCH.has(call.name) &&
-      !(call.name==="superagent_grep_search"&&certifiedExplicitGrepSearchArgs(call.args)))
+      !(call.name==="superagent_grep_search"&&certifiedExplicitGrepSearchArgs(call.args)) &&
+      !((call.name==="superagent_list_files"||call.name==="superagent_find_files") &&
+        certifiedRegistryAwareDiscovery(call.name,call.args)))
     return "Unmediated discovery/search could expose explicitly blocked child files.";
   if(Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,call.name) &&
       !certifiedInputReaderArguments(call.name,call.args))
