@@ -261,6 +261,40 @@ describe("Tray Overview owner-verified cockpit",()=>{
     expect(h.requests.some(x=>x.name==="lifecycle_console_request"&&
       x.args.request.action==="restart")).toBe(false);
   });
+  it("distinguishes verified newer published packages from local runtime digests",async()=>{
+    const dashboard={observedAt:Date.now(),trayRelease:{activeDigest:"c".repeat(64)},
+      checks:[
+        {service:"core",ready:true,ownerVerified:true,state:"active"},
+        {service:"mcp",ready:true,ownerVerified:true,state:"active"},
+        {service:"tray",ready:true,ownerVerified:true,state:"active"},
+      ],services:[
+        {service:"core",port:7888,ownerPid:100,ownershipVerified:true,state:"active",
+          details:{runtimeVersion:"1.14.107",activeBuildDigest:"a".repeat(64),
+            sourceBuildDigest:"a".repeat(64),buildFresh:true}},
+        {service:"mcp",port:9227,ownerPid:101,ownershipVerified:true,state:"active",
+          details:{backendReleaseDigest:null,backendPid:104,reloadable:true,
+            publicUrl:"https://stable.example/mcp"}},
+        {service:"tray",ownerPid:102,ownershipVerified:true,state:"active"},
+      ]};
+    const release={tag:"v1.14.108-rc.1",releaseVersion:"1.14.108",componentItems:[
+      {id:"superagent",available:true,version:"1.14.108",sha256:"d".repeat(64)},
+      {id:"mcp-backend",available:true,version:"1.14.108",sha256:"e".repeat(64)},
+    ]};
+    const h=mount({dashboard,release,trayVersion:"1.14.107"});await settle();
+    const rows=h.byId("op-service-list").children;
+    expect(rows[0].children[0].children.some((x:any)=>
+      x.textContent.includes("Published v1.14.108"))).toBe(true);
+    expect(rows[1].children[0].children.some((x:any)=>
+      x.textContent.includes("Published backend v1.14.108 · not staged"))).toBe(true);
+    expect(rows[2].children[0].children.some((x:any)=>
+      x.textContent.includes("Published v1.14.108"))).toBe(true);
+    // Update for a published package opens verified download review. It
+    // never claims the archive is installed or issues a lifecycle mutation.
+    rows[0].children[2].children[3].events.click();
+    expect(h.requests.some(x=>x.name==="lifecycle_console_request"&&
+      ["start","restart","stop","reload","upgrade"].includes(x.args.request.action))).toBe(false);
+    expect(h.byId("op-version-summary").textContent).toContain("v1.14.108-rc.1");
+  });
   it("prepares MCP reload only with verified port and public URL; never stops MCP",async()=>{
     const dashboard={observedAt:Date.now(),checks:[
       {service:"mcp",ready:true,ownerVerified:true,state:"active"},
