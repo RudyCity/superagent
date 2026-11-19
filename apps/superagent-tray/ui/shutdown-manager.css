@@ -87,8 +87,8 @@
 }
 .shutdown-force-panel input:focus-visible {outline:2px solid #8bc4ff;outline-offset:2px}
 .shutdown-force-panel input::placeholder {color:#827780}
-.shutdown-executable {display:block;color:#9fb4cc;font-size:10px;line-height:1.4;
-  overflow-wrap:anywhere;user-select:text}
+.shutdown-executable {display:block;min-width:0;color:#9fb4cc;font-size:10px;line-height:1.4;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;user-select:text}
 .shutdown-manual-choice {display:inline-flex;align-items:center;gap:6px;flex:none;
   align-self:center;white-space:nowrap;padding:6px 8px;border:1px solid #805363;
   background:#30232d;color:#f8c8d2;border-radius:7px;cursor:pointer;
