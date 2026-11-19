@@ -28,6 +28,7 @@ on:
       - "src/core/tools/chromeVisionTools.ts"
       - "apps/superagent-tray/ui/lifecycle.js"
       - "tests/visionPythonRuntime.test.ts"
+      - "tests/lifecycleServiceHealthCategories.test.ts"
       - "tests/nativeTrayLifecycleUi.test.ts"
       - "src/core/runtime/serviceReadPolicy.ts"
       - "src/core/runtime/serviceOwnerAttestation.ts"
@@ -119,6 +120,7 @@ on:
       - "src/core/tools/chromeVisionTools.ts"
       - "apps/superagent-tray/ui/lifecycle.js"
       - "tests/visionPythonRuntime.test.ts"
+      - "tests/lifecycleServiceHealthCategories.test.ts"
       - "tests/nativeTrayLifecycleUi.test.ts"
       - "src/core/runtime/serviceReadPolicy.ts"
       - "src/core/runtime/serviceOwnerAttestation.ts"
@@ -237,6 +239,7 @@ jobs:
             tests/checkoutRevision.test.ts \
             tests/serviceManagerMcp.test.ts \
             tests/visionPythonRuntime.test.ts \
+            tests/lifecycleServiceHealthCategories.test.ts \
             tests/nativeTrayLifecycleUi.test.ts \
             tests/mcpExactFileSearch.test.ts \
             tests/mcpExplicitGrepIntegration.test.ts \
@@ -295,6 +298,7 @@ jobs:
           tests/checkoutRevision.test.ts
           tests/serviceManagerMcp.test.ts
           tests/visionPythonRuntime.test.ts
+          tests/lifecycleServiceHealthCategories.test.ts
           tests/nativeTrayLifecycleUi.test.ts
           tests/mcpOAuthStore.test.ts
           tests/mcpOAuthRoutes.test.ts
