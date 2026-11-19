@@ -213,6 +213,12 @@ const CERTIFIED_APP_STORAGE_TOOLS = new Set([
   "superagent_studio_jobs", "superagent_studio_storage", "superagent_studio_recovery",
   "superagent_studio_supervisor", "superagent_studio_queue_recovery",
   "superagent_synthesize_skill",
+  "superagent_motion_cancel", "superagent_motion_create", "superagent_motion_edit",
+  "superagent_motion_generate", "superagent_motion_import_audio",
+  "superagent_motion_import_image", "superagent_motion_render", "superagent_motion_revise",
+  "superagent_studio_cancel", "superagent_studio_create", "superagent_studio_edit",
+  "superagent_studio_generate", "superagent_studio_import_audio",
+  "superagent_studio_import_image", "superagent_studio_render", "superagent_studio_revise",
 ]);
 
 /**
