@@ -8,7 +8,7 @@ import { getPermanentFileToolReadiness } from "../src/core/tools/registeredFileT
 import { MCP_GATEWAY_TOOL_NAMES } from "../src/core/mcp/mcpToolGateway.js";
 
 const validStates = new Set([
-  "certified_metadata", "certified_app_storage", "requires_explicit_files",
+  "certified_metadata", "certified_non_file", "certified_app_storage", "requires_explicit_files",
   "action_dependent", "uncertified",
 ]);
 const invoke = async (server: ReturnType<typeof createSuperagentMcpServer>, tool: string, args: object = {}) =>
@@ -38,6 +38,9 @@ describe("MCP full-catalog host file-policy transparency", () => {
       expect(validStates.has(getPermanentFileToolReadiness(tool.name)), tool.name).toBe(true);
     }
     expect(getPermanentFileToolReadiness("superagent_exec_command")).toBe("uncertified");
+    expect(getPermanentFileToolReadiness("superagent_find_process")).toBe("certified_non_file");
+    expect(getPermanentFileToolReadiness("superagent_sync_projects")).toBe("certified_non_file");
+    expect(getPermanentFileToolReadiness("superagent_device_android_diagnostic")).toBe("certified_non_file");
     expect(getPermanentFileToolReadiness("superagent_delegate_sync_history")).toBe("certified_app_storage");
     expect(getPermanentFileToolReadiness("superagent_lan_capabilities")).toBe("certified_metadata");
     expect(getPermanentFileToolReadiness("superagent_tool_execute")).toBe("action_dependent");
