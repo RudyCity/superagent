@@ -833,6 +833,10 @@ export function registeredFileToolGate(
   if(call.name==="superagent_launch_chrome"&&certifiedManagedChromeLaunch(call.args))return null;
   if(MIXED_ACTION_TOOLS.has(call.name)&&certifiedMixedAction(call.name,call.args))return null;
   if(call.name==="superagent_git_action"){
+    // Bounded log is certified above; a malformed log request should not be
+    // reported as a missing recursive workspace permission.
+    if(call.args?.action==="log")
+      return "Git log arguments are not certified: use only action, limit (1-50), workspace and projectId.";
     if(certifiedGitWorkspaceAction(call.args,workspace,policy,identity))return null;
     return "Git action requires an exact project workspace with recursive native file grants for the action, no protected child paths, and explicit file targets for add/restore/clean. Project Git approval alone is insufficient.";
   }
