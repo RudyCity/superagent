@@ -32,4 +32,18 @@ describe("Windows installed-program registry inventory", () => {
     expect(script).not.toContain("Start-Process");
     expect(script).not.toContain("UninstallString");
   });
+  it("filters unexpanded installer display-name templates from registered programs", async () => {
+    const runner: DesktopProcessRunner = {
+      run: vi.fn(async () => ({
+        stdout: JSON.stringify({ programs: [
+          { name: "${{arpDisplayName}}", publisher: "Unknown" },
+          { name: "Real Editor", version: "2.0", publisher: "Verified" },
+        ], truncated: false }),
+        stderr: "", exitCode: 0,
+      })),
+    };
+    const programs = await createWindowsDesktopAppProvider(runner).listRegisteredPrograms!(10);
+    expect(programs.programs).toEqual([{ name: "Real Editor", version: "2.0", publisher: "Verified" }]);
+    expect(programs.truncated).toBe(false);
+  });
 });
