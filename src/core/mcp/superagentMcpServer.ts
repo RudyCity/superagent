@@ -16,7 +16,7 @@ import {
 
 import fs from "fs";
 import { blockedYoloToolCall } from "../yoloBlocklist.js";
-import { MCP_CONNECTION_PROJECT_ID, createProjectAccessRequest } from "../project/projectAccessRequestStore.js";
+import { createProjectAccessRequest } from "../project/projectAccessRequestStore.js";
 import path from "path";
 import os from "os";
 import crypto from "node:crypto";
@@ -643,7 +643,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
 
   const describeMcpApprovalRequirement = (name: string) => {
     if (name === MCP_GATEWAY_TOOL_NAMES.execute) {
-      return { kind: "target_dependent", note: "The nested target is reauthorized for OAuth scopes, project grants, host file policy and MCP Connection Controls." };
+      return { kind: "target_dependent", note: "The nested target is reauthorized for OAuth scopes, project-scoped operation grants and host file policy." };
     }
     if (PRIVILEGED_MCP_TOOLS.has(name)) {
       return { kind: "operator_admin", oauthScope: "mcp:tools:admin",
@@ -674,9 +674,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     if (name === "superagent_grant_project_access" || name === "superagent_revoke_project_access") {
       return { kind: "operator_admin", oauthScope: "mcp:tools:admin", note: "Project grant mutation requires separate operator authorization." };
     }
-    return { kind: "connection_execute", oauthScope: "mcp:tools:write",
-      projectId: MCP_CONNECTION_PROJECT_ID, capability: "execute",
-      note: "Human approval in SuperAgent Tray; chat-agent YOLO never grants MCP execution." };
+    return { kind: "project", oauthScope: "mcp:tools:write", capability: "execute",
+      note: "The authenticated MCP connection must have operator-approved Execute on the active registered local project. Host file policy and native consent remain independent." };
   };
   const getAuthorizedMcpTools = () => {
     const allTools = MCP_TOOL_DEFINITIONS;
@@ -1443,40 +1442,42 @@ function extractMcpResultText(result: unknown): string {
           `[${denial.decisionCode}] Access denied by host permanent file policy: ${hostBlock}`);
       }
     }
-    // Connection-wide operations (service control, LAN, desktop input, etc.)
-    // require an explicit principal-scoped approval. Project operations instead
-    // require their own project-specific grant, checked at the dispatch boundary.
+    // The MCP OAuth flow authorizes connections, never host operations.
+    // Dangerous non-project actions require Execute on the session's unique
+    // enabled local project. Existing virtual mcp-connection grants are ignored.
     if (isDangerous && !WORKSPACE_SCOPED_MCP_TOOLS.has(toolName)
+        && !PROJECT_REGISTRY_TOOL_NAMES.has(toolName)
         && toolName !== "superagent_grant_project_access"
-        // Revoking one's own grant decreases privilege and must remain usable.
-        && toolName !== "superagent_revoke_project_access"
-        && (!callerIdentity?.subject ||
-          !checkCurrentProjectAccess(callerIdentity, MCP_CONNECTION_PROJECT_ID, "execute"))) {
-      // An authorization error alone is invisible to the native Tray inbox.
-      // Queue a bounded, identity-bound request only after OAuth write-scope
-      // validation. This NEVER grants access, replays the tool, or consults YOLO.
-      // The broker reuses an existing pending request for the same principal.
-      let pendingRequestId: string | undefined;
-      if (callerIdentity?.subject) {
-        try {
-          const pending = createProjectAccessRequest(callerIdentity, {
-            projectId: MCP_CONNECTION_PROJECT_ID,
-            capabilities: ["execute"],
-            reason: "Authenticated MCP connection requested an operator-approved execution capability.",
-          });
-          if (pending.code === "APPROVAL_PENDING") pendingRequestId = pending.requestId;
-        } catch {
-          // A broken/unavailable request store must never let execution through.
-          // Do not leak local storage paths or the identity credential binding.
+        && toolName !== "superagent_revoke_project_access") {
+      let selectedTarget: ResolvedProjectTarget | null = null;
+      try { selectedTarget = resolveProjectTarget({ sessionWorkspace: activeWorkspace }); }
+      catch { /* No implicit grant for ambiguous or unregistered roots. */ }
+      const selectedProject = selectedTarget?.project;
+      const selectedId = selectedTarget?.projectId;
+      const allowed = Boolean(callerIdentity?.subject && selectedId &&
+        selectedProject?.type === "local" && selectedProject.enabled &&
+        checkCurrentProjectAccess(callerIdentity, selectedId, "execute"));
+      if (!allowed) {
+        let pendingId: string | undefined;
+        if (callerIdentity?.subject && selectedId && selectedProject?.type === "local" && selectedProject.enabled) {
+          try {
+            const pending = createProjectAccessRequest(callerIdentity, {
+              projectId: selectedId, capabilities: ["execute"],
+              reason: "MCP operation requires operator-approved Execute on this registered project.",
+            });
+            if (pending.code === "APPROVAL_PENDING") pendingId = pending.requestId;
+          } catch { /* Request-store errors must fail closed. */ }
         }
+        const reason = "[PROJECT_GRANT_MISSING] Operation requires Execute on a registered local project in SuperAgent Tray > Akses Proyek. MCP OAuth connection approval does not grant operations." +
+          (pendingId ? " Approval pending: " + pendingId + "." : "");
+        auditContext.authorizationDecision = "denied";
+        auditContext.errorCode = "capability_denied";
+        emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
+        throw new McpError(ErrorCode.InvalidRequest, reason);
       }
-      const reason = "[MCP_APPROVAL_REQUIRED] This operation requires the 'execute' capability on MCP Connection Controls, approved by the human in SuperAgent Tray. Chat YOLO does not authorize MCP." +
-        (pendingRequestId ? " Approval pending: " + pendingRequestId + "." :
-          " Submit an explicit superagent_request_project_access request if no approval is visible.");
-      auditContext.authorizationDecision = "denied";
-      auditContext.errorCode = "mcp_approval_required";
-      emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
-      throw new McpError(ErrorCode.InvalidRequest, reason);
+      effectiveProjectId = selectedId!;
+      auditContext.projectId = selectedId!;
+      auditContext.requiredCapability = "execute";
     }
     if (toolName !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(toolName)
       && (WORKSPACE_SCOPED_MCP_TOOLS.has(toolName) || typeof rawArgs.projectId === "string"
@@ -1621,15 +1622,15 @@ function extractMcpResultText(result: unknown): string {
           targetToolName: string,
           checkedArgs: Record<string, unknown>,
         ): Record<string, unknown> => {
-          const readConnectionDecision = (): "granted" | "approval_required" | "unavailable" => {
+          const readProjectDecision = (): "granted" | "approval_required" | "unavailable" => {
             try {
-              if (callerIdentity?.subject &&
-                  hasProjectAccess(callerIdentity, MCP_CONNECTION_PROJECT_ID, "execute")) {
-                return "granted";
-              }
+              const selected = resolveProjectTarget({ sessionWorkspace: activeWorkspace });
+              if (callerIdentity?.subject && selected.project?.enabled &&
+                  selected.project?.type === "local" && selected.projectId &&
+                  hasProjectAccess(callerIdentity, selected.projectId, "execute")) return "granted";
               return "approval_required";
-            } catch {
-              return "unavailable";
+            } catch (error) {
+              return error instanceof ProjectAccessPolicyStoreError ? "unavailable" : "approval_required";
             }
           };
           if (targetToolName === "superagent_services_status") {
@@ -1671,7 +1672,7 @@ function extractMcpResultText(result: unknown): string {
           if (targetToolName === "superagent_manage_services") {
             const hostBlock = filePolicyActive
               ? registeredFileToolGate({ name: targetToolName, args: checkedArgs }, activeWorkspace) : null;
-            const connectionDecision = readConnectionDecision();
+            const connectionDecision = readProjectDecision();
             const safe = describeBoundedServiceManagePermission({
               args: checkedArgs,
               oauthAllowed: true,
@@ -1703,7 +1704,7 @@ function extractMcpResultText(result: unknown): string {
           ]);
           const hostBlock = filePolicyActive
             ? registeredFileToolGate({ name: targetToolName, args: checkedArgs }, activeWorkspace) : null;
-          const connectionDecision = readConnectionDecision();
+          const connectionDecision = readProjectDecision();
           const supportedFields = DISCOVERY_COMMAND_FIELDS[command]
             ? [...DISCOVERY_COMMAND_FIELDS[command]] : undefined;
           return {
