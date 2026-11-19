@@ -95,6 +95,10 @@
   }
   function health(item) {
     if(item.ready===true && (item.ownerVerified!==false || item.state==="embedded")) return ["Ready","good"];
+    if(item.category==="not_configured")return ["Not configured","muted"];
+    if(item.category==="inactive")return ["Inactive","muted"];
+    if(item.category==="blocked")return ["Dependency blocked","muted"];
+    if(item.category==="failed")return ["Failed","bad"];
     if(item.state==="unverified" || item.state==="unknown") return ["Unverified","bad"];
     if(item.dependencyBlocked || item.state==="degraded" || item.alive && !item.ready)
       return ["Degraded","bad"];
@@ -158,12 +162,17 @@
           details.backendReleaseDigest?"Staged release active":"No verified staged release",
         update:false,action:null};
     }
-    if(item.service==="daemon"&&item.state==="embedded"){
+    if(["daemon","process_supervisor"].includes(item.service)&&item.state==="embedded"){
       return {current:core.runtimeVersion?"Core v"+core.runtimeVersion:"Core build inherited",
         next:"Managed with Core",update:false,action:null};
     }
-    return {current:"Version not reported",next:"No verified update",
-      update:false,action:null};
+    const reported=typeof details.runtimeVersion==="string"&&
+      /^\d+\.\d+\.\d+$/.test(details.runtimeVersion)?
+        details.runtimeVersion:null;
+    const runningDigest=shortDigest(details.activeBuildDigest);
+    return {current:reported?"v"+reported+(runningDigest?" · "+runningDigest:""):
+        runningDigest||"Version not reported",
+      next:"No independently verified update",update:false,action:null};
   }
   function canServiceAction(item,inventory,action) {
     const supported=serviceActions[item.service]||[];
