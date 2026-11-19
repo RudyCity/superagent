@@ -78,6 +78,13 @@ describe("native Shutdown Manager UI",()=>{
     expect(shutdownCss).toContain("max-width:none");
     expect(shutdownCss).not.toContain("max-width:820px");
     expect(shutdownCss).not.toContain("max-height:35vh");
+    expect(shutdownCss).toContain("z-index:1900");
+    expect(shutdownCss).toContain("inset:var(--tray-titlebar-height,44px) 0 0");
+    expect(shutdownCss).toContain("backdrop-filter:none");
+    expect(shutdownCss).toContain("grid-template-rows:auto auto auto minmax(150px,1fr) auto auto");
+    expect(shutdownCss).toContain("scrollbar-gutter:stable");
+    expect(shutdownCss).toContain("overscroll-behavior:contain");
+    expect(shutdownCss).toContain("contain:layout paint");
     expect(native.match(/\.parent\(&dialog_parent\)/g)).toHaveLength(3);
     expect(native).toContain('force_confirmation.as_deref()!=Some("FORCE STOP ALL")');
     expect(native).toContain('owner.source=="registry"');
