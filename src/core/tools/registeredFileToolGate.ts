@@ -561,7 +561,8 @@ function certifiedGitWorkspaceAction(
 ):boolean {
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
   const action=typeof args.action==="string"?args.action:"";
-  const operations=GIT_WORKSPACE_EFFECTS[action];
+  const operations=Object.prototype.hasOwnProperty.call(GIT_WORKSPACE_EFFECTS,action)
+    ? GIT_WORKSPACE_EFFECTS[action] : undefined;
   if(!operations || !path.isAbsolute(workspace))return false;
   const allKeys=["action","workspace","projectId","files","message"];
   if(Object.keys(args).some(key=>!allKeys.includes(key)))return false;
