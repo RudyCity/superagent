@@ -1486,21 +1486,30 @@
             </div>
 
             <div id="runtime-remote-panel" class="runtime-column runtime-full" role="tabpanel" aria-labelledby="runtime-tab-mcp" hidden>
-              <div class="column-header">
-                <h3><span id="runtime-remote-heading">Independent MCP Owners</span> <span id="runtime-remote-count" class="subtle-badge"></span></h3>
-                <span id="runtime-remote-tag" class="column-tag">Cross-process</span>
-              </div>
-              <div id="runtime-named-tunnel-entry" class="runtime-named-tunnel-entry" hidden>
-                <div><strong>Cloudflare Named Tunnel</strong>
-                  <small>Manage a fixed hostname and a separate connector. Existing Quick Tunnel sessions stay online.</small></div>
-                <button id="runtime-named-tunnel-settings" class="button ghost" type="button">Configure Named Tunnel</button>
-              </div>
-              <section id="runtime-mcp-security" class="runtime-mcp-security" hidden aria-label="MCP Security Approval overview">
-                <p class="empty-state">Memeriksa status izin MCP dari Security Approval Manager...</p>
+              <section class="runtime-remote-owners-section" aria-labelledby="runtime-remote-heading">
+                <div class="column-header">
+                  <h3><span id="runtime-remote-heading">Independent MCP Owners</span> <span id="runtime-remote-count" class="subtle-badge"></span></h3>
+                  <span id="runtime-remote-tag" class="column-tag">Cross-process</span>
+                </div>
+                <div id="runtime-named-tunnel-entry" class="runtime-named-tunnel-entry" hidden>
+                  <div><strong>Cloudflare Named Tunnel</strong>
+                    <small>Manage a fixed hostname and a separate connector. Existing Quick Tunnel sessions stay online.</small></div>
+                  <button id="runtime-named-tunnel-settings" class="button ghost" type="button">Configure Named Tunnel</button>
+                </div>
+                <div id="runtime-cloudflare-endpoints" class="runtime-host-grid" hidden>
+                  <div id="runtime-tray-gateway" class="runtime-items" hidden aria-label="SuperAgent Tray management URL"></div>
+                  <div id="runtime-named-mcp-status" class="runtime-items" hidden aria-label="MCP Named Tunnel URL"></div>
+                </div>
+                <div id="runtime-remote" class="runtime-items runtime-host-grid" data-runtime-view="mcp">
+                  <p class="empty-state">Checking registered MCP tunnels and Muse watchers...</p>
+                </div>
+                <p id="runtime-remote-empty" class="empty-state" hidden></p>
               </section>
-              <section id="runtime-mcp-connected-panel" class="op-frame op-client-panel" hidden
+
+              <section id="runtime-mcp-connected-panel" class="op-frame op-client-panel runtime-mcp-connected-card" hidden
                 aria-labelledby="runtime-mcp-connected-title">
                 <div class="op-client-head"><div>
+                  <span class="runtime-mcp-eyebrow">LIVE SESSION TELEMETRY</span>
                   <h3 id="runtime-mcp-connected-title">Connected MCP agents</h3>
                   <p id="runtime-mcp-connected-summary" role="status" aria-live="polite">Checking active MCP sessions…</p>
                 </div></div>
@@ -1510,15 +1519,10 @@
                 <p class="op-note">Client names are self-reported. OAuth/Bearer identity is verified separately.
                   Only live registry sessions appear; previous authentication requests do not count as online agents.</p>
               </section>
-              <div id="runtime-cloudflare-endpoints" class="runtime-host-grid" hidden>
-                <div id="runtime-tray-gateway" class="runtime-items" hidden aria-label="SuperAgent Tray management URL"></div>
-                <div id="runtime-named-mcp-status" class="runtime-items" hidden aria-label="MCP Named Tunnel URL"></div>
-              </div>
-              <div id="runtime-remote" class="runtime-items runtime-host-grid" data-runtime-view="mcp">
-                <p class="empty-state">Checking registered MCP tunnels and Muse watchers...</p>
-              </div>
-              <p id="runtime-remote-empty" class="empty-state" hidden></p>
 
+              <section id="runtime-mcp-security" class="runtime-mcp-security" hidden aria-label="MCP Security Approval overview">
+                <p class="empty-state">Memeriksa status izin MCP dari Security Approval Manager...</p>
+              </section>
             </div>
 
             <div id="runtime-hosts-panel" class="runtime-column runtime-full" role="tabpanel" aria-labelledby="runtime-tab-hosts" hidden>

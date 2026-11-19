@@ -2107,18 +2107,48 @@ tbody tr:hover {
   grid-column: 1 / -1;
 }
 
+.runtime-remote-owners-section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
 #runtime-remote-panel {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
 }
 
 #runtime-remote-panel .column-header {
-  margin-bottom: 2px;
+  margin-bottom: 0;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 #runtime-remote-panel .runtime-named-tunnel-entry {
   margin: 0;
+}
+
+#runtime-remote[data-runtime-view="mcp"] {
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+}
+@media (max-width: 640px) {
+  #runtime-remote[data-runtime-view="mcp"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+#runtime-remote[data-runtime-view="mcp"] .runtime-endpoint {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+}
+#runtime-remote[data-runtime-view="mcp"] .runtime-endpoint .runtime-public-url {
+  flex: 1 1 220px;
+}
+#runtime-remote[data-runtime-view="mcp"] .runtime-instance-head small,
+#runtime-remote[data-runtime-view="mcp"] .runtime-endpoint small {
+  color: var(--text-secondary);
 }
 
 #runtime-tray-gateway:empty,
@@ -4381,22 +4411,49 @@ tbody tr:hover {
 /* Runtime Detection: MCP scope is independent of Chat Agent YOLO.
  * Read-only status lives here; approval actions remain in the native Tray manager. */
 #runtime-mcp-security[hidden]{display:none!important}
-.runtime-mcp-access-overview{display:grid;gap:14px;padding:17px 18px;border:1px solid var(--border-subtle);border-radius:var(--radius-md,12px);background:var(--bg-surface-raised);min-width:0}
+#runtime-mcp-connected-panel.runtime-mcp-connected-card{
+  background:var(--bg-surface-raised);
+  border:1px solid var(--border-medium);
+  border-radius:var(--radius-md,12px);
+  padding:18px 20px;
+  display:grid;
+  gap:12px;
+}
+#runtime-mcp-connected-panel.runtime-mcp-connected-card .op-client-head{margin-bottom:0}
+#runtime-mcp-connected-panel.runtime-mcp-connected-card .op-client-head h3{font-size:15px;font-weight:720;margin:4px 0 3px;letter-spacing:-.015em}
+#runtime-mcp-connected-panel.runtime-mcp-connected-card .op-client-head p{color:var(--text-secondary);font-size:11.5px;margin:0}
+#runtime-mcp-connected-panel.runtime-mcp-connected-card .op-client-list{gap:8px}
+#runtime-mcp-connected-panel.runtime-mcp-connected-card .op-client-row{
+  padding:12px 14px;
+  border:1px solid var(--border-subtle);
+  border-radius:var(--radius-sm);
+  background:var(--bg-surface);
+}
+#runtime-mcp-connected-panel.runtime-mcp-connected-card .op-client-row small,
+#runtime-mcp-connected-panel.runtime-mcp-connected-card .op-client-identity span{color:var(--text-secondary)}
+#runtime-mcp-connected-panel.runtime-mcp-connected-card .op-note{margin:2px 0 0;color:var(--text-secondary);font-size:11px}
+
+.runtime-mcp-access-overview{display:grid;gap:14px;padding:18px 20px;border:1px solid var(--border-medium);border-radius:var(--radius-md,12px);background:var(--bg-surface-raised);min-width:0}
 .runtime-mcp-access-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.runtime-mcp-access-head h4{margin:5px 0 5px;color:var(--text-primary);font-size:17px;font-weight:720;letter-spacing:-.025em}
-.runtime-mcp-access-head p{margin:0;max-width:660px;font-size:12px;line-height:1.6;color:var(--text-secondary)}
-.runtime-mcp-eyebrow{font-size:10px;letter-spacing:.09em;font-weight:750;color:var(--text-muted)}
-.runtime-mcp-separation{padding:6px 9px;border:1px solid var(--border-subtle);border-radius:8px;font-size:11px;color:var(--text-secondary);white-space:nowrap}
+.runtime-mcp-access-head h4{margin:4px 0 4px;color:var(--text-primary);font-size:16px;font-weight:720;letter-spacing:-.02em}
+.runtime-mcp-access-head p{margin:0;max-width:66ch;font-size:12px;line-height:1.6;color:var(--text-secondary)}
+.runtime-mcp-eyebrow{display:block;font-size:10px;letter-spacing:.09em;font-weight:750;color:var(--text-secondary)}
+.runtime-mcp-separation{padding:6px 10px;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-surface);font-size:11px;font-weight:600;color:var(--text-secondary);white-space:nowrap}
 .runtime-mcp-access-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.runtime-mcp-access-card{display:flex;flex-direction:column;align-items:flex-start;gap:9px;min-width:0;padding:16px;border:1px solid var(--border-subtle);border-radius:var(--radius-md,12px);background:var(--bg-surface)}
-.runtime-mcp-access-card-title strong{font-size:13px;color:var(--text-primary);font-weight:720}
+.runtime-mcp-access-card{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-width:0;padding:16px 18px;border:1px solid var(--border-subtle);border-radius:var(--radius-md,12px);background:var(--bg-surface);transition:border-color var(--transition-fast)}
+.runtime-mcp-access-card:hover{border-color:var(--border-medium)}
+.runtime-mcp-access-card-title strong{font-size:13.5px;color:var(--text-primary);font-weight:720}
 .runtime-mcp-access-card p{margin:0;color:var(--text-secondary);font-size:12px;line-height:1.55}
-.runtime-mcp-access-card small{font-size:11px;line-height:1.5;color:var(--text-muted);overflow-wrap:anywhere}
-.runtime-mcp-count-row{display:flex;align-items:baseline;gap:10px;color:var(--text-secondary);font-size:11px}
+.runtime-mcp-access-card small{font-size:11px;line-height:1.5;color:var(--text-secondary);overflow-wrap:anywhere}
+.runtime-mcp-count-row{display:flex;align-items:baseline;gap:10px;color:var(--text-secondary);font-size:11.5px}
 .runtime-mcp-count{font-variant-numeric:tabular-nums;font-size:24px;font-weight:760;letter-spacing:-.04em;color:var(--text-primary)}
-.runtime-mcp-security-link{margin-top:auto;min-height:34px;padding:7px 12px;font-size:11px}
+.runtime-mcp-security-link{margin-top:auto;min-height:38px;padding:8px 14px;font-size:11.5px}
 .runtime-mcp-security-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.runtime-mcp-access-status{margin:0;color:var(--text-muted);font-size:11px;line-height:1.6}
+.runtime-mcp-access-status{margin:0;color:var(--text-secondary);font-size:11px;line-height:1.6}
 .runtime-mcp-access-status[data-state="error"]{color:var(--text-warning,#fbbf24)}
 .runtime-mcp-owner-scope{font-size:11px;color:var(--text-secondary);border-top:1px solid var(--border-subtle);padding-top:10px}
-@media(max-width:700px){.runtime-mcp-access-grid{grid-template-columns:1fr}.runtime-mcp-access-overview{padding:14px}.runtime-mcp-security-link{width:100%}}
+@media(max-width:700px){
+  .runtime-mcp-access-grid{grid-template-columns:1fr}
+  .runtime-mcp-access-overview,#runtime-mcp-connected-panel.runtime-mcp-connected-card{padding:15px}
+  .runtime-mcp-security-link{width:100%;min-height:44px}
+}
