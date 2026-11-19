@@ -107,8 +107,26 @@ export async function handleDaemonRoutes(
 
   // Stop Daemon
   if (pathname === "/api/daemon/stop" && req.method === "POST") {
-    daemonScheduler.stopDaemon();
-    sendJSON(res, 200, { success: true, running: false, message: "Daemon scheduler stopped" });
+    try {
+      const rawBody = await readBody(req);
+      const payload = JSON.parse(rawBody || "{}");
+      if (payload.force === true) {
+        const result = daemonScheduler.forceStopDaemon();
+        sendJSON(res, 200, {
+          success: true,
+          running: false,
+          force: true,
+          cancelledRuns: result.cancelledRuns,
+          activeJobsCount: result.activeJobsCount,
+          message: "Emergency daemon stop requested",
+        });
+      } else {
+        daemonScheduler.stopDaemon();
+        sendJSON(res, 200, { success: true, running: false, message: "Daemon scheduler stopped" });
+      }
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err?.message || String(err) });
+    }
     return true;
   }
 
