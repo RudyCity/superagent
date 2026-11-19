@@ -6,7 +6,7 @@ import { Tool } from "./types.js";
 import { appendActiveToolOutput, clearActiveToolOutput } from "./state.js";
 import { killProcessTree } from "./shellTools.js";
 import { ensureAndroidCliInstalled } from "../androidSetup.js";
-import { formatUnknownActionError, detectInteractivePrompt, tryStatSync } from "./helpers.js";
+import { formatUnknownActionError, detectInteractivePrompt, tryStatSync, resolveWindowsGitExecutable, augmentWindowsEnvPath } from "./helpers.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { applyProcessIntent } from "../process/processSpawnPolicy.js";
 
@@ -244,42 +244,49 @@ export const gitActionTool: Tool = {
       }
     }
 
+    // Native Windows MCP owners frequently run without Git's installer PATH.
+    // Resolve an observed git.exe explicitly; never use a shell for Git args.
+    const gitExecutable = resolveWindowsGitExecutable();
+    const gitOpts = (caller: string) => headlessOpts({
+      cwd, cancelSignal: signal,
+      env: augmentWindowsEnvPath({ ...process.env }),
+    }, caller);
     try {
       if (action === "status") {
-        const { stdout } = await execa("git", ["status", "--porcelain"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.status"));
+        const { stdout } = await execa(gitExecutable, ["status", "--porcelain"], gitOpts("otherTools.git.status"));
         return stdout || "Clean working tree.";
       }
       if (action === "diff") {
-        const { stdout } = await execa("git", ["diff"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.diff"));
+        const { stdout } = await execa(gitExecutable, ["diff"], gitOpts("otherTools.git.diff"));
         const truncateOutput = (await import("./helpers.js")).truncateOutput;
         return truncateOutput(stdout, 120) || "No unstaged changes.";
       }
       if (action === "commit") {
         const message = args.message as string;
         if (!message) return "Error: Commit message is required.";
-        await execa("git", ["add", "-A"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.add"));
-        const { stdout } = await execa("git", ["commit", "-m", message], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.commit"));
+        await execa(gitExecutable, ["add", "-A"], gitOpts("otherTools.git.add"));
+        const { stdout } = await execa(gitExecutable, ["commit", "-m", message], gitOpts("otherTools.git.commit"));
         return stdout;
       }
       if (action === "log") {
         const limit = (args.limit as number) || 5;
-        const { stdout } = await execa("git", ["log", `-${limit}`, "--oneline"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.log"));
+        const { stdout } = await execa(gitExecutable, ["log", `-${limit}`, "--oneline"], gitOpts("otherTools.git.log"));
         return stdout;
       }
       if (action === "add") {
         const targets = files.length > 0 ? files : ["-A"];
-        await execa("git", ["add", ...targets], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.addTargets"));
+        await execa(gitExecutable, ["add", ...targets], gitOpts("otherTools.git.addTargets"));
         return `Successfully staged files: ${targets.join(", ")}`;
       }
       if (action === "restore") {
         if (files.length === 0) {
           return "Error: The 'files' parameter is required for the restore action.";
         }
-        await execa("git", ["restore", ...files], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.restore"));
+        await execa(gitExecutable, ["restore", ...files], gitOpts("otherTools.git.restore"));
         return `Successfully restored files: ${files.join(", ")}`;
       }
       if (action === "clean") {
-        const { stdout } = await execa("git", ["clean", "-fd"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.clean"));
+        const { stdout } = await execa(gitExecutable, ["clean", "-fd"], gitOpts("otherTools.git.clean"));
         return stdout || "Cleaned untracked files/directories successfully.";
       }
       return "Unknown git action.";
