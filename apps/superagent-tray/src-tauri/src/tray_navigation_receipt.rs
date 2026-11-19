@@ -177,7 +177,7 @@ mod tests {
         let issued=issue(&dir,"mcp-pending:connections:req_valid").unwrap();
         let nonce=issued["nonce"].as_str().unwrap();
         assert!(consume(&dir,"mcp-pending:connections:req_valid",nonce,
-            "security:mcp",true).unwrap().is_none());
+            "security:connections",true).unwrap().is_none());
         let issued=issue(&dir,"mcp-pending:connections:req_valid").unwrap();
         let nonce=issued["nonce"].as_str().unwrap();
         assert!(consume(&dir,"mcp-pending:connections:req_valid",nonce,
@@ -190,7 +190,7 @@ mod tests {
             "security:mcp",true).unwrap().is_none());
         let delivered = receipt("mcp-pending:connections:req_valid", Some("security:mcp"), "DELIVERED");
         assert_eq!(delivered["targetFound"], Value::Bool(true));
-        assert_eq!(delivered["targetTab"], Value::String("connections".into()));
+        assert_eq!(delivered["targetTab"], Value::String("mcp".into()));
         assert_eq!(delivered["webviewDigest"].as_str().map(str::len), Some(64));
         let not_delivered = receipt("mcp-pending:connections:req_valid", Some("security:mcp"), "NOT_DELIVERED");
         assert_eq!(not_delivered["targetFound"], Value::Bool(false));
