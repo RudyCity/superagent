@@ -77,7 +77,7 @@ describe("simple force-selected Shutdown Manager",()=>{
   it("renders only the simple force controls",()=>{
     for(const id of [
       "shutdown-manager-dialog","shutdown-services","shutdown-select-all",
-      "shutdown-clear","shutdown-refresh","shutdown-force-confirm",
+      "shutdown-clear","shutdown-refresh",
       "shutdown-force-selected","shutdown-selection-count","shutdown-process-summary"
     ]) expect(html).toContain('id="'+id+'"');
 
@@ -88,7 +88,7 @@ describe("simple force-selected Shutdown Manager",()=>{
     ]) expect(html).not.toContain('id="'+removed+'"');
 
     expect(html).toContain("Owner status is ignored");
-    expect(html).toContain("FORCE SELECTED");
+    expect(html).not.toContain("FORCE SELECTED");
     expect(script).not.toMatch(/innerHTML|eval\s*\(|taskkill|process\.kill/);
     expect(css).toContain("backdrop-filter:none");
     expect(css).toContain("overflow:auto");
@@ -121,17 +121,10 @@ describe("simple force-selected Shutdown Manager",()=>{
     expect(m.node("shutdown-clear").disabled).toBe(true);
   });
 
-  it("requires FORCE SELECTED and sends only selected process ids",async()=>{
+  it("forces selected process ids immediately without typed or native confirmation",async()=>{
     const m=mount();await m.open();
     await m.click("shutdown-select-all");
 
-    const phrase=m.node("shutdown-force-confirm");
-    phrase.value="force selected";
-    phrase.handlers.input();
-    expect(m.node("shutdown-force-selected").disabled).toBe(true);
-
-    phrase.value="FORCE SELECTED";
-    phrase.handlers.input();
     expect(m.node("shutdown-force-selected").disabled).toBe(false);
     await m.click("shutdown-force-selected");
 
@@ -139,9 +132,9 @@ describe("simple force-selected Shutdown Manager",()=>{
     expect(call).toMatchObject({
       action:"force_selected",
       previewId:"preview-1",
-      forceConfirmation:"FORCE SELECTED",
       selected:["process:101","supervisor:7888:202"],
     });
+    expect(call).not.toHaveProperty("forceConfirmation");
     expect(call).not.toHaveProperty("exitAfter");
     expect(call).not.toHaveProperty("ownerVerified");
     expect(m.node("shutdown-progress").hidden).toBe(false);
@@ -149,7 +142,10 @@ describe("simple force-selected Shutdown Manager",()=>{
 
   it("keeps the native backend owner-agnostic but protects critical OS and Tray processes",()=>{
     expect(native).toContain('"manual_kill" | "force_selected" =>');
-    expect(native).toContain('let required_phrase=if action=="force_selected" {"FORCE SELECTED"}');
+    expect(native).toContain('let direct_force=action=="force_selected"');
+    expect(native).toContain('if direct_force {');
+    expect(native).toContain('if force_confirmation.is_some()');
+    expect(native).toContain('if !direct_force {');
     expect(native).toContain("Owner provenance intentionally does not gate Force Selected");
     expect(native).toContain('manual_process_allowed(_kind:&str,pid:u32,name:&str)');
     expect(native).not.toContain('if kind=="cloudflare" {return base=="cloudflared";}');
