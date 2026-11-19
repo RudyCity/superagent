@@ -508,6 +508,16 @@
       const total = $("tray-notification-" + category + "-total");
       if (total) total.textContent = String(counts[category]);
     }
+    const actionCount = $("tray-notification-action-count");
+    if (actionCount) {
+      actionCount.textContent = String(counts.action);
+      actionCount.hidden = counts.action === 0;
+    }
+    const categorySummary = $("tray-notification-category-summary");
+    if (categorySummary) {
+      categorySummary.textContent = counts.action + " need action · " +
+        counts.information + " information";
+    }
     document.querySelectorAll("[data-popover-category]").forEach((tab) => {
       const selected = tab.dataset.popoverCategory === state.popoverCategory;
       tab.classList.toggle("active", selected);
