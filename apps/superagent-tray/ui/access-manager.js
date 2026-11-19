@@ -736,13 +736,6 @@
       if (tabName === "mcp") void refreshMcpRequests();
     }
   }
-  // Explicit navigation supersedes a notification's one-shot focus target.
-  // Otherwise every Core refresh can reopen Project Access over MCP Connections.
-  function selectTabFromNavigation(tabName) {
-    mcpNotificationFocus.id = null;
-    mcpNotificationFocus.didFocus = false;
-    setActiveTab(tabName);
-  }
   function updateTabFromHash() {
     const hash = typeof location !== "undefined" ? location.hash || "" : "";
     if (hash.includes(":audit")) {
@@ -1443,9 +1436,7 @@
     // Route them to the explicit legacy denial panel in Project Access, never
     // to OAuth connection sessions or a non-existent approval list.
     const legacyConnectionRequest = target.projectId === "mcp-connection";
-    // A notification may initially select Project Access, but an already
-    // fulfilled focus cannot override the user's subsequent navigation.
-    if (!mcpNotificationFocus.didFocus && state.activeTab !== "mcp") setActiveTab("mcp");
+    if (state.activeTab !== "mcp") setActiveTab("mcp");
     if (legacyConnectionRequest) {
       status("Permintaan izin koneksi lama tidak berlaku. Buka penolakan permintaan lama di Akses Proyek; buat grant baru pada proyek terdaftar jika diperlukan.", "warning");
     }
@@ -1575,20 +1566,15 @@
       row.dataset.requestId = String(req.requestId || "");
       const details = make("div", "access-mcp-history-detail");
       const head = make("div", "access-mcp-history-head");
-      // Show the OAuth connection display name first; the project is the grant target,
-      // not the identity of the MCP client that requested it.
-      const ownerName = typeof req.ownerConnectionName === "string" &&
-        req.ownerConnectionName.trim() ? req.ownerConnectionName.trim() : null;
-      const title = make("strong", "", ownerName || String(req.subject || "Identitas MCP tidak dikenal"));
+      const title = make("strong", "", humanMcpTarget(req));
       const state = make("span", "access-mcp-state access-mcp-state-" + String(req.status || "unknown"),
         ({ approved: "Disetujui", denied: "Ditolak", revoked: "Dicabut" })[req.status] || String(req.status || "Tidak diketahui"));
       head.append(title, state);
-      const project = make("div", "access-mcp-target", "Proyek: " + humanMcpTarget(req));
       const meta = make("span", "access-mcp-meta",
-        "Identitas: " + String(req.subject || "Tidak diketahui") + " · " +
+        String(req.subject || "Identitas MCP") + " · " +
         (Array.isArray(req.capabilities) ? req.capabilities.join(", ") : "") +
         " · " + new Date(req.decidedAt || req.createdAt || Date.now()).toLocaleString());
-      details.append(head, project, meta);
+      details.append(head, meta);
       row.append(details);
       if (req.status === "approved") {
         const revoke = action("Cabut Izin", "access-revoke", async () => {
@@ -2244,7 +2230,7 @@
     tabRegister.append(
       make("span", "access-nav-tab-label", "Aplikasi & File")
     );
-    tabRegister.addEventListener("click", () => selectTabFromNavigation("register"));
+    tabRegister.addEventListener("click", () => setActiveTab("register"));
 
     const tabRules = make("button", "access-nav-tab");
     tabRules.id = "access-nav-tab-rules";
@@ -2259,7 +2245,7 @@
       make("span", "access-nav-tab-label", "Aturan Aktif"),
       ruleBadge
     );
-    tabRules.addEventListener("click", () => selectTabFromNavigation("rules"));
+    tabRules.addEventListener("click", () => setActiveTab("rules"));
 
     const tabAudit = make("button", "access-nav-tab");
     tabAudit.id = "access-nav-tab-audit";
@@ -2276,7 +2262,7 @@
       auditPulseDot,
       auditBadge
     );
-    tabAudit.addEventListener("click", () => selectTabFromNavigation("audit"));
+    tabAudit.addEventListener("click", () => setActiveTab("audit"));
 
     const tabMcp = make("button", "access-nav-tab");
     tabMcp.id = "access-nav-tab-mcp";
@@ -2291,7 +2277,7 @@
       make("span", "access-nav-tab-label", "Akses Proyek"),
       mcpBadge
     );
-    tabMcp.addEventListener("click", () => selectTabFromNavigation("mcp"));
+    tabMcp.addEventListener("click", () => setActiveTab("mcp"));
 
     const tabConnections = make("button", "access-nav-tab");
     tabConnections.id = "access-nav-tab-connections";
@@ -2303,7 +2289,7 @@
     const connectionBadge = make("span", "access-nav-tab-badge zero", "0");
     connectionBadge.id = "access-tab-badge-connections";
     tabConnections.append(make("span", "access-nav-tab-label", "Koneksi MCP"), connectionBadge);
-    tabConnections.addEventListener("click", () => selectTabFromNavigation("connections"));
+    tabConnections.addEventListener("click", () => setActiveTab("connections"));
 
     navTabs.append(tabRegister, tabRules, tabConnections, tabMcp, tabAudit);
     const tabOrder = [tabRegister, tabRules, tabConnections, tabMcp, tabAudit];
@@ -2387,7 +2373,7 @@
       // Navigation only. Runtime Detection cannot issue or modify grants.
       window.__superagentAccessManagerOpenTab = (tabName) => {
         if (tabName !== "connections" && tabName !== "mcp") return;
-        selectTabFromNavigation(tabName);
+        setActiveTab(tabName);
         void refreshMcpRequests();
       };
       // Navigation-only notification affordance. The actual approval/deny
@@ -2423,8 +2409,7 @@
         void refreshWindows().catch(() => {});
         void refreshInstalledApps().catch(() => {});
         void refreshAuditLog().catch(() => {});
-        // Passive refreshes must preserve the tab the user explicitly selected.
-        // Hash routing happens on initial build, explicit open and hashchange.
+        updateTabFromHash();
       };
       const pendingNotificationId = window.__superagentPendingAccessNotificationId;
       const pendingNotificationTab = window.__superagentPendingAccessNotificationTab;

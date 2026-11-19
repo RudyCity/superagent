@@ -24,7 +24,7 @@
   const state = {
     items: [], history: [], digest: null, prefs: null, sourceLevels: {},
     unreadCount: 0, filter: "all", source: "all", device: "all", period: "all",
-    grouped: false, search: "", open: false, popoverCategory: "action", busy: false, error: "", securitySync: "unknown", prefsDirty: false, evictedCount: 0,
+    grouped: false, search: "", open: false, busy: false, error: "", securitySync: "unknown", prefsDirty: false, evictedCount: 0,
   };
   // A click must not lose its read receipt just because a refresh or native
   // action is currently running. Read receipts wait for the existing request.
@@ -491,6 +491,12 @@
     const count = state.unreadCount;
     const counts = countsSnapshot();
     const visibleItems = selected();
+    const actionBadge = $("tray-notification-action-count");
+    if (actionBadge) {
+      actionBadge.hidden = counts.action === 0;
+      actionBadge.textContent = String(counts.action > 99 ? "99+" : counts.action);
+      actionBadge.setAttribute("aria-label", counts.action + " actions required");
+    }
     for (const el of [$("tray-notification-count"), $("nav-notifications-count")]) {
       if (!el) continue;
       el.hidden = count === 0;
@@ -504,36 +510,15 @@
     }
     const popup = $("tray-notification-popover");
     if (popup) popup.hidden = !state.open;
-    for (const category of ["action", "information"]) {
-      const total = $("tray-notification-" + category + "-total");
-      if (total) total.textContent = String(counts[category]);
-    }
-    const actionCount = $("tray-notification-action-count");
-    if (actionCount) {
-      actionCount.textContent = String(counts.action);
-      actionCount.hidden = counts.action === 0;
-    }
-    const categorySummary = $("tray-notification-category-summary");
-    if (categorySummary) {
-      categorySummary.textContent = counts.action + " need action · " +
-        counts.information + " information";
-    }
-    document.querySelectorAll("[data-popover-category]").forEach((tab) => {
-      const selected = tab.dataset.popoverCategory === state.popoverCategory;
-      tab.classList.toggle("active", selected);
-      tab.setAttribute("aria-selected", String(selected));
-      tab.tabIndex = selected ? 0 : -1;
-    });
+    const popoverSummary = $("tray-notification-category-summary");
+    if (popoverSummary) popoverSummary.textContent =
+      counts.action + " need action · " + counts.information + " information";
     const recent = $("tray-notification-recent");
     if (recent) {
       recent.replaceChildren();
       if (state.error) recent.append(empty(state.error));
-      else {
-        const categoryItems = prioritized().filter((n) => kindOf(n) === state.popoverCategory);
-        if (!categoryItems.length) recent.append(empty(
-          state.popoverCategory === "action" ? "No action-required notifications." : "No informational notifications."));
-        else categoryItems.slice(0, 5).forEach((n) => recent.append(noteCard(n, true)));
-      }
+      else if (!active().length) recent.append(empty("You're all caught up. No current notifications."));
+      else prioritized().slice(0, 5).forEach((n) => recent.append(noteCard(n, true)));
     }
     const inbox = $("notification-inbox-list");
     if (inbox) {
@@ -711,16 +696,8 @@
     if (state.busy) return;
     state.busy = true;
     render();
-    try {
-      const result = await invoke(action, id);
-      if (!result || !Array.isArray(result.items)) throw new Error("Invalid native notification response");
-      apply(result);
-      // A successful native bulk receipt must be reflected by the bell and
-      // inbox immediately, even when action-required incidents stay unresolved.
-      if (action === "read-all" && state.unreadCount !== 0) {
-        state.error = "Some notifications remain unread. Refresh and retry.";
-      }
-    } catch {
+    try { apply(await invoke(action, id)); }
+    catch {
       state.error = "Notification change could not be saved. Retry after checking Tray.";
     } finally { state.busy = false; render(); flushPendingReads(); }
   }
@@ -809,12 +786,6 @@
     });
     $("tray-notification-view-all")?.addEventListener("click", () => {
       close(); window.navigateToPage?.("notifications");
-    });
-    document.querySelectorAll("[data-popover-category]").forEach((tab) => {
-      tab.addEventListener("click", () => {
-        state.popoverCategory = tab.dataset.popoverCategory;
-        render();
-      });
     });
     $("tray-notification-read-all")?.addEventListener("click", () => mutate("read-all"));
     $("notification-read-all")?.addEventListener("click", () => mutate("read-all"));

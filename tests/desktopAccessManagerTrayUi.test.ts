@@ -179,10 +179,9 @@ function boot(nativeEnabled=true, mcpData?: {
   };
   const window:any={__TAURI__:{core:{invoke}},addEventListener:(k:string,f:Function)=>listeners.set(k,f),
     confirm:vi.fn(()=>true)};
-  const location={hash:"#settings"};
-  vm.runInNewContext(code,{document,window,location,
+  vm.runInNewContext(code,{document,window,location:{hash:"#settings"},
     Number,String,Array,Object,Boolean,Error,Promise,Date,Math});
-  return {document,parent,old,calls,invoke,listeners,window,location,mcpRequests,getPolicy:()=>policy};
+  return {document,parent,old,calls,invoke,listeners,window,mcpRequests,getPolicy:()=>policy};
 }
 describe("real permanent Access Manager Tray panel",()=>{
   it("mounts only after native v2 registry verified and shows zero-grant onboarding",async()=>{
@@ -562,38 +561,6 @@ describe("independent MCP Connections and Project Access UI", () => {
     expect(connection.textContent).toContain("alur OAuth MCP owner");
   });
 
-  it("keeps Koneksi MCP selected after opening a project request notification and refreshing", async () => {
-    const ui=boot(true,fixtures);await flush();
-    const focused=await ui.window.__superagentAccessManagerFocusRequest("req_project","mcp");
-    expect(focused).toEqual({targetFound:true,tab:"mcp"});
-    ui.document.getElementById("access-nav-tab-connections")!.click();
-    await flush();
-    const connection=ui.document.getElementById("access-pane-connections")!;
-    const project=ui.document.getElementById("access-pane-mcp")!;
-    expect(connection.hidden).toBe(false);
-    expect(project.hidden).toBe(true);
-    ui.window.__superagentAccessManagerRefresh();
-    await flush();
-    expect(connection.hidden).toBe(false);
-    expect(project.hidden).toBe(true);
-    expect(ui.document.getElementById("access-nav-tab-connections")!.attributes.get("aria-selected")).toBe("true");
-    expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
-      ["approve","direct_grant"].includes(c.args?.action))).toBe(false);
-  });
-
-  it("does not reroute an explicitly selected connection tab on a passive refresh with a stale project hash", async () => {
-    const ui=boot(true,fixtures);await flush();
-    ui.location.hash="#security:mcp";
-    ui.window.__superagentAccessManagerOpenTab("mcp");
-    await flush();
-    ui.document.getElementById("access-nav-tab-connections")!.click();
-    await flush();
-    ui.window.__superagentAccessManagerRefresh();
-    await flush();
-    expect(ui.document.getElementById("access-pane-connections")!.hidden).toBe(false);
-    expect(ui.document.getElementById("access-pane-mcp")!.hidden).toBe(true);
-  });
-
   it("loads both pending approval lists from their own Load buttons without granting access", async () => {
     const ui = boot(true, fixtures);
     await flush();
@@ -712,10 +679,8 @@ describe("independent MCP Connections and Project Access UI", () => {
     const now=Date.now();
     const label="ChatGPT - Laptop Rudy";
     const pending={...fixtures.requests[1],ownerConnectionName:label};
-    const approved={...fixtures.requests[0],requestId:"named-history-request",
-      status:"approved",ownerConnectionName:label};
     const ui=boot(true,{
-      ...fixtures,requests:[pending,approved],
+      ...fixtures,requests:[pending],
       connectedClients:{
         success:true,state:"verified",registrationState:"verified",observedAt:now,
         clients:[{sessionHandle:"ses_aaaaaaaaaaaa",principalHandle:"idh_1111111111111111",
@@ -735,10 +700,6 @@ describe("independent MCP Connections and Project Access UI", () => {
     const registered=ui.document.getElementById("access-mcp-registered-list")!;
     expect(registered.textContent).toContain(label);
     expect(registered.textContent).toContain("nama dari persetujuan OAuth");
-    const history=ui.document.getElementById("access-mcp-history-list")!;
-    expect(history.textContent).toContain(label);
-    expect(history.textContent).toContain("Proyek: ");
-    expect(history.textContent).toContain("Identitas: ");
     expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
       c.args?.action==="approve")).toBe(false);
   });
