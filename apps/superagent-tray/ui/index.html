@@ -993,7 +993,12 @@
                 <small id="op-observed" class="op-note">Not inspected</small>
               </div>
               <p class="op-note" id="op-readiness-detail">Verification is required before showing readiness.</p>
-              <div id="op-service-list" class="op-service-list" aria-live="polite"></div>
+              <div class="op-version-head">
+                <p class="op-note" id="op-version-summary" role="status" aria-live="polite">Checking available build identities…</p>
+                <button type="button" id="op-check-versions" class="button ghost">Check published versions</button>
+              </div>
+              <div id="op-service-list" class="op-service-list" aria-label="Service versions and lifecycle controls" aria-live="polite"></div>
+              <p class="op-note">Running and locally available builds are verified independently. Published release versions may be older than a local development build. All service actions require an owner-bound plan and explicit confirmation.</p>
             </div>
             <div class="op-row">
               <section class="op-frame" aria-label="MCP session inspector">
@@ -1079,7 +1084,7 @@
                 <div class="op-actions" style="margin-top:14px">
                   <label class="visually-hidden" for="op-lifecycle-service">Service</label>
                   <select id="op-lifecycle-service" aria-label="Service">
-                    <option value="core">Core</option><option value="tray">Tray</option>
+                    <option value="core">Core</option><option value="mcp">MCP backend</option><option value="tray">Tray</option>
                     <option value="transport">Transport</option><option value="channel_host">Channel Host</option>
                     <option value="vision">Vision</option><option value="guardian">Guardian</option>
                     <option value="daemon">Daemon</option>
@@ -1087,6 +1092,8 @@
                   <label class="visually-hidden" for="op-lifecycle-action">Action</label>
                   <select id="op-lifecycle-action" aria-label="Lifecycle action">
                     <option value="restart">Safe restart</option><option value="start">Start</option><option value="stop">Stop</option>
+                    <option value="reload">Reload backend (keep tunnel URL)</option>
+                    <option value="upgrade">Upgrade installed Tray release</option>
                   </select>
                 </div>
                 <div id="op-lifecycle-plan" class="op-plan" role="status">No plan prepared. Authenticated plan required.</div>
