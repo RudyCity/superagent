@@ -88,6 +88,8 @@
           <path d="M10 21h4" />
         </svg>
         <span id="tray-notification-count" class="notification-count" hidden>0</span>
+        <span id="tray-notification-action-count" class="notification-count notification-action-count"
+              aria-label="0 actions required" hidden>0</span>
       </button>
       <button id="tray-window-reload" class="tray-window-button tray-window-reload" type="button" aria-label="Reload SuperAgent Tray" title="Reload SuperAgent Tray">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -122,6 +124,7 @@
       <button type="button" class="notification-popover-close" data-notification-close
               aria-label="Close notifications">×</button>
     </div>
+    <p id="tray-notification-category-summary" class="notification-popover-summary" aria-live="polite">0 need action · 0 information</p>
     <div id="tray-notification-recent" class="notification-popover-list" aria-live="polite"></div>
     <div class="notification-popover-foot">
       <button id="tray-notification-read-all" class="notification-text-button" type="button">Mark all read</button>
@@ -493,12 +496,17 @@
               <button type="button" class="notification-kpi-card" data-notification-quick-filter="unread">
                 <span class="notification-kpi-label">Unread</span>
                 <strong id="notification-kpi-unread" class="notification-kpi-value">0</strong>
-                <span class="notification-kpi-hint">Needs review</span>
+                <span class="notification-kpi-hint">Not yet read</span>
               </button>
               <button type="button" class="notification-kpi-card" data-notification-quick-filter="open">
                 <span class="notification-kpi-label">Open</span>
                 <strong id="notification-kpi-open" class="notification-kpi-value">0</strong>
-                <span class="notification-kpi-hint">Unacknowledged</span>
+                <span class="notification-kpi-hint">Not acknowledged, any severity</span>
+              </button>
+              <button type="button" class="notification-kpi-card" data-notification-quick-filter="in-progress">
+                <span class="notification-kpi-label">In progress</span>
+                <strong id="notification-kpi-progress" class="notification-kpi-value">0</strong>
+                <span class="notification-kpi-hint">Being handled</span>
               </button>
               <button type="button" class="notification-kpi-card is-alert" data-notification-quick-filter="important">
                 <span class="notification-kpi-label">Warnings &amp; Critical</span>
@@ -514,12 +522,31 @@
           </div>
 
           <div class="notification-controls-panel panel">
+            <div class="notification-kind-filters" role="group" aria-label="Notification categories">
+              <button type="button" class="notification-kind-filter is-action" data-notification-quick-filter="action" aria-pressed="false">
+                <span class="notification-kind-copy">
+                  <strong class="notification-kind-label">Requires action</strong>
+                  <span class="notification-kind-detail">Pending approvals and issues needing follow-up</span>
+                </span>
+                <strong id="notification-kind-count-action" class="notification-kind-count">0</strong>
+              </button>
+              <button type="button" class="notification-kind-filter is-information" data-notification-quick-filter="information" aria-pressed="false">
+                <span class="notification-kind-copy">
+                  <strong class="notification-kind-label">Information only</strong>
+                  <span class="notification-kind-detail">Updates, reminders and resolved incidents</span>
+                </span>
+                <strong id="notification-kind-count-information" class="notification-kind-count">0</strong>
+              </button>
+            </div>
             <div class="notification-filter-scroll">
               <div class="notification-filter-row" role="group" aria-label="Filter notifications">
                 <button class="notification-filter active" type="button" data-notification-filter="all" aria-pressed="true"><span>All</span><span id="notification-filter-count-all" class="notification-filter-count">0</span></button>
                 <button class="notification-filter" type="button" data-notification-filter="unread" aria-pressed="false"><span>Unread</span><span id="notification-filter-count-unread" class="notification-filter-count">0</span></button>
                 <button class="notification-filter" type="button" data-notification-filter="important" aria-pressed="false"><span>Important</span><span id="notification-filter-count-important" class="notification-filter-count">0</span></button>
                 <button class="notification-filter" type="button" data-notification-filter="open" aria-pressed="false"><span>Open</span><span id="notification-filter-count-open" class="notification-filter-count">0</span></button>
+                <button class="notification-filter" type="button" data-notification-filter="in-progress" aria-pressed="false"><span>In progress</span><span id="notification-filter-count-in-progress" class="notification-filter-count">0</span></button>
+                <button class="notification-filter" type="button" data-notification-filter="snoozed" aria-pressed="false"><span>Snoozed</span><span id="notification-filter-count-snoozed" class="notification-filter-count">0</span></button>
+                <button class="notification-filter" type="button" data-notification-filter="expired" aria-pressed="false"><span>Expired</span><span id="notification-filter-count-expired" class="notification-filter-count">0</span></button>
                 <button class="notification-filter" type="button" data-notification-filter="acknowledged" aria-pressed="false"><span>Acknowledged</span><span id="notification-filter-count-acknowledged" class="notification-filter-count">0</span></button>
                 <button class="notification-filter" type="button" data-notification-filter="resolved" aria-pressed="false"><span>Resolved</span><span id="notification-filter-count-resolved" class="notification-filter-count">0</span></button>
                 <button class="notification-filter" type="button" data-notification-filter="archived" aria-pressed="false"><span>Archived</span><span id="notification-filter-count-archived" class="notification-filter-count">0</span></button>
@@ -570,6 +597,12 @@
                   <option value="logs">Logs</option>
                 </select>
               </label>
+              <label class="notification-tool-field" for="notification-device">
+                <span class="notification-tool-label">Device</span>
+                <select id="notification-device" aria-label="Filter notifications by verified device">
+                  <option value="all">All devices</option>
+                </select>
+              </label>
             </div>
           </div>
 
@@ -579,9 +612,27 @@
                 <span id="notification-view-label" class="notification-view-label">Event Feed</span>
                 <span id="notification-loading-pill" class="notification-loading-pill" hidden>Syncing…</span>
               </div>
-              <button id="notification-reset-filters" class="notification-text-button" type="button" hidden>Reset filters</button>
+              <div class="notification-inbox-tools">
+                <button id="notification-group-toggle" class="notification-text-button" type="button"
+                        aria-pressed="false">Group by source</button>
+                <button id="notification-reset-filters" class="notification-text-button" type="button" hidden>Reset filters</button>
+              </div>
             </div>
             <div id="notification-inbox-list" class="notification-inbox-list" aria-live="polite" aria-busy="false"></div>
+          </section>
+
+          <section class="notification-triage-panels" aria-label="Daily digest and notification activity">
+            <div class="notification-digest-panel panel">
+              <div class="notification-digest-heading">
+                <strong>Daily digest</strong>
+                <span>Local events from the last 24 hours</span>
+              </div>
+              <p id="notification-digest-summary" aria-live="polite">Daily summary not available.</p>
+            </div>
+            <details class="notification-history-panel panel">
+              <summary>Notification activity history</summary>
+              <div id="notification-history-list" class="notification-history-list"></div>
+            </details>
           </section>
 
           <details class="notification-preferences panel" id="notification-preferences">
@@ -620,6 +671,57 @@
               <div class="notification-toggle-list">
                 <label class="notification-switch-card"><input id="notification-os-critical" type="checkbox" checked><span>Desktop pop-ups for critical events</span></label>
                 <label class="notification-switch-card"><input id="notification-os-warnings" type="checkbox"><span>Desktop pop-ups for warnings and info</span></label>
+              </div>
+              <div class="notification-rule-settings">
+                <div class="notification-preferences-top">
+                  <label class="notification-tool-field" for="notification-dnd-mode">
+                    <span class="notification-tool-label">Do Not Disturb</span>
+                    <select id="notification-dnd-mode">
+                      <option value="off">Off</option>
+                      <option value="existing" hidden>Keep current DND timer</option>
+                      <option value="15m">15 minutes</option>
+                      <option value="1h">1 hour</option>
+                      <option value="8h">8 hours</option>
+                      <option value="24h">24 hours</option>
+                      <option value="indefinite">Until turned off</option>
+                    </select>
+                  </label>
+                  <div class="notification-toggle-list">
+                    <label class="notification-switch-card"><input id="notification-dnd-critical-bypass" type="checkbox" checked><span>Allow critical security alerts during DND</span></label>
+                    <label class="notification-switch-card"><input id="notification-digest-enabled" type="checkbox"><span>Send a daily OS digest near 09:00 local time</span></label>
+                  </div>
+                </div>
+                <p class="notification-setting-note">DND silences OS pop-ups, not the local action queue. Critical security alerts can be exempted. The digest schedule is persisted; a missed digest is sent at the next running Tray poll.</p>
+                <div class="notification-rule-editor">
+                  <strong>Per-source delivery rule</strong>
+                  <div class="notification-rule-fields">
+                    <label class="notification-tool-field" for="notification-rule-source">
+                      <span class="notification-tool-label">Source</span>
+                      <select id="notification-rule-source">
+                        <option value="core">Core</option><option value="security">Security Approval</option>
+                        <option value="mcp">MCP</option><option value="tunnel">Tunnel</option>
+                        <option value="delegate">Delegate</option><option value="runtime">Runtime</option>
+                        <option value="desktop-live">Desktop Live</option><option value="terminal">Terminal</option>
+                        <option value="lan-devices">LAN Devices</option><option value="reminder">Reminders</option>
+                        <option value="jobs">Jobs</option><option value="updates">Updates</option>
+                        <option value="shutdown">Shutdown</option><option value="settings">Settings</option>
+                        <option value="muse-files">Muse Files</option><option value="overview">Overview</option>
+                        <option value="logs">Logs</option>
+                      </select>
+                    </label>
+                    <label class="notification-tool-field" for="notification-rule-level">
+                      <span class="notification-tool-label">Minimum severity for OS alerts</span>
+                      <select id="notification-rule-level">
+                        <option value="critical">Critical</option>
+                        <option value="warning">Warning</option>
+                        <option value="info">All</option>
+                        <option value="off">Mute OS alerts from source</option>
+                      </select>
+                    </label>
+                    <button type="button" id="notification-rule-add" class="button secondary sm">Set rule</button>
+                  </div>
+                  <div id="notification-source-rules" class="notification-source-rules" aria-live="polite"></div>
+                </div>
               </div>
               <fieldset class="notification-category-fieldset">
                 <legend>Categories allowed to show OS notifications</legend>

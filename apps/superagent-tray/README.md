@@ -35,11 +35,84 @@ MCP or Chat Agent permissions.
   **Archived/Restored**. Search by title/details/source, filter by age, category,
   severity, status, and see repeated-incident counts.
 
-Pending MCP approvals are **informational only**. Clicking a pending-approval
-notification focuses its exact request card in the Access Manager MCP or
+Pending MCP approval notifications are **read-only navigation**, even though
+the pending decision is categorized as **Requires action**. Clicking one
+focuses its exact request card in the Access Manager MCP or
 Connections tab. The focused card still requires separate native human
 confirmation; opening or acknowledging an alert does **not** approve a request,
 alter permissions, connect a device, or execute a tool.
+
+### Action required vs information
+
+The Notification Center also divides active events into **Requires action**
+and **Information only**. The two category controls filter the same native
+incident history, and their counts are independent of the read/unread filter.
+This distinction comes from native incident severity and lifecycle metadata,
+not from free-text titles, source labels, or user-provided messages.
+
+- **Requires action**: unresolved warning/critical incidents, including
+  pending MCP approval, service health loss, and scheduled-run failures.
+  **Read** and **Acknowledge** do not remove an incident from this category.
+- **Information only**: info events (such as completed reminders) and
+  resolved incidents, including warning/critical incidents that recovered.
+- Archived items stay in the Archived filter rather than either active count.
+  The bell previews action-required items first, but its numeric badge remains
+  the number of unread events across both categories.
+
+The classification only helps the operator triage. Navigation to an approval
+card never grants a capability or automatically performs the requested action.
+
+### Advanced triage and digest (November 2026)
+
+The action badge next to the unread count is the number of **unresolved warning
+and critical incidents**. Read/unread, acknowledged, in-progress, resolved, and
+expired are different states. Manual **Start working / Pause work** changes a
+triage state, not the underlying process or an approval. Authenticated security
+request expiry and health recovery are reflected by native Core polling.
+Managed MCP approval and health incidents cannot be manually marked resolved.
+Bulk **Archive read** does not hide unresolved action-required incidents, and
+manual archiving of such incidents is rejected in native storage.
+
+- **Smart grouping:** optional source/type grouping; every child retains its own
+  exact navigation and read receipt. The bell prioritizes unsnoozed actions.
+- **Snooze:** 15 minutes, 1 hour, or 24 hours; native persisted snooze does not
+  grant access or complete an action and the action counter still includes it.
+- **Per-device filtering:** uses only native-verified `deviceId` metadata.
+  Existing local producers use `local`; legacy events without identity show
+  **Unspecified device**. The native Tray polls the authenticated, paired LAN
+  inventory and creates device-specific warnings for verified connected →
+  disconnected transitions; verified reconnection resolves those incidents.
+  Core inventory failures and disappearing/unpaired devices do not trigger
+  guessed disconnect events. Opening one of these native incidents navigates
+  into LAN Devices and focuses its exact paired device after a fresh Core
+  inventory read; a missing/unverified device does not create a read receipt.
+  Further producers can use the native `publish_for_device` contract; titles
+  and message bodies are never parsed to guess an identity.
+- **Activity history:** bounded native audit events include create, reopen,
+  acknowledgement, progress, read, snooze, resolve and archive transitions.
+  Retention/size caps still apply; this is not an immutable forensic log.
+- **Source delivery rules:** each allowed source can override its minimum OS
+  pop-up severity or be OS-muted, in addition to global severity/pop-up toggles.
+  Rules never suppress the native inbox.
+- **DND:** off, short timer, or indefinite. OS alerts are suppressed unless
+  explicitly exempted critical *Security Approval* alerts. Inbox entries and
+  action counts are unchanged; DND does not approve requests.
+- **Daily digest:** opt-in scheduled OS summary near the next 09:00 local
+  time, based on a native persisted next-at timestamp. It reports counts only,
+  not titles/secrets, and is emitted on the next running Tray poll when due.
+  Delivery is deferred during DND or when global notifications are off.
+  Subsequent digests run at roughly 24-hour intervals; after DST/time-zone
+  shifts, re-save settings to realign the time. A native claim prevents
+  duplicate delivery after restart; if the OS API fails, the missed message
+  is logged rather than silently replayed.
+
+Deep links remain fixed, authenticated read-only navigation. An OS activation
+with a native incident token can focus an eligible incident; neither navigation
+nor marking read triggers a permission grant, run retry, or device pairing.
+
+**Verification:** `bun --bun x vitest run tests/desktopTrayNotificationsUi.test.ts`
+and `cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml`.
+These tests do not replace an installed Tray runtime smoke test on Windows.
 
 ### Delivery, privacy, and retention
 
