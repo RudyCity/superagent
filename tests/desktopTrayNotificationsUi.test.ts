@@ -104,7 +104,7 @@ function mount(items: Record<string, unknown>[] = []) {
           if (name.endsWith("begin_navigation")) {
             mockInvocations.push({action:"navigation-begin",id:args.incidentId});
             return {status:"ISSUED",nonce:"mock-nonce",route:
-              args.incidentId.startsWith("mcp-pending:connections:")?"security:connections":
+              args.incidentId.startsWith("mcp-pending:connections:")?"security:mcp":
               args.incidentId.startsWith("mcp-pending:mcp:")?"security:mcp":
               args.incidentId.startsWith("mcp-pending:")?"security":
               routeForFixture(args.incidentId,items)};
@@ -522,7 +522,7 @@ describe("Tray Notification Manager", () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(focus).toHaveBeenCalledWith("missing-approval", "connections");
     expect(mounted.mockInvocations.some((call) => call.action === "read")).toBe(false);
-    focus.mockResolvedValue({targetFound:true,tab:"connections"});
+    focus.mockResolvedValue({targetFound:true,tab:"mcp"});
     card.trigger("click", { target: { closest: () => null } });
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(mounted.mockInvocations.some((call) => call.action === "read")).toBe(true);
@@ -582,7 +582,7 @@ describe("Tray Notification Manager", () => {
     expect(runtime).toContain('window.__superagentRuntimeOpenTab = (tab)');
     expect(access).toContain('const pendingNotificationTab = window.__superagentPendingAccessNotificationTab;');
     expect(access).toContain('setActiveTab(tab || "mcp");');
-    expect(access).toContain('const tab = target.projectId === "mcp-connection" ? "connections" : "mcp";');
+    expect(access).toContain('const legacyConnectionRequest = target.projectId === "mcp-connection";');
     expect(access).not.toContain('/[\\\\x00-\\\\x1f]/.test(requestId)');
   });
 
@@ -661,10 +661,10 @@ describe("Tray Notification Manager", () => {
       const card = mounted.get("tray-notification-recent").children[0];
       const open = card.children[1].children[3].children[0];
       mounted.window.__superagentAccessManagerFocusRequest = vi.fn(async () =>
-        ({targetFound:true,tab:"connections"}));
+        ({targetFound:true,tab:"mcp"}));
       if (mode === "card") card.trigger("click", { target: { closest: () => null } });
       else open.trigger("click");
-      expect(mounted.nav).toHaveBeenCalledWith("security:connections");
+      expect(mounted.nav).toHaveBeenCalledWith("security:mcp");
       // Flush the native-invoke promise chain through the render turn, not
     // just the first two microtasks; this is deterministic across CI OSes.
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -728,11 +728,11 @@ describe("Tray Notification Manager", () => {
       const card = mounted.get("tray-notification-recent").children[0];
       expect(card.tabIndex).toBe(0);
       mounted.window.__superagentAccessManagerFocusRequest = vi.fn(async () =>
-        ({ targetFound: true, tab: "connections" }));
+        ({ targetFound: true, tab: "mcp" }));
       const preventDefault = vi.fn();
       card.trigger("keydown", { key, target: card, preventDefault });
       expect(preventDefault).toHaveBeenCalledTimes(1);
-      expect(mounted.nav).toHaveBeenCalledWith("security:connections");
+      expect(mounted.nav).toHaveBeenCalledWith("security:mcp");
       await new Promise<void>((resolve) => setImmediate(resolve));
       expect(mounted.mockInvocations.filter(call =>
         call.action === "read" && call.id === "mcp-pending:connections:request-kbd")).toHaveLength(1);
@@ -747,7 +747,7 @@ describe("Tray Notification Manager", () => {
     }]);
     await new Promise<void>((resolve) => setImmediate(resolve));
     missingTarget.window.__superagentAccessManagerFocusRequest = vi.fn(async () =>
-      ({ targetFound: false, tab: "connections" }));
+      ({ targetFound: false, tab: "mcp" }));
     const missingCard = missingTarget.get("tray-notification-recent").children[0];
     missingCard.trigger("click", { target: { closest: () => null } });
     await new Promise<void>((resolve) => setImmediate(resolve));

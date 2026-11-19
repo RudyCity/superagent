@@ -49,13 +49,13 @@ fn fixed_route(source: &str, id: &str) -> Option<(&'static str, Option<(String, 
     if source == "security" && id.starts_with("mcp-pending:") {
         let rest = &id["mcp-pending:".len()..];
         let (tab, request) = if let Some(rest) = rest.strip_prefix("connections:") {
-            ("connections", rest)
+            // Backward-compatible incident identifier; operations now use Project Access.
+            ("mcp", rest)
         } else if let Some(rest) = rest.strip_prefix("mcp:") {
             ("mcp", rest)
         } else { ("legacy", rest) };
         if !safe_id(request, 150) { return None; }
         let route=match tab {
-            "connections" => "security:connections",
             "mcp" => "security:mcp",
             _ => "security",
         };
@@ -150,7 +150,7 @@ mod tests {
     #[test]
     fn native_routes_ignore_titles_and_reject_path_and_url_shape() {
         assert_eq!(fixed_route("security","mcp-pending:connections:req_012")
-            .unwrap().0,"security:connections");
+            .unwrap().0,"security:mcp");
         assert_eq!(fixed_route("security","mcp-pending:req_old")
             .unwrap().0,"security");
         assert_eq!(fixed_route("core","health:core").unwrap().0,"runtime:core");
@@ -169,11 +169,11 @@ mod tests {
         let issued=issue(&dir,"mcp-pending:connections:req_valid").unwrap();
         let nonce=issued["nonce"].as_str().unwrap();
         assert!(consume(&dir,"mcp-pending:connections:req_other",nonce,
-            "security:connections",true).unwrap().is_none());
+            "security:mcp",true).unwrap().is_none());
         assert!(consume(&dir,"mcp-pending:connections:req_valid",nonce,
             "security:connections",true).unwrap().is_none());
         assert!(consume(&dir,"mcp-pending:connections:req_valid","../tampered",
-            "security:connections",true).unwrap().is_none());
+            "security:mcp",true).unwrap().is_none());
         let issued=issue(&dir,"mcp-pending:connections:req_valid").unwrap();
         let nonce=issued["nonce"].as_str().unwrap();
         assert!(consume(&dir,"mcp-pending:connections:req_valid",nonce,
@@ -181,18 +181,18 @@ mod tests {
         let issued=issue(&dir,"mcp-pending:connections:req_valid").unwrap();
         let nonce=issued["nonce"].as_str().unwrap();
         assert!(consume(&dir,"mcp-pending:connections:req_valid",nonce,
-            "security:connections",false).unwrap().is_none());
+            "security:mcp",false).unwrap().is_none());
         let issued=issue(&dir,"mcp-pending:connections:req_valid").unwrap();
         let nonce=issued["nonce"].as_str().unwrap();
         assert!(consume(&dir,"mcp-pending:connections:req_valid",nonce,
-            "security:connections",true).unwrap().is_some());
+            "security:mcp",true).unwrap().is_some());
         assert!(consume(&dir,"mcp-pending:connections:req_valid",nonce,
-            "security:connections",true).unwrap().is_none());
-        let delivered = receipt("mcp-pending:connections:req_valid", Some("security:connections"), "DELIVERED");
+            "security:mcp",true).unwrap().is_none());
+        let delivered = receipt("mcp-pending:connections:req_valid", Some("security:mcp"), "DELIVERED");
         assert_eq!(delivered["targetFound"], Value::Bool(true));
         assert_eq!(delivered["targetTab"], Value::String("connections".into()));
         assert_eq!(delivered["webviewDigest"].as_str().map(str::len), Some(64));
-        let not_delivered = receipt("mcp-pending:connections:req_valid", Some("security:connections"), "NOT_DELIVERED");
+        let not_delivered = receipt("mcp-pending:connections:req_valid", Some("security:mcp"), "NOT_DELIVERED");
         assert_eq!(not_delivered["targetFound"], Value::Bool(false));
         let none_delivered = receipt("mcp-pending:connections:req_valid", None, "NOT_DELIVERED");
         assert_eq!(none_delivered["targetFound"], Value::Bool(false));

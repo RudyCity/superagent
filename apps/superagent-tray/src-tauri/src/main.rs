@@ -363,9 +363,7 @@ async fn tray_notification_center_ack_navigation(
                 requests.iter().any(|req|
                     req.get("requestId").and_then(Value::as_str)==Some(request_id.as_str()) &&
                     req.get("status").and_then(Value::as_str)==Some("pending") &&
-                    (*tab=="legacy" ||
-                     (req.get("projectId").and_then(Value::as_str)==Some("mcp-connection")) ==
-                     (*tab=="connections"))));
+                    (*tab=="legacy" || *tab=="mcp")));
         if !valid { return Ok(tray_navigation_receipt::receipt(
             &incident_id,Some(ticket.route),"TARGET_EXPIRED")); }
     }
@@ -3682,8 +3680,9 @@ async fn poll_pending_security_requests(app: &tauri::AppHandle) -> Result<(), St
         if id.is_empty() || id.len() > 150 || id.chars().any(char::is_control) { continue; }
         // Identity and lifecycle are from authenticated Core inventory, not the
         // notification body or a WebView-supplied approval result.
-        let tab = if request.get("projectId").and_then(Value::as_str)
-            == Some("mcp-connection") { "connections" } else { "mcp" };
+        // Operation access requests ALWAYS belong to Akses Proyek.
+        // Historical virtual mcp-connection requests are denial-only there.
+        let tab = "mcp";
         let key = format!("mcp-pending:{tab}:{id}");
         let status = request.get("status").and_then(Value::as_str).unwrap_or("");
         if status != "pending" {

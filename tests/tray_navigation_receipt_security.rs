@@ -17,8 +17,8 @@ fn ticket_cannot_move_to_another_native_profile_with_the_same_incident() {
     publish(&second, id);
     let issued = issue(&first, id).unwrap();
     let nonce = issued["nonce"].as_str().unwrap();
-    assert!(consume(&second, id, nonce, "security:connections", true).unwrap().is_none());
-    assert!(consume(&first, id, nonce, "security:connections", true).unwrap().is_none());
+    assert!(consume(&second, id, nonce, "security:mcp", true).unwrap().is_none());
+    assert!(consume(&first, id, nonce, "security:mcp", true).unwrap().is_none());
     std::fs::remove_dir_all(first).unwrap();
     std::fs::remove_dir_all(second).unwrap();
 }
@@ -32,7 +32,7 @@ fn ticket_cannot_read_a_new_occurrence_of_the_same_incident() {
     tray_notification_center::resolve(&dir, id).unwrap();
     publish(&dir, id);
     assert!(consume(&dir, id, issued["nonce"].as_str().unwrap(),
-        "security:connections", true).unwrap().is_none());
+        "security:mcp", true).unwrap().is_none());
     assert_eq!(tray_notification_center::perform(&dir, "list", None).unwrap()["unreadCount"], 1);
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -44,7 +44,7 @@ fn completion_rechecks_revision_after_a_backend_await() {
     publish(&dir, id);
     let issued = issue(&dir, id).unwrap();
     let ticket = consume(&dir, id, issued["nonce"].as_str().unwrap(),
-        "security:connections", true).unwrap().unwrap();
+        "security:mcp", true).unwrap().unwrap();
     tray_notification_center::resolve(&dir, id).unwrap();
     publish(&dir, id);
     tray_notification_center::perform(&dir, "unread", Some(id)).unwrap();
@@ -52,7 +52,7 @@ fn completion_rechecks_revision_after_a_backend_await() {
     assert_eq!(tray_notification_center::perform(&dir, "list", None).unwrap()["unreadCount"], 1);
     let issued = issue(&dir, id).unwrap();
     let ticket = consume(&dir, id, issued["nonce"].as_str().unwrap(),
-        "security:connections", true).unwrap().unwrap();
+        "security:mcp", true).unwrap().unwrap();
     assert!(complete(&dir, &ticket).unwrap());
     assert_eq!(tray_notification_center::perform(&dir, "list", None).unwrap()["unreadCount"], 0);
     std::fs::remove_dir_all(dir).unwrap();
@@ -65,18 +65,18 @@ fn explicit_mark_unread_and_expiry_cannot_be_overridden_by_late_completion() {
     publish(&dir, id);
     let issued = issue(&dir, id).unwrap();
     let ticket = consume(&dir, id, issued["nonce"].as_str().unwrap(),
-        "security:connections", true).unwrap().unwrap();
+        "security:mcp", true).unwrap().unwrap();
     tray_notification_center::perform(&dir, "read", Some(id)).unwrap();
     tray_notification_center::perform(&dir, "unread", Some(id)).unwrap();
     assert!(!complete(&dir, &ticket).unwrap());
     let issued = issue(&dir, id).unwrap();
     let ticket = consume(&dir, id, issued["nonce"].as_str().unwrap(),
-        "security:connections", true).unwrap().unwrap();
+        "security:mcp", true).unwrap().unwrap();
     tray_notification_center::perform(&dir, "unread", Some(id)).unwrap();
     assert!(!complete(&dir, &ticket).unwrap());
     let issued = issue(&dir, id).unwrap();
     let mut ticket = consume(&dir, id, issued["nonce"].as_str().unwrap(),
-        "security:connections", true).unwrap().unwrap();
+        "security:mcp", true).unwrap().unwrap();
     ticket.issued = Instant::now() - TTL;
     assert!(!complete(&dir, &ticket).unwrap());
     assert_eq!(tray_notification_center::perform(&dir, "list", None).unwrap()["unreadCount"], 1);
@@ -88,11 +88,11 @@ fn malformed_nonce_and_corrupt_registry_do_not_read_or_disclose_the_profile() {
     let dir = isolated();
     let id = "mcp-pending:connections:req_corrupt";
     publish(&dir, id);
-    assert!(consume(&dir, id, "../../private", "security:connections", true).unwrap().is_none());
+    assert!(consume(&dir, id, "../../private", "security:mcp", true).unwrap().is_none());
     let issued = issue(&dir, id).unwrap();
     std::fs::write(dir.join("tray-notifications.json"), "invalid").unwrap();
     let error = consume(&dir, id, issued["nonce"].as_str().unwrap(),
-        "security:connections", true).unwrap_err();
+        "security:mcp", true).unwrap_err();
     assert!(!error.contains(dir.to_str().unwrap()));
     assert!(error.contains("invalid"));
     std::fs::remove_dir_all(dir).unwrap();
@@ -160,7 +160,7 @@ fn verified_expiry_invalidates_receipts_and_cannot_be_reopened_by_the_webview() 
     publish(&dir, id);
     let issued = issue(&dir, id).unwrap();
     let ticket = consume(&dir, id, issued["nonce"].as_str().unwrap(),
-        "security:connections", true).unwrap().unwrap();
+        "security:mcp", true).unwrap().unwrap();
     assert!(tray_notification_center::expire_verified(&dir, id).unwrap());
     let snapshot = tray_notification_center::perform(&dir, "list", None).unwrap();
     assert_eq!(snapshot["items"][0]["actionStatus"], "expired");

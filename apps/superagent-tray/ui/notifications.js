@@ -177,7 +177,7 @@
     let tab = null;
     if (requestId.startsWith("connections:")) {
       requestId = requestId.slice("connections:".length);
-      tab = "connections";
+      tab = "mcp";
     } else if (requestId.startsWith("mcp:")) {
       requestId = requestId.slice("mcp:".length);
       tab = "mcp";
@@ -362,8 +362,7 @@
     const actions = element("div", "notification-item-actions");
     if (page) {
       const pending = pendingAccessTarget(item);
-      const label = pending?.tab === "connections" ? "Review MCP Connections"
-        : pending?.tab === "mcp" ? "Review MCP Project Access"
+      const label = pending?.tab === "mcp" ? "Review MCP Project Access"
           : pending ? "Review pending access"
             : item.source === "security" ? "Open Security Approval"
               : lanDeviceTarget(item) ? "Review LAN device"
