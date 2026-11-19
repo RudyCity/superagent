@@ -461,8 +461,50 @@ const CERTIFIED_NON_FILE_TOOLS = new Set([
  */
 
 
+
+function splitQuotedCommand(raw:string):string[]|null {
+  if(!raw.trim()||raw.length>12000||/[\0\r\n]/.test(raw))return null;
+  const parts=raw.match(/(?:[^\s"']+|"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*')+/g)||[];
+  if(!parts.length||parts.length>200)return null;
+  return parts.map(part=>{
+    if((part.startsWith('"')&&part.endsWith('"'))||(part.startsWith("'")&&part.endsWith("'")))
+      return part.slice(1,-1);
+    return part;
+  });
+}
+function officeCliEffects(args:Args|undefined):ExplicitFileEffect[]|null {
+  if(!args||typeof args!=="object"||Array.isArray(args)||
+     Object.keys(args).some(key=>!["command","workspace","projectId"].includes(key))||
+     typeof args.command!=="string")return null;
+  const parts=splitQuotedCommand(args.command);
+  if(!parts)return null;
+  const action=parts[0]!.toLowerCase();
+  if(["help","--help","-h","version","--version","-v"].includes(action))return [];
+  const supported=new Set(["view","inspect","get","create","set","convert"]);
+  if(!supported.has(action))return null;
+  const fileTokens=parts.slice(1).filter(token=>/\.(?:docx?|xlsx?|pptx?|pdf)$/i.test(token));
+  if(!fileTokens.length)return null;
+  // Reject command-line path-like tokens that are not recognized document files.
+  // Office object selectors such as /Sheet1/A1 are explicitly allowed.
+  for(const token of parts.slice(1)){
+    if(fileTokens.includes(token)||token.startsWith("-")||/^\/[A-Za-z0-9_. -]+(?:\/[A-Za-z0-9_. -]+)+$/.test(token))
+      continue;
+    if(/^[A-Za-z]:[\\/]|^\.\.?[\\/]|[\\]/.test(token))return null;
+  }
+  const effects:ExplicitFileEffect[]=[];
+  const push=(raw:string,operations:FileOperation[])=>effects.push({raw,operations});
+  if(["view","inspect","get"].includes(action))fileTokens.forEach(file=>push(file,["read"]));
+  else if(action==="create")fileTokens.forEach((file,i)=>push(file,i===0?["write"]:["read"]));
+  else if(action==="set")fileTokens.forEach(file=>push(file,["read","write"]));
+  else if(action==="convert"){
+    if(fileTokens.length<2)return null;
+    push(fileTokens[0]!,["read"]);
+    for(const file of fileTokens.slice(1))push(file,["write"]);
+  }
+  return effects;
+}
 const MIXED_ACTION_TOOLS = new Set([
-  "superagent_brain","superagent_cli_bridge","superagent_git_action",
+  "superagent_brain","superagent_cli_bridge","superagent_git_action","superagent_office_cli",
   "superagent_chrome_vision","superagent_manage_workspace_chain",
   "superagent_cross_workspace_exec",
 ]);
@@ -489,6 +531,7 @@ function certifiedMixedAction(name:string,args:Args|undefined):boolean {
     return ["list","profile.list","role.list","delegate.jobs","delegate.agents",
       "delegate.slots","delegate.health","session.list"].includes(action);
   }
+  if(name==="superagent_office_cli")return officeCliEffects(args)!==null;
   if(name==="superagent_brain"){
     const action=String(args.action??"");
     const executionActions=new Set(["delegate.start","task.delegate.start","task.autostart","task.retry"]);
@@ -708,9 +751,11 @@ export function registeredFileToolGate(
   if(call.name==="superagent_manage_worktrees"&&certifiedWorktreeMetadata(call.args))return null;
   if(call.name==="superagent_launch_chrome"&&certifiedManagedChromeLaunch(call.args))return null;
   if(MIXED_ACTION_TOOLS.has(call.name)&&certifiedMixedAction(call.name,call.args))return null;
+  const officeEffects=call.name==="superagent_office_cli"?officeCliEffects(call.args):null;
   const planningEffects=FIXED_PLANNING_TOOLS.has(call.name)
     ?fixedPlanningEffects(call.name,call.args,workspace)
-    :call.name==="superagent_check_project_health"?projectHealthEffects(workspace):null;
+    :call.name==="superagent_check_project_health"?projectHealthEffects(workspace)
+    :officeEffects;
   if(FIXED_PLANNING_TOOLS.has(call.name)&&planningEffects?.length===0)return null;
   if (call.name === "superagent_delegate_sync_history" && certifiedDelegateHistorySync(call.args))
     return null; // App-owned index only; never a general file write exemption.
@@ -751,7 +796,7 @@ export function registeredFileToolGate(
     ? explicitFileEffects(call.name,call.args)
     : planningEffects;
   if((EXPLICIT_EFFECT_TOOLS.has(call.name)||FIXED_PLANNING_TOOLS.has(call.name)||
-      call.name==="superagent_check_project_health") && !explicitEffects)
+      call.name==="superagent_check_project_health"||call.name==="superagent_office_cli") && !explicitEffects)
     return "Tool requires explicit certified file effects for the selected action.";
   const mediaPlanPaths=call.name==="superagent_media_plan"
     ? certifiedMediaPlanPaths(call.args) : null;
