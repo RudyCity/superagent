@@ -43,10 +43,20 @@ change services. The tool covers:
 | REST/SSE & Muse Cloudflare tunnels | 7888 / 9225 | Cloudflare registry + exact process command identity | **plan → stop** only with public-disruption acknowledgment; never automatic URL-changing restart |
 | Process supervisor | embedded | workspace-scoped process registry diagnostics | **status/doctor only**; process termination must use each service's verified owner |
 
-“Unavailable” means the manager rejects `start`/`stop`/`restart`
-with `SERVICE_UNSUPPORTED_MUTATION` rather than pretending a lifecycle
-operation occurred or using a speculative PID. Use documented local service
-controls where available and obtain explicit owner authorization.
+**Dashboard health counts** are distinct from the mutation support of
+each tool. `ready` means a verified, usable service; `degraded` means
+responding but not ready. `unverified` means an identity or ownership
+mismatch that must not be adopted automatically. `notConfigured` means
+an inactive service whose start-on-boot and auto-recovery settings are both
+off. `inactive` indicates an expected but stopped opt-in service;
+`blocked` means a dependency is not ready; `failed` is a genuine failed
+or unknown inspection. `unavailable`/Tray *Needs attention* now counts
+only unverified + failed services, not all intentionally disabled optional
+components. Individual service cards retain their exact health reasons.
+
+**Unsupported lifecycle mutations** still return
+`SERVICE_UNSUPPORTED_MUTATION`; they are separate from the dashboard health
+counts. Never infer permission to stop/restart a service from its status.
 
 ### Restart Core (never touch MCP ingress)
 
@@ -124,7 +134,15 @@ symlinked, or differs from the checked-out source. The Python interpreter and
 model weights are **not** silently bundled or installed. Operators should use
 a dedicated Python virtual environment and configure
 `SUPERAGENT_VISION_PYTHON` to its absolute Python binary path in the
-SuperAgent service environment. After provisioning, re-run the guarded Vision
+SuperAgent service environment. If not configured, the runtime probes
+`python`, `python3`, the Windows `py -3` launcher, and common local
+Windows Python installation folders, then resolves the actual
+`sys.executable`. A configured but invalid interpreter deliberately does
+not fall back to another installation. Vision status reports only Python
+version and discovery source, not an absolute private executable path.
+A successful `python --version` in a PowerShell or Bash session does **not**
+prove the MCP/Tray service has the same interpreter or required imports.
+After provisioning, re-run the guarded Vision
 `plan` and `start` lifecycle. A missing dependency, unloaded model,
 or installed-package script mismatch is not a healthy Vision service.
 
@@ -143,7 +161,11 @@ To execute, copy these exact fields, change `action` to
 `start`, and set `confirm:true`. For `restart` or `stop`,
 create a NEW plan; old/foreign guardian processes cannot be adopted.
 Stopping Guardian does not stop the Core supervisor or its workers, and it
-cannot silently take over an unsupervised Core.
+cannot silently take over an unsupervised Core. When a legacy Guardian lease
+exists without a verified managed owner, health now reports
+`GUARDIAN_LEGACY_LEASE_UNVERIFIED` and requests manual owner identity review.
+This is not evidence that the remembered PID remains alive; no PID kill,
+owner-record removal, or adoption is justified by the lease alone.
 
 ### Daemon scheduler (not a separate process)
 
