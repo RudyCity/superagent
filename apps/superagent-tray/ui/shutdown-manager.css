@@ -205,55 +205,14 @@
   font-size:11px;
 }
 
-.shutdown-force-panel {
-  display:grid;
-  grid-template-columns:minmax(0,1fr) minmax(260px,.55fr);
-  align-items:end;
-  gap:7px 14px;
-  padding:10px 12px;
+.shutdown-force-note {
+  padding:9px 11px;
   border:1px solid #754652;
-  border-radius:9px;
+  border-radius:8px;
   background:linear-gradient(130deg,#291d28,#19202b);
-}
-.shutdown-force-copy {
-  grid-row:span 2;
-  display:flex;
-  flex-direction:column;
-  gap:3px;
-}
-.shutdown-force-copy strong {
-  color:#f5c0c5;
-  font-size:12px;
-}
-.shutdown-force-copy small {
-  color:#b8aeb9;
+  color:#d8bcc5;
   font-size:10px;
   line-height:1.4;
-}
-.shutdown-force-panel label {
-  color:#d4bdc5;
-  font-size:10px;
-}
-.shutdown-force-panel code {
-  color:#ffd0d9;
-  font-size:10px;
-}
-.shutdown-force-panel input {
-  box-sizing:border-box;
-  width:100%;
-  min-width:0;
-  min-height:36px;
-  padding:8px 10px;
-  border:1px solid #885365;
-  border-radius:7px;
-  background:#111822;
-  color:#fff;
-  font-size:12px;
-  letter-spacing:.03em;
-}
-.shutdown-force-panel input:focus-visible {
-  outline:2px solid #8bc4ff;
-  outline-offset:2px;
 }
 
 .shutdown-progress {
@@ -359,12 +318,6 @@
   }
   .shutdown-bulk-actions .button {
     flex:1 1 auto;
-  }
-  .shutdown-force-panel {
-    grid-template-columns:1fr;
-  }
-  .shutdown-force-copy {
-    grid-row:auto;
   }
   .shutdown-manager .modal-footer {
     flex-wrap:wrap;
