@@ -12,6 +12,7 @@ function mountRuntime(snapshot: unknown, extra: {
   named?: Record<string, unknown>;
   mcpRequests?: any[];
   mcpIdentities?: any[];
+  mcpClients?: any[];
   failMcp?: boolean;
 } = {}) {
   const elements = new Map<string, any>();
@@ -53,6 +54,7 @@ function mountRuntime(snapshot: unknown, extra: {
           if (extra.failMcp) throw Error("MCP Core unavailable");
           if ((args as any)?.action === "requests") return {success:true,requests:extra.mcpRequests ?? []};
           if ((args as any)?.action === "identities") return {success:true,identities:extra.mcpIdentities ?? []};
+          if ((args as any)?.action === "connected_clients") return {success:true,state:"verified",clients:extra.mcpClients ?? []};
         }
         return { success: true };
       } }, event: { listen: (name: string, callback: (event: unknown)=>unknown) => {
