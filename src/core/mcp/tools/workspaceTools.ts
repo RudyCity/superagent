@@ -1,4 +1,4 @@
-import { registeredFileToolGate } from "../../tools/registeredFileToolGate.js";
+import { registeredFileToolGate, isPathAllowedByPermanentRegistry } from "../../tools/registeredFileToolGate.js";
 /**
  * workspaceTools.ts — Workspace switching, worktree operations, command execution, file tools, search, and checklist tools for MCP.
  */
@@ -500,19 +500,18 @@ export async function handleListFiles(args: any): Promise<McpToolResult> {
   }
 
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
-    return { content: [{ type: "text", text: `Directory not found: ${resolved}` }], isError: true };
+    return { content: [{ type: "text", text: "Directory not found or unavailable." }], isError: true };
+  }
+  if (!isPathAllowedByPermanentRegistry(resolved, "read")) {
+    return { content: [{ type: "text", text: "Permanent file access denies directory listing for the selected target." }], isError: true };
   }
 
   try {
-    const entries = fs.readdirSync(resolved, { withFileTypes: true });
+    const entries = fs.readdirSync(resolved, { withFileTypes: true })
+      .filter((entry) => isPathAllowedByPermanentRegistry(path.join(resolved, entry.name), "read"));
     const formatted = entries.map((e) => `${e.isDirectory() ? "📁 [DIR] " : "📄 [FILE]"} ${e.name}`).join("\n");
     return {
-      content: [
-        {
-          type: "text",
-          text: `Contents of ${resolved} (${entries.length} items):\n\n${formatted || "(empty directory)"}`,
-        },
-      ],
+      content: [{ type: "text", text: `Contents of selected directory (${entries.length} authorized items):\n\n${formatted || "(empty or no authorized children)"}` }],
     };
   } catch (err: any) {
     return { content: [{ type: "text", text: `Error listing directory: ${err.message}` }], isError: true };
@@ -562,8 +561,11 @@ export async function handleGrepSearch(args: any): Promise<McpToolResult> {
 }
 
 export async function handleFindFiles(args: any): Promise<McpToolResult> {
-  const pattern = String(args.pattern || args.query || args.name || "*");
+  const pattern = String(args.pattern || args.query || args.name || "*").trim();
   const targetCwd = String(args.workspace || args.cwd || getMcpWorkspacePath());
+  const maxDepth = Number.isSafeInteger(args.maxDepth) ? Math.max(0, Math.min(32, Number(args.maxDepth))) : 12;
+  const extension = typeof args.extension === "string" && args.extension.trim()
+    ? args.extension.trim().replace(/^\./, "").toLowerCase() : "";
   let searchPath: string;
   try {
     if (/^(?:ssh:|chain:)/i.test(targetCwd)) throw new Error("This search tool only supports local workspaces; use Workspace Chain tools for remote targets.");
@@ -571,18 +573,48 @@ export async function handleFindFiles(args: any): Promise<McpToolResult> {
   } catch (error) {
     return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
   }
+  if (!pattern || pattern.length > 240 || /[\0\r\n]/.test(pattern)) {
+    return { content: [{ type: "text", text: "Invalid file search pattern." }], isError: true };
+  }
+  if (!fs.existsSync(searchPath) || !fs.statSync(searchPath).isDirectory() ||
+      !isPathAllowedByPermanentRegistry(searchPath, "read")) {
+    return { content: [{ type: "text", text: "Permanent file access denies search for the selected directory." }], isError: true };
+  }
 
-  const { globTool } = await import("../../tools/fileReadTools.js");
-  const result = await globTool.execute(
-    {
-      pattern,
-      path: searchPath,
-    },
-    searchPath
-  );
-  return { content: [{ type: "text", text: String(result) }] };
+  const escape=(value:string)=>value.replace(/[.+^$(){}|[\]\\]/g,"\\$&");
+  const globToRegex=(glob:string)=>{
+    let out="^";
+    for(let i=0;i<glob.length;i++){
+      const ch=glob[i]!;
+      if(ch==="*"&&glob[i+1]==="*"){ out+=".*"; i++; }
+      else if(ch==="*") out+="[^/\\\\]*";
+      else if(ch==="?") out+="[^/\\\\]";
+      else out+=escape(ch);
+    }
+    return new RegExp(out+"$","i");
+  };
+  let matcher:RegExp;
+  try { matcher=globToRegex(pattern.replaceAll("\\","/")); }
+  catch { return { content:[{type:"text",text:"Invalid file search pattern."}],isError:true}; }
+
+  const results:string[]=[];
+  const visit=(dir:string,depth:number)=>{
+    if(depth>maxDepth||results.length>=500||!isPathAllowedByPermanentRegistry(dir,"read"))return;
+    let entries:fs.Dirent[];
+    try { entries=fs.readdirSync(dir,{withFileTypes:true}); } catch { return; }
+    for(const entry of entries){
+      if(results.length>=500)break;
+      const absolute=path.join(dir,entry.name);
+      if(!isPathAllowedByPermanentRegistry(absolute,"read"))continue;
+      const rel=path.relative(searchPath,absolute).replaceAll("\\","/");
+      const extOk=!extension || (!entry.isDirectory() && path.extname(entry.name).slice(1).toLowerCase()===extension);
+      if(extOk && (matcher.test(rel)||matcher.test(entry.name)))results.push(rel);
+      if(entry.isDirectory())visit(absolute,depth+1);
+    }
+  };
+  visit(searchPath,0);
+  return { content:[{type:"text",text:results.length?results.join("\n"):"No authorized files found."}] };
 }
-
 
 
 
