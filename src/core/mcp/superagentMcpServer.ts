@@ -1436,7 +1436,7 @@ function extractMcpResultText(result: unknown): string {
       if (hostBlock) {
         // Only the host verdict is classified here; no connection grant is read.
         const denial = describeBoundedDesktopPermission({ oauthAllowed: true,
-          connectionDecision: "approval_required", filePolicyActive: true, hostBlock });
+          projectDecision: "approval_required", filePolicyActive: true, hostBlock });
         return denyUnvalidatedCall(denial.decisionCode === "SCHEMA_INVALID"
           ? "desktop_schema_invalid" : "desktop_host_file_policy_denied",
           `[${denial.decisionCode}] Access denied by host permanent file policy: ${hostBlock}`);
@@ -1647,7 +1647,7 @@ function extractMcpResultText(result: unknown): string {
                   : safe.decisionCode === "SCHEMA_INVALID" ? "blocked" : "eligible",
                 reasonCode: safe.decisionCode === "SCHEMA_INVALID" ? "unsupported_arguments" : null,
               },
-              mcpConnectionExecute: { decision: "not_required" },
+              mcpProjectExecute: { decision: "not_required" },
               oauthScope: { decision: "visible_under_current_token" },
               nativeHostApproval: { decision: "not_checked" },
               note: "Read-only service metadata preflight. No owner scan, grants, lifecycle plan or command execution.",
@@ -1663,7 +1663,7 @@ function extractMcpResultText(result: unknown): string {
                   : safe.decisionCode === "SCHEMA_INVALID" ? "blocked" : "eligible",
                 reasonCode: safe.decisionCode === "SCHEMA_INVALID" ? "unsupported_arguments" : null,
               },
-              mcpConnectionExecute: { decision: "not_required" },
+              mcpProjectExecute: { decision: "not_required" },
               oauthScope: { decision: "visible_under_current_token" },
               nativeHostApproval: { decision: "not_checked" },
               note: "Metadata-only Chrome observation preflight. No CDP attach, DOM read, or file access.",
@@ -1672,11 +1672,11 @@ function extractMcpResultText(result: unknown): string {
           if (targetToolName === "superagent_manage_services") {
             const hostBlock = filePolicyActive
               ? registeredFileToolGate({ name: targetToolName, args: checkedArgs }, activeWorkspace) : null;
-            const connectionDecision = readProjectDecision();
+            const projectDecision = readProjectDecision();
             const safe = describeBoundedServiceManagePermission({
               args: checkedArgs,
               oauthAllowed: true,
-              connectionDecision,
+              projectDecision,
               filePolicyActive,
               hostBlock,
             });
@@ -1689,7 +1689,7 @@ function extractMcpResultText(result: unknown): string {
                 reasonCode: safe.decisionCode === "SCHEMA_INVALID" ? "unsupported_arguments"
                   : hostBlock ? "not_certified_or_denied" : null,
               },
-              mcpConnectionExecute: { decision: connectionDecision },
+              mcpProjectExecute: { decision: projectDecision },
               oauthScope: { decision: "visible_under_current_token" },
               nativeHostApproval: { decision: "not_checked" },
               note: "Read-only service manager preflight. No owner scan, approval creation, or lifecycle mutation.",
@@ -1704,7 +1704,7 @@ function extractMcpResultText(result: unknown): string {
           ]);
           const hostBlock = filePolicyActive
             ? registeredFileToolGate({ name: targetToolName, args: checkedArgs }, activeWorkspace) : null;
-          const connectionDecision = readProjectDecision();
+          const projectDecision = readProjectDecision();
           const supportedFields = DISCOVERY_COMMAND_FIELDS[command]
             ? [...DISCOVERY_COMMAND_FIELDS[command]] : undefined;
           return {
@@ -1717,12 +1717,12 @@ function extractMcpResultText(result: unknown): string {
                   : "not_certified_or_denied"
                 : null,
             },
-            mcpConnectionExecute: { decision: connectionDecision },
+            mcpProjectExecute: { decision: projectDecision },
             oauthScope: { decision: "visible_under_current_token" },
             nativeHostApproval: { decision: "not_checked" },
             ...describeBoundedDesktopPermission({
               oauthAllowed: true, // found came from the current OAuth-authorized catalog.
-              connectionDecision,
+              projectDecision,
               filePolicyActive,
               hostBlock,
               supportedFields,
