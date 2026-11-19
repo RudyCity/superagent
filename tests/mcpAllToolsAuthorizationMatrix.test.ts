@@ -125,8 +125,8 @@ describe("ALL active SuperAgent MCP tools: complete non-executing authorization 
     if (root) fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("enforces a 234-tool minimum and exact active admin inventory (no silent omissions)", () => {
-    expect(active.length).toBeGreaterThanOrEqual(234);
+  it("enforces a 238-tool minimum and exact active admin inventory (no silent omissions)", () => {
+    expect(active.length).toBeGreaterThanOrEqual(238);
     expect(new Set(names).size).toBe(active.length);
     expect(adminList.size).toBe(active.length);
     expect([...adminList.keys()].sort()).toEqual([...names].sort());
@@ -258,7 +258,7 @@ describe("ALL active SuperAgent MCP tools: complete non-executing authorization 
         }),
       });
       expect(typeof reason, name).toBe("string");
-      expect(reason, name).toMatch(/not certified|denied|restricted|unsupported/i);
+      expect(reason, name).toMatch(/not certified|denied|restricted|unsupported|blocked/i);
     },
   );
 
