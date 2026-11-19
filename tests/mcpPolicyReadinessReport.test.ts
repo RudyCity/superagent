@@ -30,7 +30,8 @@ describe("source-only MCP policy release readiness report",()=>{
     expect(report.limitations.join(" ")).toMatch(/R0-R7/);
     expect(report.limitations.join(" ")).toMatch(/OAuth/);
     expect(report.unsafeToolNames).toContain("superagent_exec_command");
-    expect(report.unsafeToolNames).toContain("superagent_pdf_edit");
+    expect(report.unsafeToolNames).toContain("superagent_office_cli");
+    expect(report.unsafeToolNames).not.toContain("superagent_pdf_edit");
     expect(report.unsafeToolNames).not.toContain("superagent_read_files");
   });
 
