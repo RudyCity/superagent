@@ -192,7 +192,7 @@ export const gitActionTool: Tool = {
     const targeted = ["add", "restore", "clean"].includes(action);
     if (targeted && (files.length < 1 || files.length > 50 ||
       files.some(file => typeof file !== "string" || !file.trim() ||
-        path.isAbsolute(file) || /[*?\\[\\]!:]/.test(file) ||
+        path.isAbsolute(file) || /[*?\[\]!:]/.test(file) ||
         file.split(/[\\\\/]/).some(part => [".", "..", ".git"].includes(part))))) {
       return "Git action error: explicit file paths are required for add/restore/clean.";
     }
