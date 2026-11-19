@@ -111,6 +111,18 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       ["superagent_list_chrome_profiles",{}],
     ] as const)expect(gate(name,args)).toMatch(/not certified|explicit certified file effects/);
   });
+  it("certifies bounded Git history but never exposes protected working-tree file names",()=>{
+    const a=setup(),opts={registry:()=>a.p(a.rule("root","allow",a.root,["read"],true)),identity:a.identity};
+    const gate=(args:Record<string,unknown>)=>
+      registeredFileToolGate({name:"superagent_git_action",args},a.root,opts);
+    expect(gate({action:"log",limit:5,projectId:"superagent"})).toBeNull();
+    expect(gate({action:"log",limit:500})).toMatch(/not certified/);
+    expect(gate({action:"status"})).toMatch(/protected workspace files/);
+    expect(gate({action:"diff"})).toMatch(/protected workspace files/);
+    expect(registeredFileToolGate({name:"superagent_tool_execute",args:{
+      name:"superagent_git_action",arguments:{action:"status"},
+    }},a.root,opts)).toMatch(/protected workspace files/);
+  });
   it("does not use permanent file policy as a catch-all blocker for non-file capabilities",()=>{
     const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
     const gate=(name:string,args:Record<string,unknown>={})=>
