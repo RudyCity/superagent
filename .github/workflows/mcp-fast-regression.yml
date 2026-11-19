@@ -22,6 +22,13 @@ on:
       - "scripts/report-mcp-policy-readiness.ts"
       - "src/core/runtime/mcpManagedTunnelOwner.ts"
       - "src/core/runtime/serviceManager.ts"
+      - "src/core/runtime/managedVisionControl.ts"
+      - "src/core/runtime/managedGuardianControl.ts"
+      - "src/core/runtime/visionPythonRuntime.ts"
+      - "src/core/tools/chromeVisionTools.ts"
+      - "apps/superagent-tray/ui/lifecycle.js"
+      - "tests/visionPythonRuntime.test.ts"
+      - "tests/nativeTrayLifecycleUi.test.ts"
       - "src/core/runtime/serviceReadPolicy.ts"
       - "src/core/runtime/serviceOwnerAttestation.ts"
       - "src/core/runtime/checkoutRevision.ts"
@@ -106,6 +113,13 @@ on:
       - "scripts/report-mcp-policy-readiness.ts"
       - "src/core/runtime/mcpManagedTunnelOwner.ts"
       - "src/core/runtime/serviceManager.ts"
+      - "src/core/runtime/managedVisionControl.ts"
+      - "src/core/runtime/managedGuardianControl.ts"
+      - "src/core/runtime/visionPythonRuntime.ts"
+      - "src/core/tools/chromeVisionTools.ts"
+      - "apps/superagent-tray/ui/lifecycle.js"
+      - "tests/visionPythonRuntime.test.ts"
+      - "tests/nativeTrayLifecycleUi.test.ts"
       - "src/core/runtime/serviceReadPolicy.ts"
       - "src/core/runtime/serviceOwnerAttestation.ts"
       - "src/core/runtime/checkoutRevision.ts"
@@ -222,6 +236,8 @@ jobs:
             tests/serviceOwnerAttestation.test.ts \
             tests/checkoutRevision.test.ts \
             tests/serviceManagerMcp.test.ts \
+            tests/visionPythonRuntime.test.ts \
+            tests/nativeTrayLifecycleUi.test.ts \
             tests/mcpExactFileSearch.test.ts \
             tests/mcpExplicitGrepIntegration.test.ts \
             tests/mcpPolicyHttpSmoke.test.ts \
@@ -278,6 +294,8 @@ jobs:
           tests/serviceOwnerAttestation.test.ts
           tests/checkoutRevision.test.ts
           tests/serviceManagerMcp.test.ts
+          tests/visionPythonRuntime.test.ts
+          tests/nativeTrayLifecycleUi.test.ts
           tests/mcpOAuthStore.test.ts
           tests/mcpOAuthRoutes.test.ts
           tests/mcpToolGateway.test.ts
