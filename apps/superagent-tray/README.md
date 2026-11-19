@@ -2,6 +2,40 @@
 
 **Companion tray utility**, not the main SuperAgent desktop application. **T-Line remains the SuperAgent desktop app.** SuperAgent Tray manages runtime health, cronjobs and reminders through the existing Core; it is **not** another cron runner or database.
 
+## Replacing a running Tray on Windows
+
+Starting `superagent-tray.exe` manually while another SuperAgent Tray is
+already running opens a **native Windows confirmation** before the Tauri
+single-instance handler can redirect the second launch to the old window:
+
+- **Yes — Replace Running Tray:** the new process verifies the private
+  owner record, live Windows process executable/PID/birth time, and
+  authenticated loopback Tray health. It requests a **graceful Tray-only
+  shutdown**, waits until the old instance exits, then starts normally.
+- **No — Keep Existing:** the new invocation ends and the existing Tray
+  continues running unchanged.
+- If graceful shutdown fails or times out, a **separate Force Close Tray**
+  confirmation is required. The PID, executable identity, process birth
+  time, owner record, and authenticated private endpoint are rechecked
+  immediately before using Windows process termination. If anything
+  changed or cannot be verified, startup is blocked rather than killing
+  an unknown process.
+
+Background launches with `--background` remain quiet and never replace
+an existing Tray. The existing single-instance plugin stays enabled to
+prevent duplicate pollers and owners. Only the Tray process is affected:
+**Core, MCP, Cloudflare tunnels, Muse, and agent sessions are not stopped**.
+If an owner record is corrupt or a process is unverified, the user sees a
+blocking explanation instead of a blind force-kill.
+
+For a live test, build and install the Windows release, launch a known
+existing Tray, launch the new executable manually a second time, and
+verify both **Keep Existing** and **Replace Running Tray**. Verify the
+private owner PID changes while Core/MCP owner PIDs and public URL do not.
+Rust unit tests exercise the local authenticated stop protocol and
+malformed/self-referential owner refusal; they do not simulate the native
+Windows dialog or a real installation transition.
+
 ## Development (Windows first)
 
 1. Run SuperAgent Core: `bun dist/cli.js --server 7888`. The daemon REST API is protected by the server's bearer token.
