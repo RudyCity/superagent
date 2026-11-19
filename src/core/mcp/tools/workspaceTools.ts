@@ -174,7 +174,7 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
     // Windows, launch the installed Bun executable directly: Git Bash can
     // overwrite its PATH while cmd/PowerShell may inherit an older PATH.
     // Never route arbitrary command text through this direct-exec branch.
-    const directBunExe = isWin && /^bun\\s+--version$/.test(command.trim())
+    const directBunExe = isWin && /^bun\s+--version$/.test(command.trim())
       ? resolveWindowsBunExecutable(unbufferedEnv) : null;
     const spawnExecutable = directBunExe || String(shellPath);
     const spawnArgs = directBunExe ? ["--version"] : [formattedCommand];
