@@ -611,6 +611,8 @@ export function describePermanentFileToolReadiness(name:string):string {
     return "Only Managed CDP launches using SuperAgent-owned isolated profile storage and HTTP(S) URLs are certified.";
   if(name==="superagent_exec_command")
     return "Only strict toolchain version diagnostics are non-file certified; arbitrary shell commands remain blocked pending native filesystem sandboxing.";
+  if(name==="superagent_git_action")
+    return "Only bounded, read-only Git log (1-50 commits) is certified under permanent file policy. Status and diff are denied because they may expose protected workspace paths or contents; Git writes remain separately restricted.";
   if(name==="superagent_office_cli")
     return "Recognized Office CLI document commands are parsed into explicit read/write file effects; unknown commands remain blocked.";
   if(MIXED_ACTION_TOOLS.has(name))
