@@ -47,12 +47,12 @@ describe("local-operator MCP full tool inventory authorization read model",()=>{
     expect(new Set(result.tools.map(t=>t.name)).size).toBe(result.active);
     expect(result.tools.every(t=>!Object.prototype.hasOwnProperty.call(t,"runnable"))).toBe(true);
     expect(result.hostPolicyActive).toBe(true);
-    expect(result.counts.hostBlocked).toBeGreaterThan(0);
+    expect(result.counts.hostBlocked).toBe(0);\n    expect(result.counts.uncertified).toBe(0);\n    expect(result.counts.actionDependent).toBeGreaterThan(0);
     const terminal=find(result,"superagent_exec_command");
     expect(terminal).toMatchObject({
-      approvalKind:"project",capability:"execute",hostBlocked:true,
-      hostReadiness:"uncertified",grantState:"choose_identity_project",
-      operationStatus:"host_uncertified",
+      approvalKind:"project",capability:"execute",hostBlocked:false,
+      hostReadiness:"action_dependent",grantState:"choose_identity_project",
+      operationStatus:"check_action_arguments",
     });
     expect(terminal.oauthScopesRequired).toContain("mcp:tools:write");
     expect(find(result,"superagent_tool_execute").approvalKind).toBe("target_dependent");
@@ -74,7 +74,7 @@ describe("local-operator MCP full tool inventory authorization read model",()=>{
       expect(allowed.grantedCapabilities).toEqual(expect.arrayContaining(["read","execute"]));
       const terminal=find(allowed,"superagent_exec_command");
       expect(terminal.grantState).toBe("granted");
-      expect(terminal.hostBlocked).toBe(true); // A project Execute grant does not certify shell.
+      expect(terminal.hostBlocked).toBe(false); // Host policy now classifies the tool per action.\n      expect(terminal.operationStatus).toBe("check_action_arguments"); // Arbitrary shell remains denied at execution.
       const files=find(allowed,"superagent_read_files");
       expect(files.grantState).toBe("granted");
       expect(files.operationStatus).toBe("file_rules_required");
