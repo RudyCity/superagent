@@ -1216,6 +1216,206 @@
   const toolState = { query: "", filter: "all", shown: 25, requestSeq: 0 };
   const mcpNotificationFocus = { id: null, didFocus: false };
 
+  function toolGrantMessage(tool) {
+    if (tool.approvalKind === "operator_admin")
+      return "Aksi operator: memerlukan OAuth admin dan persetujuan native; tidak melalui grant project biasa.";
+    if (tool.approvalKind === "target_dependent")
+      return "Gateway: capability dan batas host mengikuti tool/parameter target, bukan izin gateway umum.";
+    if (tool.approvalKind === "request_only")
+      return "Mengajukan permintaan saja; pemberian izin tetap melalui keputusan operator.";
+    if (tool.approvalKind === "read_only")
+      return "Tidak memerlukan grant proyek untuk metadata ini; OAuth dan pembatas host tetap berlaku.";
+    const messages = {
+      granted: "Capability proyek tercatat. Ini bukan jaminan tool dapat dijalankan.",
+      missing: "Capability proyek belum diberikan kepada identitas yang dipilih.",
+      choose_identity_project: "Pilih identitas MCP dan proyek untuk memeriksa grant.",
+      identity_unavailable: "Identitas tidak ditemukan/terverifikasi; sambungkan kembali MCP.",
+      project_unavailable: "Proyek tidak tersedia, dinonaktifkan, atau bukan target lokal yang sesuai.",
+      policy_unavailable: "Registry izin proyek tidak dapat diperiksa; gagal tertutup.",
+      action_dependent: "Capability bervariasi menurut tindakan; pilih tindakan sebelum meninjau izin.",
+    };
+    return messages[tool.grantState] || "Izin proyek perlu diperiksa ulang saat eksekusi.";
+  }
+
+  function reviewToolCapability(tool, capability) {
+    const identity = $("access-mcp-ident-select")?.value;
+    const project = $("access-mcp-proj-select")?.value;
+    if (!identity || !project) {
+      status("Pilih Identitas MCP dan Proyek Terdaftar & Aktif terlebih dahulu sebelum meninjau izin tool.", "warning");
+      (!identity ? $("access-mcp-ident-select") : $("access-mcp-proj-select"))?.focus?.();
+      return;
+    }
+    const known = ["read","write","execute","git","worktree","planning","chain"];
+    if (!known.includes(capability)) {
+      status("Tool belum memiliki capability tetap. Pilih operasi yang tepat untuk diperiksa.", "warning");
+      return;
+    }
+    for (const cap of known) {
+      const control = $("access-cap-" + cap);
+      if (control) control.checked = cap === capability;
+    }
+    const note = $("access-mcp-tool-selection-note");
+    if (note) note.textContent = "Pratinjau saja: " + tool.name + " memerlukan " + capability +
+      " pada proyek " + project + ". Periksa risiko dan batas host sebelum menekan Tinjau Izin Proyek. Tidak ada grant otomatis.";
+    $("access-mcp-direct-grant-form")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    status("Capability " + capability + " dipilih untuk " + tool.name + ". Belum ada izin yang diberikan.", "info");
+  }
+
+  function renderMcpToolCatalog() {
+    const list = $("access-mcp-tool-list");
+    if (!list) return;
+    list.replaceChildren();
+    const data = mcpCache.tools;
+    const count = $("access-mcp-tool-count");
+    const summary = $("access-mcp-tool-summary");
+    const more = $("access-mcp-tool-more");
+    if (!data || !Array.isArray(data.tools)) {
+      if (count) count.textContent = "Tidak tersedia";
+      if (summary) summary.textContent = "Inventaris Core belum tersedia. Periksa koneksi lalu pilih Muat ulang.";
+      if (more) more.hidden = true;
+      list.append(make("p", "access-empty", "Data belum terverifikasi; status tool tidak ditampilkan dari cache lama."));
+      return;
+    }
+    const query = toolState.query;
+    const filtered = data.tools.filter(tool => {
+      if (query && ![tool.name,tool.description,tool.capability,tool.hostReadiness]
+          .some(value => String(value || "").toLowerCase().includes(query))) return false;
+      switch (toolState.filter) {
+        case "host_uncertified": return tool.hostBlocked;
+        case "missing": return tool.grantState === "missing";
+        case "granted": return tool.grantState === "granted";
+        case "action_dependent": return tool.operationStatus === "check_action_arguments" || Boolean(tool.capabilitiesByAction);
+        case "file_rules_required": return tool.operationStatus === "file_rules_required";
+        case "dangerous": return tool.risk === "dangerous";
+        case "read_only": return tool.risk === "safe";
+        default: return true;
+      }
+    });
+    if (count) count.textContent = data.active + " aktif · " + data.disabled + " nonaktif";
+    if (summary) summary.textContent = filtered.length + " dari " + data.active +
+      " tools · " + data.counts.hostBlocked + " diblokir host policy · " +
+      data.counts.missingProjectGrant + " memerlukan grant terpilih. Pemeriksaan bersifat informatif, bukan izin eksekusi.";
+    if (more) {
+      more.hidden = filtered.length <= toolState.shown;
+      more.textContent = "Tampilkan " + Math.min(25, filtered.length-toolState.shown) + " berikutnya";
+    }
+    if (!filtered.length) {
+      list.append(make("p", "access-empty", "Tidak ada tools yang cocok dengan pencarian dan filter."));
+      return;
+    }
+    for (const tool of filtered.slice(0, toolState.shown)) {
+      const row = make("article", "access-mcp-tool-row");
+      row.dataset.toolName = tool.name;
+      const header = make("div", "access-mcp-tool-head");
+      header.append(make("strong", "access-mcp-tool-name", tool.name));
+      const flags = make("div", "access-mcp-tool-badges");
+      const riskBadge = make("span", "access-mcp-tool-badge " +
+        (tool.risk === "dangerous" ? "is-risky" : ""), tool.risk === "dangerous" ? "Berisiko" : "Read-only");
+      const hostBadge = make("span", "access-mcp-tool-badge " +
+        (tool.hostBlocked ? "is-blocked" : ""), String(tool.hostReadiness).replace(/_/g," "));
+      flags.append(riskBadge,hostBadge);
+      if (tool.capability) flags.append(make("span", "access-mcp-tool-badge", "Proyek: " + tool.capability));
+      header.append(flags);
+      const description = make("p", "access-mcp-tool-description", String(tool.description || ""));
+      const grant = make("p", "access-mcp-tool-grant", toolGrantMessage(tool));
+      const oauth = make("p", "access-hint", "OAuth: " +
+        (Array.isArray(tool.oauthScopesRequired) ? tool.oauthScopesRequired.join(" + ") : "perlu verifikasi"));
+      const host = make("p", "access-hint", tool.hostBlocked
+        ? "Diblokir oleh host file policy v2: " + tool.hostRequirement +
+          " Persetujuan proyek tidak dapat menghapus blokir sertifikasi."
+        : "Host: " + tool.hostRequirement);
+      const buttons = make("div", "access-mcp-tool-actions");
+      if (tool.approvalKind === "project") {
+        let actionSelect = null;
+        if (tool.capabilitiesByAction) {
+          actionSelect = select("access-mcp-tool-git-action", [
+            ["status","Git status (Read)"], ["diff","Git diff (Read)"], ["log","Git log (Read)"],
+            ["add","Git add (Git)"], ["commit","Git commit (Git)"],
+            ["restore","Git restore (Git)"], ["clean","Git clean (Git)"],
+          ]);
+          actionSelect.id = "access-mcp-tool-git-action-" + tool.name;
+          actionSelect.setAttribute("aria-label", "Pilih operasi untuk " + tool.name);
+          buttons.append(actionSelect);
+        }
+        const review = action("Tinjau Izin Proyek", "access-audit-refresh", () => {
+          const capability = tool.capabilitiesByAction
+            ? tool.capabilitiesByAction[actionSelect?.value] : tool.capability;
+          reviewToolCapability(tool, capability);
+        });
+        review.id = "access-mcp-tool-review-" + tool.name;
+        buttons.append(review);
+      }
+      if (tool.hostBlocked || tool.operationStatus === "file_rules_required") {
+        const inspect = action("Periksa Kebijakan Host", "access-audit-refresh", () => {
+          setRuleFilter("file");
+          setActiveTab("rules");
+          status("Aturan host terpisah dari grant proyek. Tool uncertified memerlukan implementasi sertifikasi; membuat aturan Allow tidak otomatis memperbaikinya.", "warning");
+        });
+        inspect.id = "access-mcp-tool-host-" + tool.name;
+        buttons.append(inspect);
+      }
+      row.append(header, description, grant, oauth, host, buttons);
+      list.append(row);
+    }
+  }
+
+  async function refreshMcpToolCatalog() {
+    const seq = ++toolState.requestSeq;
+    const button = $("access-mcp-tool-refresh");
+    if (button) button.disabled = true;
+    mcpCache.tools = null; // stale grants must never survive selection changes
+    renderMcpToolCatalog();
+    const identity = $("access-mcp-ident-select")?.value || "";
+    const project = $("access-mcp-proj-select")?.value || "";
+    try {
+      const payload = {
+        ...(identity ? {identityHandle:identity} : {}),
+        ...(project ? {projectId:project} : {}),
+      };
+      const data = await invoke("mcp_project_access_action", {action:"tools",payload});
+      if (seq !== toolState.requestSeq) return;
+      if (!data?.success || !Array.isArray(data.tools) ||
+          !Number.isSafeInteger(data.active) || data.active !== data.tools.length ||
+          data.tools.length > 512 || new Set(data.tools.map(t => t.name)).size !== data.tools.length)
+        throw Error("Core mengirim katalog tools yang tidak lengkap/valid.");
+      mcpCache.tools = data;
+      renderMcpToolCatalog();
+    } catch (error) {
+      if (seq !== toolState.requestSeq) return;
+      mcpCache.tools = null;
+      renderMcpToolCatalog();
+      const summary = $("access-mcp-tool-summary");
+      if (summary) summary.textContent =
+        "Inventaris tools gagal dimuat: " + String(error?.message || error) +
+        ". Tidak ada izin yang otomatis diberikan.";
+    } finally {
+      if (seq === toolState.requestSeq && button) button.disabled = false;
+    }
+  }
+
+  function renderLegacyMcpRequests(allRequests) {
+    const root = $("access-mcp-legacy-requests");
+    const list = $("access-mcp-legacy-list");
+    if (!root || !list) return;
+    list.replaceChildren();
+    const legacy = Array.isArray(allRequests)
+      ? allRequests.filter(req => req.projectId === "mcp-connection" && req.status === "pending") : [];
+    root.hidden = legacy.length === 0;
+    for (const req of legacy) {
+      const row = make("article", "access-mcp-request-card");
+      row.dataset.requestId = String(req.requestId || "");
+      row.append(make("strong", "", "Permintaan lama · " + String(req.subject || "MCP client")),
+        make("p", "access-hint", "Izin koneksi Execute global sudah tidak berlaku. Jangan dipindahkan ke grant proyek otomatis."));
+      const deny = action("Tolak permintaan lama", "access-revoke", async () => {
+        deny.disabled = true;
+        try { await executeMcpDecision("deny", req.requestId, "Penolakan permintaan lama"); }
+        finally { deny.disabled = false; }
+      });
+      row.append(deny);
+      list.append(row);
+    }
+  }
+
   function highlightMcpNotificationRequest() {
     const id = mcpNotificationFocus.id;
     if (!id || !Array.isArray(mcpCache.requests)) return false;
