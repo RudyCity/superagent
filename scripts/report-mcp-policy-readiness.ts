@@ -9,4 +9,4 @@ console.log(JSON.stringify({
   ...report,
   unsafeToolNames: report.unsafeToolNames,
 }, null, 2));
-if (!report.classificationComplete) process.exitCode = 2;
+process.exit(report.classificationComplete ? 0 : 2);
