@@ -456,13 +456,23 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
   if(service==="guardian") {
     const managed=await inspectManagedGuardian(port!);
     const lease=readCoreGuardianLease(port!);
+    // A legacy Core Guardian lease is not a managed owner or permission
+    // to kill/adopt its PID. Make the mismatch actionable in read-only UI.
+    const legacyLease=Boolean(lease&&!managed.verified&&!managed.ownerPid);
+    const ownerMismatch=Boolean(!managed.verified&&managed.ownerPid);
+    const diagnosticCode=managed.verified?"GUARDIAN_OWNER_VERIFIED":
+      legacyLease?"GUARDIAN_LEGACY_LEASE_UNVERIFIED":
+      ownerMismatch?"GUARDIAN_MANAGED_OWNER_UNVERIFIED":"GUARDIAN_NOT_CONFIGURED";
     return snap(service,port,
-      managed.verified?"active":lease?"unverified":"inactive",
+      managed.verified?"active":lease||ownerMismatch?"unverified":"inactive",
       managed.ownerPid??lease?.pid??null,managed.verified,
       managed.verified?["status","plan","restart","stop"]:["status"],
       managed.verified?"Authenticated independent Core Guardian watchdog":
+      legacyLease?"Legacy Guardian lease without verified managed owner; inspect owner identity before any lifecycle action":
         managed.reason??"No authenticated Guardian owner",
       {clientMode:lease?.clientMode??null,coreSupervisorPid:lease?.supervisorPid??null,
+        diagnosticCode,legacyLeasePresent:Boolean(lease),managedOwnerRecordPresent:Boolean(managed.ownerPid),
+        manualReviewRequired:legacyLease||ownerMismatch,
         managed:managed.verified,coreUnaffected:true});
   }
   if(service==="rest_tunnel"||service==="muse_tunnel") {
