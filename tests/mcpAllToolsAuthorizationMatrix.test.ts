@@ -49,7 +49,7 @@ const all = [...MCP_TOOL_DEFINITIONS];
 const active = all.filter(tool => !DISABLED_MCP_TOOLS.has(tool.name));
 const gatewayNames = new Set(Object.values(MCP_GATEWAY_TOOL_NAMES));
 const riskStates = new Set([
-  "certified_metadata", "certified_app_storage", "requires_explicit_files",
+  "certified_metadata", "certified_non_file", "certified_app_storage", "requires_explicit_files",
   "action_dependent", "uncertified",
 ]);
 const capabilities = new Set<string>(PROJECT_ACCESS_CAPABILITIES);
