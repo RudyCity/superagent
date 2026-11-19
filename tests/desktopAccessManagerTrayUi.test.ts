@@ -424,6 +424,65 @@ describe("Security Approval Manager tab navigation and grouping", () => {
   });
 });
 
+describe("host rules and MCP project access stay independent", () => {
+  it("explains both authorization layers and navigates in both directions without granting", async () => {
+    const ui=boot(true,{identities:[{identityHandle:"idh_test",subject:"ChatGPT",mode:"oauth",scopes:["mcp:tools:write"]}],
+      projects:[{projectId:"superagent",name:"SuperAgent",type:"local",enabled:true,target:"D:/superagent"}]});
+    await flush();
+    const host=ui.document.getElementById("access-host-boundary")!;
+    expect(host.textContent).toContain("Ini bukan izin agent atas proyek");
+    expect(host.textContent).toContain("sertifikasi tool");
+    expect(ui.document.getElementById("access-host-file-rule-count")!.textContent).toContain("0 aturan file/folder");
+
+    ui.document.getElementById("access-host-open-project")!.click();await flush();
+    expect(ui.document.getElementById("access-pane-mcp")!.hidden).toBe(false);
+    expect(ui.document.getElementById("access-pane-register")!.hidden).toBe(true);
+    const grant=ui.document.getElementById("access-mcp-direct-grant-form")!;
+    expect(ui.document.getElementById("access-project-host-boundary")!.textContent)
+      .toContain("Keduanya tidak saling menggantikan");
+    expect(ui.document.getElementById("access-mcp-project-grant")!.parentNode).toBe(grant);
+    expect(ui.document.getElementById("access-project-host-file-rule-count")!.textContent)
+      .toContain("0 aturan file/folder");
+    expect(ui.document.getElementById("access-pane-mcp")!.textContent)
+      .toContain("Koneksi MCP hanya mengurus autentikasi/sesi");
+
+    ui.document.getElementById("access-project-open-file-editor")!.click();
+    expect(ui.document.getElementById("access-pane-register")!.hidden).toBe(false);
+    expect(ui.document.getElementById("access-kind")!.value).toBe("file");
+    expect(ui.document.getElementById("access-file-controls")!.hidden).toBe(false);
+    expect(ui.document.getElementById("access-file-path")!.value).toBe("");
+    expect(ui.calls.filter(call => ["register_permanent_access_rule","direct_grant"].includes(
+      call.name==="mcp_project_access_action"?call.args.action:call.name))).toHaveLength(0);
+  });
+
+  it("uses the same host file filter from either tab, updates rule counts, and never auto-grants a project", async () => {
+    const ui=boot();await flush();
+    ui.document.getElementById("access-kind")!.value="file";
+    ui.document.getElementById("access-kind")!.change();
+    ui.document.getElementById("access-pick-folder")!.click();await flush();
+    ui.document.getElementById("access-submit")!.click();await flush();
+    expect(ui.getPolicy().rules).toHaveLength(1);
+    expect(ui.document.getElementById("access-host-file-rule-count")!.textContent)
+      .toContain("1 aturan file/folder host tercatat (bukan izin proyek)");
+    expect(ui.document.getElementById("access-project-host-file-rule-count")!.textContent)
+      .toContain("1 aturan file/folder host tercatat (bukan izin proyek)");
+
+    ui.document.getElementById("access-host-open-file-rules")!.click();
+    expect(ui.document.getElementById("access-pane-rules")!.hidden).toBe(false);
+    expect(ui.document.getElementById("access-tab-file")!.className).toContain("active");
+    expect(ui.document.getElementById("access-rule-list")!.children).toHaveLength(1);
+    expect(ui.document.getElementById("access-pane-rules")!.textContent)
+      .toContain("Bukan daftar grant MCP per proyek");
+
+    ui.document.getElementById("access-nav-tab-mcp")!.click();await flush();
+    ui.document.getElementById("access-project-open-file-rules")!.click();
+    expect(ui.document.getElementById("access-pane-rules")!.hidden).toBe(false);
+    expect(ui.document.getElementById("access-tab-file")!.className).toContain("active");
+    expect(ui.calls.some(call => call.name==="mcp_project_access_action" &&
+      ["direct_grant","approve"].includes(call.args.action))).toBe(false);
+  });
+});
+
 describe("main navigation promotion", () => {
   it("exposes Security Approval in the primary sidebar navigation menu", () => {
     const html = fs.readFileSync("apps/superagent-tray/ui/index.html", "utf8");
