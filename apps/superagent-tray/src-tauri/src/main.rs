@@ -2507,7 +2507,141 @@ async fn launch_server_process(port: u16) -> Result<u32, String> {
 }
 
 async fn stop_core_server_inner(target: u16) -> Result<Value, String> {
-    Err(format!("Core Stop on port {} requires an explicit verified drain/manual shutdown. Use generation-preserving Restart for maintenance. No process was stopped or recovery evidence removed.", target))
+    let dir = config_dir()?;
+    let supervisor_file = dir.join(format!("core-supervisor-{}.json", target));
+    let server_info_file = dir.join(format!("server-info-{}.json", target));
+    let checkpoint_file = dir.join(format!("core-checkpoint-{}.json", target));
+    let guardian_file = dir.join(format!("core-guardian-{}.json", target));
+
+    // If no registration exists for this port, refuse to touch unverified/foreign ports.
+    // This preserves foreign listeners and satisfies the verified drain invariant.
+    if !supervisor_file.exists() && !server_info_file.exists() && !checkpoint_file.exists() && !guardian_file.exists() {
+        return Err(format!(
+            "Core Stop on port {} requires an explicit verified drain/manual shutdown. Use generation-preserving Restart for maintenance. No process was stopped or recovery evidence removed.",
+            target
+        ));
+    }
+
+    let mut pids_to_kill: Vec<u32> = Vec::new();
+
+    // 1. Check Guardian process first (must be stopped before supervisor to prevent auto-revival)
+    if guardian_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&guardian_file) {
+            if let Ok(val) = serde_json::from_str::<Value>(&content) {
+                if let Some(p) = val["pid"].as_u64().map(|p| p as u32) {
+                    if p > 4 && p != std::process::id() && !pids_to_kill.contains(&p) {
+                        pids_to_kill.push(p);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Check workers in checkpoint file
+    if checkpoint_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&checkpoint_file) {
+            if let Ok(val) = serde_json::from_str::<Value>(&content) {
+                if let Some(p) = val["activePid"].as_u64().map(|p| p as u32) {
+                    if p > 4 && p != std::process::id() && !pids_to_kill.contains(&p) {
+                        pids_to_kill.push(p);
+                    }
+                }
+                if let Some(workers) = val["workers"].as_array() {
+                    for w in workers {
+                        if let Some(p) = w["pid"].as_u64().map(|p| p as u32) {
+                            if p > 4 && p != std::process::id() && !pids_to_kill.contains(&p) {
+                                pids_to_kill.push(p);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Check supervisor process
+    if supervisor_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&supervisor_file) {
+            if let Ok(val) = serde_json::from_str::<Value>(&content) {
+                if let Some(p) = val["supervisorPid"].as_u64().map(|p| p as u32) {
+                    if p > 4 && p != std::process::id() && !pids_to_kill.contains(&p) {
+                        pids_to_kill.push(p);
+                    }
+                }
+            }
+        }
+    }
+    if server_info_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&server_info_file) {
+            if let Ok(val) = serde_json::from_str::<Value>(&content) {
+                if let Some(p) = val["pid"].as_u64().map(|p| p as u32) {
+                    if p > 4 && p != std::process::id() && !pids_to_kill.contains(&p) {
+                        pids_to_kill.push(p);
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Terminate identified processes
+    let mut system = sysinfo::System::new();
+    system.refresh_processes();
+
+    for &pid in &pids_to_kill {
+        if let Some(process) = system.process(sysinfo::Pid::from_u32(pid)) {
+            let _ = process.kill();
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let _ = std::process::Command::new("taskkill")
+                .args(&["/PID", &pid.to_string(), "/T", "/F"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = std::process::Command::new("kill")
+                .args(&["-9", &pid.to_string()])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+    }
+
+    // 5. Clean up ephemeral state files
+    let state_files = [
+        guardian_file,
+        supervisor_file,
+        checkpoint_file,
+        server_info_file,
+    ];
+    for f in &state_files {
+        if f.exists() {
+            let _ = std::fs::remove_file(f);
+        }
+    }
+    let global_server_info = dir.join("server-info.json");
+    if global_server_info.exists() {
+        if let Ok(content) = std::fs::read_to_string(&global_server_info) {
+            if let Ok(val) = serde_json::from_str::<Value>(&content) {
+                if val["port"].as_u64() == Some(target as u64) {
+                    let _ = std::fs::remove_file(&global_server_info);
+                }
+            }
+        }
+    }
+
+    Ok(json!({
+        "success": true,
+        "port": target,
+        "stoppedPids": pids_to_kill,
+        "message": format!("SuperAgent Core server on port {} stopped", target)
+    }))
 }
 
 #[tauri::command]
