@@ -48,11 +48,11 @@ describe("MCP unified management authorization",()=>{
       // requires an independent operator-approved MCP Connection grant.
       await expect(call({method:"tools/call",params:{
         name:"superagent_manage_services",arguments:{action:"status",service:"tray"},
-      }})).rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
+      }})).rejects.toThrow(/PROJECT_GRANT_MISSING/);
       await expect(call({method:"tools/call",params:{
         name:"superagent_manage_services",
         arguments:{action:"restart",service:"mcp",port:19997,confirm:true},
-      }})).rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
+      }})).rejects.toThrow(/PROJECT_GRANT_MISSING/);
     } finally {await server.close();}
   });
   it("does not confuse write-scope discovery with a local YOLO or connection grant",async()=>{
@@ -66,7 +66,7 @@ describe("MCP unified management authorization",()=>{
       expect(manager.annotations?.readOnlyHint).not.toBe(true);
       await expect(call({method:"tools/call",params:{
         name:"superagent_manage_services",arguments:{action:"status",service:"core"},
-      }})).rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
+      }})).rejects.toThrow(/PROJECT_GRANT_MISSING/);
     } finally {await server.close();}
   });
   it("exposes read-only superagent_services_status to read-only callers without YOLO",async()=>{
