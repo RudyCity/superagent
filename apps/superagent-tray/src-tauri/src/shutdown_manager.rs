@@ -624,12 +624,12 @@ fn force_candidates(preview:&Preview)->Result<Vec<Item>,String> {
     selected.sort_by_key(|item|match item.kind.as_str(){
         "managed" if item.id=="managed:guardian" ||
             item.id.starts_with("guardian-os:")=>0,
-        "core-supervisor"=>1,
-        "mcp"=>2,
-        "cloudflare"=>3,
-        "muse-watch"=>4,
-        "managed" if item.id=="managed:daemon"=>5,
-        "daemon-direct"=>5,
+        "managed" if item.id=="managed:daemon"=>1,
+        "daemon-direct"=>1,
+        "core-supervisor"=>2,
+        "mcp"=>3,
+        "cloudflare"=>4,
+        "muse-watch"=>5,
         "managed"=>6,
         "core"=>9,
         _=>8,
@@ -1595,7 +1595,7 @@ mod tests {
         let ids:Vec<String>=force_candidates(&p).unwrap().iter()
             .map(|item|item.id.clone()).collect();
         assert_eq!(ids,vec![
-            guardian.id,supervisor.id,daemon.id,core.id,
+            guardian.id,daemon.id,supervisor.id,core.id,
         ]);
     }
 
