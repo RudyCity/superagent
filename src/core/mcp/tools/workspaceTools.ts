@@ -30,6 +30,7 @@ import {
   resolveWindowsShell,
   formatCommandForPowerShell,
   augmentWindowsEnvPath,
+  resolveWindowsBunExecutable,
   killProcessTree,
 } from "../../tools/helpers.js";
 
@@ -169,16 +170,25 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
       CI: "1",
     });
 
+    // Version-only MCP diagnostics are certified as non-file effects. On
+    // Windows, launch the installed Bun executable directly: Git Bash can
+    // overwrite its PATH while cmd/PowerShell may inherit an older PATH.
+    // Never route arbitrary command text through this direct-exec branch.
+    const directBunExe = isWin && /^bun\\s+--version$/.test(command.trim())
+      ? resolveWindowsBunExecutable(unbufferedEnv) : null;
+    const spawnExecutable = directBunExe || String(shellPath);
+    const spawnArgs = directBunExe ? ["--version"] : [formattedCommand];
+
     cmdLogger = createCommandLog(formattedCommand, String(targetCwd));
     const capture = rollingCommandOutput();
     const decoder = new StringDecoder("utf8");
-    const mcpExecOpts = applyProcessIntent({ shell: shellPath, cwd: targetCwd, timeout: timeoutMs, reject: false, buffer: false, all: true, stdin: "ignore" as const, env: unbufferedEnv }, "headless");
+    const mcpExecOpts = applyProcessIntent({ shell: directBunExe ? false : shellPath, cwd: targetCwd, timeout: timeoutMs, reject: false, buffer: false, all: true, stdin: "ignore" as const, env: unbufferedEnv }, "headless");
 
     try {
       const reg = await getProcessSupervisor().registerProcess({
         component: "mcp_exec_command",
-        executable: String(shellPath),
-        args: [formattedCommand],
+        executable: spawnExecutable,
+        args: spawnArgs,
         launchIntent: "headless",
         lifecycle: "ephemeral",
         cleanupPolicy: "caller_owned",
@@ -188,7 +198,10 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
       procRecordId = reg.recordId;
     } catch {}
 
-    const proc = traceChildProcess(execa(formattedCommand, mcpExecOpts), { caller: "workspaceTools.handleExecCommand", executable: String(shellPath), args: [formattedCommand], cwd: String(targetCwd), intent: "headless", options: mcpExecOpts });
+    const proc = traceChildProcess(
+      directBunExe ? execa(directBunExe, ["--version"], mcpExecOpts) : execa(formattedCommand, mcpExecOpts),
+      { caller: "workspaceTools.handleExecCommand", executable: spawnExecutable, args: spawnArgs, cwd: String(targetCwd), intent: "headless", options: mcpExecOpts },
+    );
     childPid = proc.pid;
     // Attach output consumers before ANY asynchronous process bookkeeping.
     // Commands such as "seq 1 25000" can finish before recordProcessSpawn()
