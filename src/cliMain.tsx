@@ -603,6 +603,12 @@ export async function runCli() {
     console.clear();
     hideCursor();
 
+    if (process.stdin.isTTY) {
+      try {
+        process.stdin.resume();
+      } catch {}
+    }
+
     if (isMulti) {
       const React = (await import("react")).default;
       const { render } = await import("ink");

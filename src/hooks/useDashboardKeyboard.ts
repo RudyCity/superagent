@@ -319,7 +319,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         } else {
           setFocusArea("input");
           setQuery((prev) => prev + input);
-          setIsPasted(false);
+          setIsPasted?.(false);
           return;
         }
       }
@@ -760,9 +760,9 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         });
       } else if (key.downArrow) {
         setLogScrollOffset((prev) => Math.max(0, prev - 1));
-      } else if (isEscape) {
+      } else if (isEscape || key.return) {
         setLogScrollOffset(0);
-        setFocusArea("list");
+        setFocusArea("input");
       }
     } else if (focusArea === "checklist") {
       if (key.upArrow) {
@@ -772,7 +772,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
           const maxScroll = Math.max(0, checklistTasks.length - maxChecklistVisible);
           return Math.min(prev + 1, maxScroll);
         });
-      } else if (isEscape) {
+      } else if (isEscape || key.return) {
         setFocusArea("input");
       }
     } else if (focusArea === "agents") {
@@ -784,7 +784,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
           const maxScroll = Math.max(0, runningAgents.length - maxAgentsVisible);
           return Math.min(prev + 1, maxScroll);
         });
-      } else if (isEscape) {
+      } else if (isEscape || key.return) {
         setFocusArea("input");
       }
     } else if (focusArea === "procs") {

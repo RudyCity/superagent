@@ -60,4 +60,53 @@ describe("ChatTextInput Escape debounce regression", () => {
     expect(onChange).not.toHaveBeenCalled();
     view.unmount();
   });
+
+  it("flushes pending debounce immediately when Tab key is pressed", () => {
+    const onChange = vi.fn();
+    const view = inkModule.render(React.createElement(ChatTextInput, {
+      value: "",
+      onChange,
+      focus: true,
+    }), { patchConsole: false });
+    expect(inputHandler).toBeDefined();
+
+    inputHandler!("mycom", {});
+    expect(onChange).not.toHaveBeenCalledWith("mycom");
+
+    inputHandler!("", { tab: true });
+    expect(onChange).toHaveBeenCalledWith("mycom");
+    view.unmount();
+  });
+
+  it("preserves cursor offset during rapid continuous typing", async () => {
+    let parentValue = "";
+    let cursorOffset = 0;
+    const onChange = vi.fn((val: string) => {
+      parentValue = val;
+    });
+
+    const view = inkModule.render(React.createElement(ChatTextInput, {
+      value: parentValue,
+      onChange,
+      focus: true,
+      onCursorOffsetChange: (offset: number) => {
+        cursorOffset = offset;
+      },
+    }), { patchConsole: false });
+    expect(inputHandler).toBeDefined();
+
+    inputHandler!("h", {});
+    inputHandler!("e", {});
+    inputHandler!("l", {});
+    inputHandler!("l", {});
+    inputHandler!("o", {});
+
+    expect(cursorOffset).toBe(5);
+
+    // Wait for the 20ms debounce to settle
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onChange).toHaveBeenCalledWith("hello");
+    expect(cursorOffset).toBe(5);
+    view.unmount();
+  });
 });

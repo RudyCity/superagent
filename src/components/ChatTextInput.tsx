@@ -121,7 +121,7 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
         lastSentValueRef.current = val;
         onChange(val);
         debounceTimerRef.current = null;
-      }, 100);
+      }, 20);
     }
   };
 
@@ -169,12 +169,12 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
       }
     } else {
       if (gainedFocus && showCursor) {
-        setCursorOffset(len);
-      } else if (focus && showCursor && cursorOffset > len) {
-        setCursorOffset(len);
+        setCursorOffset(localValue.length);
+      } else if (focus && showCursor && cursorOffset > localValue.length) {
+        setCursorOffset(localValue.length);
       }
     }
-  }, [originalValue, focus, showCursor]);
+  }, [originalValue, focus, showCursor, localValue.length]);
 
   // Detect image file paths when value changes.
   // If the entire current input looks like an image path, convert it to attachment.
@@ -313,6 +313,12 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
         key.tab ||
         (key.shift && key.tab)
       ) {
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+          lastSentValueRef.current = localValue;
+          onChange(localValue);
+        }
         return;
       }
 

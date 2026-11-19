@@ -393,6 +393,15 @@ export function App({
     }
   }, [activeWizard]);
 
+  // Ensure interactive TTY stdin is resumed on mount
+  useEffect(() => {
+    if (process.stdin.isTTY) {
+      try {
+        process.stdin.resume();
+      } catch {}
+    }
+  }, []);
+
   // Refresh active preset name whenever model changes OR wizard closes (e.g. after /model or /login).
   // Dual dependency covers: (1) model changed → activeModel differs, (2) same model but different
   // preset → activeModel is unchanged but activeWizard just turned null.

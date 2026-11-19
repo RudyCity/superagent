@@ -360,13 +360,14 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         });
         return;
       }
-      if (isEscape) {
+      if (isEscape || key.return) {
         setFocusMode("input");
         return;
       }
-      // Auto-return to input when user types a printable character
-      if (inputChar && !key.ctrl && !key.meta && inputChar.length === 1 && inputChar >= ' ') {
+      // Auto-return to input when user types a printable character or pastes text
+      if (inputChar && !key.ctrl && !key.meta && (inputChar.length > 1 || inputChar >= ' ')) {
         setFocusMode("input");
+        setInput((prev) => prev + inputChar);
         return;
       }
       return;
@@ -385,12 +386,13 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         });
         return;
       }
-      if (isEscape) {
+      if (isEscape || key.return) {
         setFocusMode("input");
         return;
       }
-      if (inputChar && !key.ctrl && !key.meta && inputChar.length === 1 && inputChar >= ' ') {
+      if (inputChar && !key.ctrl && !key.meta && (inputChar.length > 1 || inputChar >= ' ')) {
         setFocusMode("input");
+        setInput((prev) => prev + inputChar);
         return;
       }
       return;
@@ -409,12 +411,13 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         });
         return;
       }
-      if (isEscape) {
+      if (isEscape || key.return) {
         setFocusMode("input");
         return;
       }
-      if (inputChar && !key.ctrl && !key.meta && inputChar.length === 1 && inputChar >= ' ') {
+      if (inputChar && !key.ctrl && !key.meta && (inputChar.length > 1 || inputChar >= ' ')) {
         setFocusMode("input");
+        setInput((prev) => prev + inputChar);
         return;
       }
       return;
@@ -480,12 +483,13 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         }
         return;
       }
-      if (isEscape) {
+      if (isEscape || key.return) {
         setFocusMode("input");
         return;
       }
-      if (inputChar && !key.ctrl && !key.meta && inputChar.length === 1 && inputChar >= ' ') {
+      if (inputChar && !key.ctrl && !key.meta && (inputChar.length > 1 || inputChar >= ' ')) {
         setFocusMode("input");
+        setInput((prev) => prev + inputChar);
         return;
       }
       return;
@@ -516,15 +520,16 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         scrollChat("down");
         return;
       }
-      if (isEscape) {
+      if (isEscape || key.return) {
         setScrollOffset(0);
         setFocusMode("input");
         return;
       }
-      // Auto-return to input when user types a printable character
-      if (inputChar && !key.ctrl && !key.meta && inputChar.length === 1 && inputChar >= ' ') {
+      // Auto-return to input when user types a printable character or pastes text
+      if (inputChar && !key.ctrl && !key.meta && (inputChar.length > 1 || inputChar >= ' ')) {
         setScrollOffset(0);
         setFocusMode("input");
+        setInput((prev) => prev + inputChar);
         return;
       }
       return;
@@ -631,6 +636,12 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       }
       if (isEscape) {
         setFocusMode("input");
+        return;
+      }
+      // Auto-return to input when user types a printable character or pastes text
+      if (inputChar && !key.ctrl && !key.meta && (inputChar.length > 1 || inputChar >= ' ')) {
+        setFocusMode("input");
+        setInput((prev) => prev + inputChar);
         return;
       }
       return;

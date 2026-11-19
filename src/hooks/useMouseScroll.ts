@@ -308,7 +308,7 @@ export function useMouseScroll(
                 }
               }
               if (!handledClick) {
-                ctx.setFocusMode("chat");
+                ctx.setFocusMode("input");
               }
               break;
             }

@@ -281,7 +281,7 @@ function getBaseSearchDirs(packageRootDir: string): string[] {
 
 let cachedSkills: LoadedSkill[] | null = null;
 let lastSkillsFetchTime = 0;
-const SKILLS_CACHE_TTL_MS = 5000;
+const SKILLS_CACHE_TTL_MS = 300000; // 5 minutes cache to prevent synchronous disk I/O on keyboard events; invalidated via clearSkillsCache()
 
 export function clearSkillsCache(): void {
   cachedSkills = null;
