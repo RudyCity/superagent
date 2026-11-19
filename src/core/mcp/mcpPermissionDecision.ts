@@ -10,11 +10,10 @@ import {
   READ_ONLY_SERVICE_ACTIONS,
 } from "../tools/registeredFileToolGate.js";
 import { parseReadOnlyServiceArgs } from "../runtime/serviceReadPolicy.js";
-import { MCP_CONNECTION_PROJECT_ID } from "../project/projectSecurityResources.js";
 
 export const MCP_PERMISSION_DECISION_CODES = [
   "ALLOWED_TO_ATTEMPT", "SCHEMA_INVALID", "OAUTH_SCOPE_MISSING",
-  "MCP_CONNECTION_EXECUTE_REQUIRED", "PROJECT_CAPABILITY_MISSING",
+  "PROJECT_CAPABILITY_MISSING",
   "HOST_FILE_POLICY_UNCERTIFIED", "HOST_FILE_POLICY_DENIED",
   "NATIVE_CONSENT_REQUIRED", "TARGET_IDENTITY_MISMATCH",
   "HOST_OWNER_UNVERIFIED", "TOOL_DISABLED", "TARGET_UNAVAILABLE",
@@ -30,7 +29,7 @@ export type McpPermissionRemediationAction =
   | { kind: "fix_arguments"; supportedFields?: readonly string[]; supportedActions?: readonly string[]; retryableWithMcpGrant: false }
   | { kind: "host_policy_blocked"; retryableWithMcpGrant: false }
   | { kind: "repair_policy_store"; retryableWithMcpGrant: false }
-  | { kind: "open_tray_section"; trayPage: "security"; trayTab: "connections" | "mcp"; projectId: string; requiredCapability: string; retryableAfterGrant: true };
+  | { kind: "open_tray_section"; trayPage: "security"; trayTab: "connections" | "mcp"; projectId?: string; requiredCapability: string; retryableAfterGrant: true };
 
 export type McpPermissionSchemaContext = Readonly<{
   tool: "superagent_desktop_ui" | "superagent_services_status";
@@ -41,9 +40,7 @@ export type McpPermissionSchemaContext = Readonly<{
 export type McpPermissionRemediationActionItem =
   | { kind:"open_tab";page:"security";tab:"connections"|"mcp"|"rules"|"register";
       route:"security:connections"|"security:mcp"|"security:rules"|"security:register";
-      requiresUserAction:true;
-      request?:{tool:"superagent_request_project_access";
-        arguments:{projectId:typeof MCP_CONNECTION_PROJECT_ID;capabilities:["execute"]};requiresUserSubmission:true} }
+      requiresUserAction:true }
   | { kind:"reconnect";requiredScopes:["mcp:tools:write"];requiresUserAction:true }
   | { kind:"operator_repair";reasonCode:McpPermissionDecisionCode;requiresUserAction:true }
   | { kind:"inspect_schema";tool:McpPermissionSchemaContext["tool"];fields:string[];requiresUserAction:true }
@@ -53,10 +50,6 @@ export type McpPermissionRemediationActionItem =
 export function getMcpPermissionRemediationActions(
   code:McpPermissionDecisionCode,schema?:McpPermissionSchemaContext,
 ):McpPermissionRemediationActionItem[] {
-  if(code==="MCP_CONNECTION_EXECUTE_REQUIRED")return [{kind:"open_tab",page:"security",
-    tab:"connections",route:"security:connections",requiresUserAction:true,
-    request:{tool:"superagent_request_project_access",arguments:{projectId:MCP_CONNECTION_PROJECT_ID,
-      capabilities:["execute"]},requiresUserSubmission:true}}];
   if(code==="PROJECT_CAPABILITY_MISSING")return [{kind:"open_tab",page:"security",
     tab:"mcp",route:"security:mcp",requiresUserAction:true}];
   if(code==="NATIVE_CONSENT_REQUIRED")return [{kind:"open_tab",page:"security",
@@ -72,7 +65,7 @@ export function getMcpPermissionRemediationActions(
 
 export interface BoundedDesktopPermissionInput {
   oauthAllowed: boolean;
-  connectionDecision: "granted" | "approval_required" | "unavailable";
+  projectDecision: "granted" | "approval_required" | "unavailable";
   filePolicyActive: boolean;
   /** Only a verdict from the actual production registeredFileToolGate. */
   hostBlock: string | null;
@@ -98,12 +91,11 @@ function buildDesktopRemediationAction(
       return { kind: "host_policy_blocked", retryableWithMcpGrant: false };
     case "POLICY_STORE_UNAVAILABLE":
       return { kind: "repair_policy_store", retryableWithMcpGrant: false };
-    case "MCP_CONNECTION_EXECUTE_REQUIRED":
+    case "PROJECT_CAPABILITY_MISSING":
       return {
         kind: "open_tray_section",
         trayPage: "security",
-        trayTab: "connections",
-        projectId: "mcp-connection",
+        trayTab: "mcp",
         requiredCapability: "execute",
         retryableAfterGrant: true,
       };
@@ -123,8 +115,8 @@ export function describeBoundedDesktopPermission(
     !input.oauthAllowed ? "OAUTH_SCOPE_MISSING" :
     malformed ? "SCHEMA_INVALID" :
     input.hostBlock ? "HOST_FILE_POLICY_UNCERTIFIED" :
-    input.connectionDecision === "unavailable" ? "POLICY_STORE_UNAVAILABLE" :
-    input.connectionDecision !== "granted" ? "MCP_CONNECTION_EXECUTE_REQUIRED" :
+    input.projectDecision === "unavailable" ? "POLICY_STORE_UNAVAILABLE" :
+    input.projectDecision !== "granted" ? "PROJECT_CAPABILITY_MISSING" :
     "ALLOWED_TO_ATTEMPT";
   const remediation = {
     ALLOWED_TO_ATTEMPT: "Advisory only: invocation must recheck all policy, owner, target and native-consent gates.",
@@ -132,15 +124,14 @@ export function describeBoundedDesktopPermission(
     SCHEMA_INVALID: "Use the exact documented command fields; no approval is needed to repair invalid arguments.",
     HOST_FILE_POLICY_UNCERTIFIED: "The host file policy blocks this action; approving MCP Execute cannot override it.",
     POLICY_STORE_UNAVAILABLE: "The operator must repair the permission store; do not retry grants or assume access.",
-    MCP_CONNECTION_EXECUTE_REQUIRED: "Open Security Approval > MCP Connections for a human-scoped Execute grant.",
+    PROJECT_CAPABILITY_MISSING: "Open Security Approval > Akses Proyek for an operator-approved Execute grant.",
   } as const;
   return {
     decisionCode,
     layers: {
       oauthScope: input.oauthAllowed ? "granted" : "blocked",
-      connectionExecute: input.connectionDecision === "granted" ? "granted"
-        : input.connectionDecision === "unavailable" ? "unknown" : "blocked",
-      projectCapability: "not_checked",
+      projectCapability: input.projectDecision === "granted" ? "granted"
+        : input.projectDecision === "unavailable" ? "unknown" : "blocked",
       hostFilePolicy: !input.filePolicyActive ? "not_checked"
         : input.hostBlock ? "blocked" : "granted",
       nativeConsent: "not_checked",
@@ -177,7 +168,7 @@ export function describeBoundedServicePermission(
     action,
     layers: ({
       oauthScope: "granted",
-      connectionExecute: "not_checked",
+      projectCapability: "not_checked",
       projectCapability: "not_checked",
       hostFilePolicy: !filePolicyActive ? "not_checked" : valid ? "granted" : "blocked",
       nativeConsent: "not_checked",
@@ -203,7 +194,7 @@ export function describeBoundedServicePermission(
 export interface BoundedServiceManagePermissionInput {
   args: unknown;
   oauthAllowed: boolean;
-  connectionDecision: "granted" | "approval_required" | "unavailable";
+  projectDecision: "granted" | "approval_required" | "unavailable";
   filePolicyActive: boolean;
   hostBlock: string | null;
 }
@@ -223,17 +214,17 @@ export function describeBoundedServiceManagePermission(input: BoundedServiceMana
     !input.oauthAllowed ? "OAUTH_SCOPE_MISSING" :
     schemaInvalid ? "SCHEMA_INVALID" :
     effectiveHostBlock ? "HOST_FILE_POLICY_UNCERTIFIED" :
-    input.connectionDecision === "unavailable" ? "POLICY_STORE_UNAVAILABLE" :
-    input.connectionDecision !== "granted" ? "MCP_CONNECTION_EXECUTE_REQUIRED" :
+    input.projectDecision === "unavailable" ? "POLICY_STORE_UNAVAILABLE" :
+    input.projectDecision !== "granted" ? "PROJECT_CAPABILITY_MISSING" :
     "ALLOWED_TO_ATTEMPT";
 
   const remediation = {
-    ALLOWED_TO_ATTEMPT: "Advisory only: invocation must recheck OAuth write scope, Connection Execute, host policy, owner and target.",
+    ALLOWED_TO_ATTEMPT: "Advisory only: invocation must recheck OAuth write scope, Project Execute, host policy, owner and target.",
     OAUTH_SCOPE_MISSING: "Reconnect with the required OAuth write scope; a connection label is not authority.",
     SCHEMA_INVALID: "Only bounded read-only action, service, port and limit are permitted for inspection; no approval changes the schema.",
     HOST_FILE_POLICY_UNCERTIFIED: "The host file policy blocks this service mutation; approving MCP Execute cannot override it.",
     POLICY_STORE_UNAVAILABLE: "The operator must repair the permission store; do not retry grants or assume access.",
-    MCP_CONNECTION_EXECUTE_REQUIRED: "Open Security Approval > MCP Connections for a human-scoped Execute grant.",
+    PROJECT_CAPABILITY_MISSING: "Open Security Approval > Akses Proyek for an operator-approved Execute grant.",
   } as const;
 
   return {
@@ -241,9 +232,8 @@ export function describeBoundedServiceManagePermission(input: BoundedServiceMana
     action: isReadAction && readShapeValid ? rawAction : "unrecognized",
     layers: ({
       oauthScope: input.oauthAllowed ? "granted" : "blocked",
-      connectionExecute: input.connectionDecision === "granted" ? "granted"
-        : input.connectionDecision === "unavailable" ? "unknown" : "blocked",
-      projectCapability: "not_checked",
+      projectCapability: input.projectDecision === "granted" ? "granted"
+        : input.projectDecision === "unavailable" ? "unknown" : "blocked",
       hostFilePolicy: !input.filePolicyActive ? "not_checked"
         : effectiveHostBlock ? "blocked" : "granted",
       nativeConsent: "not_checked",
@@ -276,7 +266,7 @@ export function describeBoundedBrowserObservePermission(
     command: valid && typeof x?.command === "string" ? x.command : "unrecognized",
     layers: ({
       oauthScope: oauthAllowed ? "granted" : "blocked",
-      connectionExecute: "not_checked",
+      projectCapability: "not_checked",
       projectCapability: "not_checked",
       hostFilePolicy: !filePolicyActive ? "not_checked" : valid ? "granted" : "blocked",
       nativeConsent: "not_checked",
