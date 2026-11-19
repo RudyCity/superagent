@@ -55,6 +55,10 @@ export function buildTrayToolInventory(selection: { identityHandle?: string; pro
       : workspaceScoped || risk === "dangerous" ? "project"
       : "read_only";
     const actionDependent = name === "superagent_git_action";
+    const actionCapabilities = actionDependent ? {
+      status: "read", diff: "read", log: "read",
+      add: "git", commit: "git", restore: "git", clean: "git",
+    } as const : null;
     const capability: ProjectAccessCapability | null = approvalKind === "project" && !actionDependent
       ? workspaceScoped ? getProjectCapabilityForTool(name) : "execute"
       : null;
@@ -68,6 +72,10 @@ export function buildTrayToolInventory(selection: { identityHandle?: string; pro
         : actionDependent ? "action_dependent"
         : capability && granted.has(capability) ? "granted" : "missing";
     }
+    const actionGrantStates = actionCapabilities
+      ? Object.fromEntries(Object.entries(actionCapabilities).map(([action,cap]) => [
+          action, grantState === "action_dependent" ? granted.has(cap) ? "granted" : "missing" : grantState,
+        ])) : null;
     const hostReadiness = getPermanentFileToolReadiness(name);
     const hostBlocked = hostPolicyActive && hostReadiness === "uncertified";
     const scope = risk === "dangerous" ? ["mcp:tools","mcp:tools:write"] : ["mcp:tools"];
@@ -79,10 +87,8 @@ export function buildTrayToolInventory(selection: { identityHandle?: string; pro
       approvalKind,
       workspaceScoped,
       capability,
-      capabilitiesByAction: actionDependent ? {
-        status: "read", diff: "read", log: "read",
-        add: "git", commit: "git", restore: "git", clean: "git",
-      } : null,
+      capabilitiesByAction: actionCapabilities,
+      actionGrantStates,
       oauthScopesRequired: scope,
       hostReadiness,
       hostRequirement: describePermanentFileToolReadiness(name).slice(0, 400),
@@ -111,8 +117,10 @@ export function buildTrayToolInventory(selection: { identityHandle?: string; pro
     counts: {
       uncertified: tools.filter(t => t.hostReadiness === "uncertified").length,
       hostBlocked: tools.filter(t => t.hostBlocked).length,
-      missingProjectGrant: tools.filter(t => t.grantState === "missing").length,
-      projectGrantMatched: tools.filter(t => t.grantState === "granted").length,
+      missingProjectGrant: tools.filter(t => t.grantState === "missing" ||
+        (t.actionGrantStates && Object.values(t.actionGrantStates).includes("missing"))).length,
+      projectGrantMatched: tools.filter(t => t.grantState === "granted" ||
+        (t.actionGrantStates && Object.values(t.actionGrantStates).includes("granted"))).length,
       actionDependent: tools.filter(t => t.operationStatus === "check_action_arguments" || t.capabilitiesByAction).length,
     },
     tools,
