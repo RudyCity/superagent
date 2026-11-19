@@ -593,46 +593,69 @@ export async function handleUpdateTasks(args: any): Promise<McpToolResult> {
     const targetId = String(args.superagentId || args.id || args.instanceId);
     const registry = loadRegistry();
     const entry = registry.find((r) => r.id === targetId || r.name === targetId);
-    if (entry && entry.worktreePath && fs.existsSync(entry.worktreePath)) {
-      ws = entry.worktreePath;
-    } else {
+    if (entry && entry.worktreePath && fs.existsSync(entry.worktreePath)) ws = entry.worktreePath;
+    else {
       const { superagentInstances } = await import("../../tools/state.js");
       const inst = superagentInstances.get(targetId);
-      if (inst && inst.worktreePath && fs.existsSync(inst.worktreePath)) {
-        ws = inst.worktreePath;
-      } else {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error: Superagent instance '${targetId}' was not found in active instances or worktree registry.`,
-            },
-          ],
-          isError: true,
-        };
-      }
+      if (inst && inst.worktreePath && fs.existsSync(inst.worktreePath)) ws = inst.worktreePath;
+      else return {
+        content: [{ type: "text", text:
+          `Error: Superagent instance '${targetId}' was not found in active instances or worktree registry.` }],
+        isError: true,
+      };
     }
   }
-
-  if (!ws) {
-    ws = getMcpWorkspacePath();
-  }
+  if (!ws) ws = getMcpWorkspacePath();
 
   const action = String(args.action || "get_status");
   if (action === "get_current_task" || action === "current_task") {
     return await handleGetCurrentTask({ ...args, workspace: ws });
   }
 
-  const taskText = String(args.taskText || args.task || args.text || "");
-  const { managePlanTool } = await import("../../tools/otherTools.js");
-  const result = await managePlanTool.execute({ action, task: taskText }, ws);
+  const { manageTasksTool } = await import("../../tools/otherTools.js");
+  if (action === "get_status") {
+    const result = await manageTasksTool.execute({ action: "list" }, ws);
+    return { content: [{ type: "text", text: String(result) }] };
+  }
+  if (action === "add_task") {
+    const taskText = String(args.taskText || args.task || args.text || "").trim();
+    if (!taskText) return {
+      content: [{ type: "text", text: "Error: taskText is required for add_task." }], isError: true,
+    };
+    const result = await manageTasksTool.execute({ action: "add", text: taskText }, ws);
+    try { (await import("../../tools/state.js")).notifyTasksChanged(); } catch {}
+    return { content: [{ type: "text", text: String(result) }] };
+  }
+  if (action === "mark_completed" || action === "mark_in_progress") {
+    const taskText = String(args.taskText || args.task || args.text || "").trim();
+    if (!taskText) return {
+      content: [{ type: "text", text: "Error: taskText is required for task status updates." }], isError: true,
+    };
+    const { readChecklistTasks } = await import("../../taskChecklist.js");
+    const taskPath = path.resolve(ws, "task.md");
+    const { tasks } = await readChecklistTasks(taskPath);
+    const normalized = taskText.toLocaleLowerCase();
+    let index = tasks.findIndex(t => t.text.toLocaleLowerCase() === normalized);
+    if (index < 0) {
+      const matches = tasks.map((t, i) => ({t,i}))
+        .filter(({t}) => t.text.toLocaleLowerCase().includes(normalized));
+      if (matches.length === 1) index = matches[0]!.i;
+    }
+    if (index < 0) return {
+      content: [{ type: "text", text: `Error: Task not found uniquely: "${taskText}".` }], isError: true,
+    };
+    const result = await manageTasksTool.execute({
+      action: "update", index: index + 1, status: action === "mark_completed" ? "x" : "/",
+    }, ws);
+    try { (await import("../../tools/state.js")).notifyTasksChanged(); } catch {}
+    return { content: [{ type: "text", text: String(result) }] };
+  }
 
-  try {
-    const { notifyTasksChanged } = await import("../../tools/state.js");
-    notifyTasksChanged();
-  } catch {}
-
-  return { content: [{ type: "text", text: String(result) }] };
+  return {
+    content: [{ type: "text", text:
+      'Error: Unknown action. Use mark_completed, mark_in_progress, add_task, get_status, or get_current_task.' }],
+    isError: true,
+  };
 }
 
 export const UNLOCK_FILE_MCP_TOOL_DEF = {
