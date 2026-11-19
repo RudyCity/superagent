@@ -46,6 +46,33 @@ and tested before full owner updates are called zero-downtime.
 - OAuth issuer and public URL never change during successful backend activation;
   existing OAuth grants remain scoped to their original issuer.
 
+## Diagnosing stale MCP behavior after a successful Core restart
+
+A supervised Core restart reloads the Core worker, **not** the independent MCP
+backend. The MCP owner retains its own installed backend entrypoint, so even
+a successful `superagent mcp tunnel reload --port 9227` normally starts a
+**new PID with the same currently activated backend code**. It does not select
+the latest Git checkout or Core build and is not a release promotion.
+
+The host permanent-file gate now certifies only the exact
+`superagent_manage_services` MCP backend `plan`/`reload` pair (owner PID,
+operation ID, immutable expected public URL, explicit confirmation).
+This fixes the previous overbroad denial of the safe owner-scoped reload
+control path, but **does not install a different version**. The current
+running backend must first be updated through the separately attested,
+checksum-verified `plan`/`activate` release flow below. Until this is done,
+the pre-existing MCP process may continue to report an older service
+dashboard format even when Core's active source/build digest is fresh.
+
+`backendReleaseDigest: null` on the owner status means the owner is **not
+reporting an activated staged backend release**. It is not proof that Core and
+MCP source match. Use the operator-verified release plan and exact backend
+PID/URL handoff before claiming an upgrade completed.
+
+**Never** restart or replace the Cloudflare Quick Tunnel owner as a substitute
+for backend release activation: doing so can rotate the public URL and break
+the connected OAuth client.
+
 ## Operator commands (do not run on the live owner without reviewed evidence)
 
 ```powershell
