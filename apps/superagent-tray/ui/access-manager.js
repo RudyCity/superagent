@@ -1134,11 +1134,71 @@
     });
 
     grantBtn.id = "access-mcp-project-grant";
-    grantForm.append(identField, projField, capsWrap, grantBtn);
+    const toolChoiceNote = make("p", "access-hint", "Pilih tool di Inventaris Tools MCP untuk menyiapkan capability yang dibutuhkan, lalu tinjau keputusan dalam dialog native. Tidak ada izin yang diberikan otomatis.");
+    toolChoiceNote.id = "access-mcp-tool-selection-note";
+    grantForm.append(identField, projField, capsWrap, toolChoiceNote, grantBtn);
+    $("access-mcp-ident-select")?.addEventListener("change", () => void refreshMcpToolCatalog());
+    $("access-mcp-proj-select")?.addEventListener("change", () => void refreshMcpToolCatalog());
     grantSection.append(grantTitle, grantDesc, grantForm);
 
     const workspaceGrid = make("div", "access-mcp-grid access-mcp-grid-workspace");
     workspaceGrid.append(reqSection, grantSection);
+
+    // All tools are sourced from the same Core catalog as MCP discovery.
+    // The inventory is advisory; navigation to a grant form never grants access.
+    const toolsSection = make("section", "access-stored access-mcp-card access-mcp-tools-card");
+    toolsSection.id = "access-mcp-tool-catalog";
+    const toolsHead = make("div", "access-stored-head");
+    const toolsTitle = make("div");
+    toolsTitle.append(make("h3", "", "Inventaris Tools MCP"),
+      make("p", "access-hint", "Semua tool aktif, klasifikasi, kebutuhan OAuth/proyek, dan sertifikasi file host. Status hanya diagnosis, bukan bukti tool dapat dieksekusi."));
+    const toolCount = make("span", "access-count", "Belum dimuat");
+    toolCount.id = "access-mcp-tool-count";
+    const toolRefresh = action("Muat ulang", "access-audit-refresh", () => void refreshMcpToolCatalog());
+    toolRefresh.id = "access-mcp-tool-refresh";
+    toolsHead.append(toolsTitle, toolCount, toolRefresh);
+    const toolFilters = make("div", "access-mcp-tool-filters");
+    const toolSearch = make("input", "access-search");
+    toolSearch.type = "search";
+    toolSearch.id = "access-mcp-tool-search";
+    toolSearch.placeholder = "Cari tool, deskripsi, capability…";
+    toolSearch.setAttribute("aria-label", "Cari tools MCP");
+    toolSearch.addEventListener("input", () => {
+      toolState.query = toolSearch.value.trim().toLowerCase();
+      toolState.shown = 25; renderMcpToolCatalog();
+    });
+    const toolFilter = select("access-mcp-tool-filter", [
+      ["all", "Semua tools"], ["host_uncertified", "Terblokir host policy"],
+      ["missing", "Grant proyek belum ada"], ["granted", "Grant proyek tercatat"],
+      ["action_dependent", "Butuh parameter operasi"], ["file_rules_required", "Butuh aturan file"],
+      ["dangerous", "Operasi berisiko"], ["read_only", "Read-only"],
+    ]);
+    toolFilter.setAttribute("aria-label", "Filter status tool MCP");
+    toolFilter.addEventListener("change", () => {
+      toolState.filter = toolFilter.value;
+      toolState.shown = 25; renderMcpToolCatalog();
+    });
+    toolFilters.append(toolSearch, toolFilter);
+    const toolSummary = make("p", "access-summary", "Memuat inventaris dari Core…");
+    toolSummary.id = "access-mcp-tool-summary";
+    toolSummary.setAttribute("role", "status");
+    const toolList = make("div", "access-mcp-tool-list");
+    toolList.id = "access-mcp-tool-list";
+    const toolMore = action("Tampilkan 25 lagi", "access-audit-refresh", () => {
+      toolState.shown += 25; renderMcpToolCatalog();
+    });
+    toolMore.id = "access-mcp-tool-more";
+    toolMore.hidden = true;
+    toolsSection.append(toolsHead, toolFilters, toolSummary, toolList, toolMore);
+
+    const legacySection = make("section", "access-stored access-mcp-card");
+    legacySection.id = "access-mcp-legacy-requests";
+    legacySection.hidden = true;
+    legacySection.append(make("h3", "", "Permintaan izin koneksi lama"),
+      make("p", "access-hint", "Permintaan Execute proyek virtual mcp-connection sudah tidak valid. Permintaan lama boleh ditolak melalui tinjauan native, tetapi tidak boleh disetujui atau dipindahkan otomatis."));
+    const legacyList = make("div", "access-mcp-list");
+    legacyList.id = "access-mcp-legacy-list";
+    legacySection.append(legacyList);
 
     // Section 3: History & Active Grants
     const histSection = make("section", "access-stored access-mcp-card");
@@ -1148,11 +1208,12 @@
     histList.id = "access-mcp-history-list";
     histSection.append(histHead, histList);
 
-    pane.append(banner, loadError, workspaceGrid, projectSection, histSection);
+    pane.append(banner, loadError, workspaceGrid, projectSection, toolsSection, legacySection, histSection);
     return pane;
   }
 
-  const mcpCache = { requests: null, identities: null, projects: null, inventory: null, live: null, refreshing: null };
+  const mcpCache = { requests: null, identities: null, projects: null, inventory: null, live: null, tools: null, refreshing: null };
+  const toolState = { query: "", filter: "all", shown: 25, requestSeq: 0 };
   const mcpNotificationFocus = { id: null, didFocus: false };
 
   function highlightMcpNotificationRequest() {
