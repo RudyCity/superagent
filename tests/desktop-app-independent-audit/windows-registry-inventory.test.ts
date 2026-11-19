@@ -28,6 +28,7 @@ describe("Windows installed-program registry inventory", () => {
     expect(result.programs).toEqual([{ name: "Example App", version: "2.5", publisher: "Example Publisher" }]);
     expect(JSON.stringify(result)).not.toContain("DO_NOT_EXPOSE_UNINSTALL_COMMAND");
     expect(script).toContain("HKLM:" + String.fromCharCode(92) + "Software");
+    expect(script).toContain("[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)");
     expect(script).toContain("Get-ItemProperty");
     expect(script).not.toContain("Start-Process");
     expect(script).not.toContain("UninstallString");
