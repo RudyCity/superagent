@@ -68,6 +68,7 @@ describe("native Shutdown Manager UI",()=>{
     for(const id of ["shutdown-manager-dialog","shutdown-services","shutdown-exit-all",
       "shutdown-stop-selected","shutdown-force-all","shutdown-force-confirm",
       "shutdown-manual-select-all","shutdown-manual-confirm","shutdown-manual-kill",
+      "shutdown-bulk-graceful","shutdown-bulk-manual","shutdown-bulk-clear",
       "shutdown-progress","shutdown-feedback"])
       expect(html).toContain('id="'+id+'"');
     expect(html).toContain('role="dialog" aria-modal="true"');
@@ -112,6 +113,40 @@ describe("native Shutdown Manager UI",()=>{
     expect(m.node("shutdown-stop-selected").disabled).toBe(false);
     expect(m.node("shutdown-exit-all").disabled).toBe(true);
   });
+  it("bulk-selects graceful and manual targets and clears both sets in one click",async()=>{
+    const inventory=fixture();
+    inventory.services.push(
+      {id:"managed:transport",label:"Transport",kind:"managed",state:"active",port:7999,pid:313,
+        ownerVerified:true,selectable:true,forceSelectable:false,manualKillSelectable:false,
+        blocker:null,activeSessions:0,detail:"Verified owner"},
+      {id:"supervisor:7888:25204",label:"Core Supervisor",kind:"core-supervisor",state:"unverified",
+        port:7888,pid:25204,ownerVerified:false,selectable:false,forceSelectable:false,
+        manualKillSelectable:true,processName:"bun.exe",blocker:"Unverified",activeSessions:null,
+        detail:"Core supervisor"}
+    );
+    inventory.services[0].manualKillSelectable=true;
+    inventory.services[0].processName="bun.exe";
+    const m=mount(inventory);await m.open();
+
+    expect(m.node("shutdown-bulk-clear").disabled).toBe(false);
+    await m.click("shutdown-bulk-clear");
+    expect(m.node("shutdown-selection-count").textContent).toContain("0 graceful selected");
+    expect(m.node("shutdown-selection-count").textContent).toContain("0 manual PID(s) selected");
+    expect(m.node("shutdown-bulk-graceful").disabled).toBe(false);
+    expect(m.node("shutdown-bulk-manual").disabled).toBe(false);
+
+    await m.click("shutdown-bulk-graceful");
+    expect(m.node("shutdown-selection-count").textContent).toContain("2 graceful selected");
+    await m.click("shutdown-bulk-manual");
+    expect(m.node("shutdown-selection-count").textContent).toContain("2 manual PID(s) selected");
+    expect(m.node("shutdown-bulk-graceful").disabled).toBe(true);
+    expect(m.node("shutdown-bulk-manual").disabled).toBe(true);
+
+    await m.click("shutdown-bulk-clear");
+    expect(m.node("shutdown-selection-count").textContent).toContain("0 graceful selected");
+    expect(m.node("shutdown-selection-count").textContent).toContain("0 manual PID(s) selected");
+  });
+
   it("submits only selected verified owner identifiers through native execute",async()=>{
     const m=mount();
     await m.open();
