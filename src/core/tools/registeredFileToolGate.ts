@@ -12,6 +12,8 @@ import crypto from "node:crypto";
 import { readPermanentAccessRegistry } from "../desktopUi/permanentRegistryStore.js";
 import { parseReadOnlyServiceArgs } from "../runtime/serviceReadPolicy.js";
 import { certifiedBrowserObservation, certifiedDelegateWebAction } from "./browserFilePolicyCertification.js";
+import { certifiedExplicitGrepSearchArgs } from "./filePolicyArgumentCertification.js";
+export { certifiedExplicitGrepSearchArgs } from "./filePolicyArgumentCertification.js";
 import { evaluatePersistentAccess, type ExecutableIdentity, type FileOperation, type PersistentAccessPolicy }
   from "../desktopUi/persistentAccessPolicy.js";
 
@@ -259,26 +261,6 @@ function certifiedRegistryAwareDiscovery(name:string,args:Args|undefined):boolea
       args[key]===undefined||typeof args[key]==="string");
   }
   return false;
-}
-export function certifiedExplicitGrepSearchArgs(args:Args|undefined):boolean{
-  if(!args||typeof args!=="object"||Array.isArray(args))return false;
-  const allowed=["filePaths","query","caseSensitive","isRegex","offset","limit",
-    "workspace","cwd","projectId"];
-  if(Object.keys(args).some(key=>!allowed.includes(key)))return false;
-  if(!Array.isArray(args.filePaths)||args.filePaths.length<1||args.filePaths.length>50||
-      args.filePaths.some(item=>typeof item!=="string"||!item.trim()||item.length>2048))
-    return false;
-  if(typeof args.query!=="string"||!args.query.trim()||args.query.length>200)return false;
-  if(args.isRegex!==undefined&&args.isRegex!==false)return false;
-  if(args.caseSensitive!==undefined&&typeof args.caseSensitive!=="boolean")return false;
-  if(args.offset!==undefined&&(!Number.isSafeInteger(args.offset)||
-     Number(args.offset)<0||Number(args.offset)>1000000))return false;
-  if(args.limit!==undefined&&(!Number.isSafeInteger(args.limit)||
-     Number(args.limit)<1||Number(args.limit)>200))return false;
-  for(const key of ["workspace","cwd","projectId"])
-    if(args[key]!==undefined&&(typeof args[key]!=="string"||!String(args[key]).trim()))
-      return false;
-  return true;
 }
 const READ_SEARCH = new Set(["glob","grep","ripgrep_search","list_directory","list_dir",
   "find_files","superagent_grep_search","superagent_find_files","superagent_list_files"]);
