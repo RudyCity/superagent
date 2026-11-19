@@ -20,13 +20,18 @@ const configRoot = process.env.SUPERAGENT_CONFIG_DIR?.trim()
   : path.join(os.homedir(), ".superagent-r");
 const binDir = path.join(configRoot, "bin");
 
+const isAuto = process.argv.includes("--auto");
+const shouldBuild = process.argv.includes("--build");
+
 if (process.platform !== "win32") {
+  if (isAuto) {
+    // postbuild runs on every supported host. Tray auto-promotion is Windows-only,
+    // so non-Windows builds must skip it without failing TypeScript/package CI.
+    process.exit(0);
+  }
   console.error("SuperAgent Tray installation currently supports Windows executables.");
   process.exit(2);
 }
-
-const isAuto = process.argv.includes("--auto");
-const shouldBuild = process.argv.includes("--build");
 
 if (shouldBuild) {
   const cargoBin = path.join(os.homedir(), ".cargo", "bin");
