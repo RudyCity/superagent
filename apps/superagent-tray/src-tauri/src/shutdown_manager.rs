@@ -1,7 +1,8 @@
-//! Native-only, owner-scoped shutdown review and execution.
-//! Graceful and force-stop follow authenticated owner protocols. Manual Kill
-//! requires an additional focused native approval and exact OS PID/birth/name
-//! pin, allowing the human operator to override missing application attestation.
+//! Native-only shutdown review and execution.
+//! The simple Force Selected path is intentionally owner-agnostic: the human
+//! selects observed processes and the backend revalidates exact OS PID,
+//! executable and process birth immediately before termination. Legacy
+//! graceful/owner protocols remain available internally for compatibility.
 
 use super::{config_dir, core_request, lifecycle_console_request, remote_service_detection,
     runtime_control, runtime_detection, server_info, show_main, tray_lifecycle};
@@ -174,9 +175,9 @@ async fn verify_direct_core_idle(expected_pid:u32, expected_port:u16) -> Result<
     Ok(())
 }
 
-/// Only OS-observed service entries can be manually killed. An unknown
-/// runtime executable is allowed after human approval, but critical OS
-/// processes and this Tray cannot be selected. No free-form PID control.
+/// Force Selected ignores owner provenance. Any observed PID-backed row may
+/// be targeted after human approval, except critical OS processes and this
+/// Tray. No free-form PID supplied by the WebView is ever accepted.
 fn manual_process_allowed(_kind:&str,pid:u32,name:&str)->bool {
     if pid<=4 || pid==std::process::id() {return false;}
     let executable=name.to_ascii_lowercase();
@@ -234,7 +235,7 @@ fn guardian_os_candidates(dir:&std::path::Path,system:&System)->Vec<Item> {
         found.push(Item::new(
             format!("guardian-os:{port}:{pid}"),"Guardian watchdog (OS lease)",
             "managed","unverified",
-            "Local Guardian lease and live OS process match; Core inventory is not required for a manual kill",
+            "Local Guardian lease and live OS process match; Core inventory is not required for Force Selected",
             false,false,
             Some("Manual Kill requires separate focused native approval".into()),
             Some(port),Some(pid)));
@@ -261,7 +262,7 @@ async fn inspect() -> Result<Preview, String> {
     let inventory = match lifecycle_console_request(json!({"action":"inventory"})).await {
         Ok(v) => v,
         Err(_) => {
-            warning=Some("Authenticated lifecycle inventory unavailable; unknown owners cannot be stopped.".into());
+            warning=Some("Authenticated lifecycle inventory unavailable; OS PID force selection remains available for observed processes.".into());
             json!({})
         }
     };
