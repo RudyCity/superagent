@@ -243,9 +243,14 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       // Grant clientA only; clientB remains unapproved and isolated.
       grantProjectAccess(clientA,MCP_CONNECTION_PROJECT_ID,["execute"]);
       const gwOk=await invoke(server,"superagent_tool_execute",{
-        name:"superagent_desktop_ui",arguments:{command:"find_window",query:secretTitle,limit:5},
+        name:"superagent_desktop_ui",arguments:{command:"probe"},
       });
       expect(gwOk.isError).not.toBe(true);
+      // Even when a certified query runs on headless CI (where find_window may return
+      // DESKTOP_UI_UNAVAILABLE), nested caller queries never enter telemetry.
+      await invoke(server,"superagent_tool_execute",{
+        name:"superagent_desktop_ui",arguments:{command:"find_window",query:secretTitle,limit:5},
+      });
       const gwInvalidProbe=await invoke(server,"superagent_tool_execute",{
         name:"superagent_desktop_ui",arguments:{command:"probe",title:secretTitle},
       });

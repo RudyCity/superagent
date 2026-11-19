@@ -9,9 +9,17 @@ import os from "node:os";
 import { parsePersistentAccessPolicy, EMPTY_ACCESS_POLICY, type PersistentAccessPolicy } from "./persistentAccessPolicy.js";
 
 export const PERMANENT_ACCESS_FILENAME = "desktop-access-registry.json";
-export function readPermanentAccessRegistry(options: { configDir?: string } = {}): PersistentAccessPolicy | null {
+
+export interface PermanentRegistryStatus {
+  status: "absent" | "valid" | "corrupt";
+  policy: PersistentAccessPolicy | null;
+}
+
+export function readPermanentAccessRegistryStatus(options: { configDir?: string } = {}): PermanentRegistryStatus {
   const dir = options.configDir ?? process.env.SUPERAGENT_CONFIG_DIR ?? path.join(os.homedir(), ".superagent-r");
-  if (!path.isAbsolute(dir)) return EMPTY_ACCESS_POLICY;
+  if (!path.isAbsolute(dir)) {
+    return { status: "corrupt", policy: EMPTY_ACCESS_POLICY };
+  }
   const p = path.join(dir, PERMANENT_ACCESS_FILENAME);
   // Only a genuinely ABSENT v2 file allows legacy v1 migration behavior.
   // A present but corrupt or unreadable v2 file must fail CLOSED, never fall
@@ -19,14 +27,26 @@ export function readPermanentAccessRegistry(options: { configDir?: string } = {}
   try {
     fs.lstatSync(p);
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
-    return EMPTY_ACCESS_POLICY;
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      return { status: "absent", policy: null };
+    }
+    return { status: "corrupt", policy: EMPTY_ACCESS_POLICY };
   }
   try {
     const stat = fs.lstatSync(p);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size < 2 || stat.size > 128 * 1024)
-      return EMPTY_ACCESS_POLICY;
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size < 2 || stat.size > 128 * 1024) {
+      return { status: "corrupt", policy: EMPTY_ACCESS_POLICY };
+    }
     const parsed = parsePersistentAccessPolicy(JSON.parse(fs.readFileSync(p, "utf8")));
-    return parsed ?? EMPTY_ACCESS_POLICY;
-  } catch { return EMPTY_ACCESS_POLICY; }
+    if (!parsed) {
+      return { status: "corrupt", policy: EMPTY_ACCESS_POLICY };
+    }
+    return { status: "valid", policy: parsed };
+  } catch {
+    return { status: "corrupt", policy: EMPTY_ACCESS_POLICY };
+  }
+}
+
+export function readPermanentAccessRegistry(options: { configDir?: string } = {}): PersistentAccessPolicy | null {
+  return readPermanentAccessRegistryStatus(options).policy;
 }

@@ -616,6 +616,7 @@ export class DesktopUiSessionManager {
     const adapter: DesktopUiAdapter = {
       platform: baseAdapter.platform,
       probe: () => baseAdapter.probe(),
+      ...(baseAdapter.listWindows ? { listWindows: (limit?: number) => baseAdapter.listWindows!(limit ?? MAX_WINDOW_DISCOVERY_LIMIT) } : {}),
       capture: async (t) => {
         const cap = await baseAdapter.capture(t);
         latestCapture = cap;
@@ -712,12 +713,26 @@ export class DesktopUiSessionManager {
       throw new DesktopUiError("INPUT_DISABLED", "Application viewing now requires permanent registration.");
     }
     if (session.registeredViewIdentity) {
+      if (typeof session.adapter.listWindows !== "function") {
+        throw new DesktopUiError("INPUT_DISABLED", "Native OS window discovery is required for registered viewing.");
+      }
+      let observedTitle = "";
+      try {
+        const discovery = await listDiscoveredWindows(session.adapter, MAX_WINDOW_DISCOVERY_LIMIT);
+        const observed = requireFreshWindowTarget(discovery, session.target.pid, session.target.nativeId);
+        observedTitle = observed.title;
+      } catch {
+        throw new DesktopUiError("TARGET_NOT_FOUND", "Target window disappeared or native identity changed.");
+      }
+      if (observedTitle !== session.target.title) {
+        throw new DesktopUiError("INPUT_DISABLED", "Window title changed after session binding; viewing denied.");
+      }
       const currentRegistry = currentViewRegistry;
       const currentIdentity = await this.executableIdentity(session.target.pid);
       if (!currentRegistry || !currentIdentity ||
           evaluatePersistentAccess(currentRegistry, {
             kind: "desktop", app: currentIdentity, operation: "view",
-            windowTitle: session.target.title,
+            windowTitle: observedTitle,
           }).effect !== "allow" ||
           currentIdentity.sha256.toLowerCase() !== session.registeredViewIdentity.sha256.toLowerCase() ||
           currentIdentity.executablePath.toLowerCase() !== session.registeredViewIdentity.executablePath.toLowerCase()) {
@@ -791,6 +806,25 @@ export class DesktopUiSessionManager {
       throw new DesktopUiError("INPUT_DISABLED", "Trusted window approval has expired or was revoked.");
     }
     if (session.registeredGrantId) {
+      if (typeof session.adapter.listWindows !== "function") {
+        this.consentManager.revokeConsent(session.registeredGrantId);
+        throw new DesktopUiError("INPUT_DISABLED", "Native OS window discovery is required for registered input.");
+      }
+      let observedTitle = "";
+      let observedActive = false;
+      try {
+        const discovery = await listDiscoveredWindows(session.adapter, MAX_WINDOW_DISCOVERY_LIMIT);
+        const observed = requireFreshWindowTarget(discovery, session.target.pid, session.target.nativeId);
+        observedTitle = observed.title;
+        observedActive = observed.active;
+      } catch {
+        this.consentManager.revokeConsent(session.registeredGrantId);
+        throw new DesktopUiError("INPUT_DISABLED", "Target window disappeared or native identity changed.");
+      }
+      if (!observedActive || observedTitle !== session.target.title) {
+        this.consentManager.revokeConsent(session.registeredGrantId);
+        throw new DesktopUiError("INPUT_DISABLED", "Window title or foreground focus changed; input denied.");
+      }
       // Revocation and executable replacement must prevent the *next* input.
       const currentRegistry = this.permanentRegistry();
       const currentIdentity = await this.executableIdentity(session.target.pid);
@@ -798,7 +832,7 @@ export class DesktopUiSessionManager {
           currentIdentity.executablePath.toLowerCase() !== session.registeredIdentity.executablePath.toLowerCase() ||
           currentIdentity.sha256.toLowerCase() !== session.registeredIdentity.sha256.toLowerCase() ||
           !currentRegistry || !hasRegisteredDesktopInputCandidate(
-            currentRegistry, currentIdentity, session.target.title)) {
+            currentRegistry, currentIdentity, observedTitle)) {
         this.consentManager.revokeConsent(session.registeredGrantId);
         throw new DesktopUiError("INPUT_DISABLED", "Permanent app access was revoked or executable changed.");
       }

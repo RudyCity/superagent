@@ -33,6 +33,10 @@ on:
       - "tests/managedChromeTrayUi.test.ts"
       - "tests/browserRuntimeLaunchOwnership.test.ts"
       - "tests/desktop-ui-integration/registered-file-tool-gate.test.ts"
+      - "tests/desktop-ui-integration/desktop-native-mediator.test.ts"
+      - "src/core/desktopUi/desktopNativeMediator.ts"
+      - "src/core/desktopUi/permanentRegistryStore.ts"
+      - "src/core/tools/desktopUiTools.ts"
       - "tests/mcp*.test.ts"
       - "tests/lanFileQueueRecovery.test.ts"
       - "tests/lanFileRelayManager.test.ts"
@@ -90,6 +94,10 @@ on:
       - "tests/managedChromeTrayUi.test.ts"
       - "tests/browserRuntimeLaunchOwnership.test.ts"
       - "tests/desktop-ui-integration/registered-file-tool-gate.test.ts"
+      - "tests/desktop-ui-integration/desktop-native-mediator.test.ts"
+      - "src/core/desktopUi/desktopNativeMediator.ts"
+      - "src/core/desktopUi/permanentRegistryStore.ts"
+      - "src/core/tools/desktopUiTools.ts"
       - "tests/mcp*.test.ts"
       - "tests/lanFileQueueRecovery.test.ts"
       - "tests/lanFileRelayManager.test.ts"
@@ -180,7 +188,9 @@ jobs:
             tests/trayManagedChrome.test.ts \
             tests/managedChromeTrayUi.test.ts \
             tests/browserRuntimeLaunchOwnership.test.ts \
-            tests/desktop-ui-integration/registered-file-tool-gate.test.ts
+            tests/desktop-ui-integration/desktop-native-mediator.test.ts \
+            tests/desktop-ui-integration/desktop-native-mediator.test.ts
+          tests/desktop-ui-integration/registered-file-tool-gate.test.ts
 
       - name: Non-mutating source policy and release-readiness report
         run: bun scripts/report-mcp-policy-readiness.ts
@@ -223,6 +233,7 @@ jobs:
           tests/mcpFilePolicyMatrix.test.ts
           tests/mcpDelegateWebCertification.test.ts
           tests/mcpPolicyReadinessReport.test.ts
+          tests/desktop-ui-integration/desktop-native-mediator.test.ts
           tests/desktop-ui-integration/registered-file-tool-gate.test.ts
           tests/mcpCrossIdeGateway.test.ts
           tests/safeManagedChromeObservation.test.ts
