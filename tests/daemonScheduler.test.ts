@@ -1145,6 +1145,30 @@ describe("DaemonScheduler", () => {
     expect(fs.readdirSync(tmpDir).some((name) => name.endsWith(".tmp"))).toBe(false);
   });
 
+  it("force-stops future scheduling and aborts every active daemon run", () => {
+    const controllerA = new AbortController();
+    const controllerB = new AbortController();
+    const abortA = vi.fn();
+    const abortB = vi.fn();
+    controllerA.signal.addEventListener("abort", abortA);
+    controllerB.signal.addEventListener("abort", abortB);
+    (scheduler as any).activeRunAbortControllers.set("run-a", controllerA);
+    (scheduler as any).activeRunAbortControllers.set("run-b", controllerB);
+    (scheduler as any).runningJobIds.add("job-a");
+    (scheduler as any).runningJobIds.add("job-b");
+    scheduler.startDaemon(60_000);
+
+    const result = scheduler.forceStopDaemon();
+
+    expect(result).toEqual({ cancelledRuns: 2, activeJobsCount: 2 });
+    expect(scheduler.isRunning()).toBe(false);
+    expect(controllerA.signal.aborted).toBe(true);
+    expect(controllerB.signal.aborted).toBe(true);
+    expect(abortA).toHaveBeenCalledTimes(1);
+    expect(abortB).toHaveBeenCalledTimes(1);
+    expect((scheduler as any).cancelledRunIds).toEqual(new Set(["run-a", "run-b"]));
+  });
+
   it("starts and stops daemon timer cleanly", () => {
     expect(scheduler.isRunning()).toBe(false);
     scheduler.startDaemon(500);
