@@ -195,6 +195,63 @@ const BROWSER_OBSERVATION_TOOLS = new Set([
   "superagent_chrome_cdp_observe", "superagent_chrome_cdp_web",
   "superagent_control_chrome_cdp", "superagent_list_running_chrome",
 ]);
+
+const CERTIFIED_APP_STORAGE_TOOLS = new Set([
+  "superagent_memory_search", "superagent_memory_save", "superagent_get_config",
+  "superagent_switch_preset", "superagent_switch_provider", "superagent_query_history",
+  "superagent_export_session", "superagent_compact_context",
+  "superagent_lifecycle_status", "superagent_lifecycle",
+  "superagent_daemon_status", "superagent_daemon_inspect_run",
+]);
+
+/**
+ * These tools have no MCP-host filesystem effect. They can still mutate remote
+ * state or processes, so all normal OAuth/project/MCP/native approvals remain
+ * mandatory. Permanent FILE policy is intentionally not a catch-all capability
+ * blocker for unrelated browser, network, device, process or registry actions.
+ */
+const CERTIFIED_NON_FILE_TOOLS = new Set([
+  "superagent_delegate_run_until_done", "superagent_delegate_configure_chat",
+  "superagent_delegate_create_chat", "superagent_delegate_send_message",
+  "superagent_delegate_stop_generation",
+  "superagent_inspect_port", "superagent_find_process", "superagent_free_port",
+  "superagent_kill_process",
+  "superagent_import_discovered_project", "superagent_sync_projects",
+  "superagent_register_project", "superagent_update_project",
+  "superagent_remove_project", "superagent_grant_project_access",
+  "superagent_revoke_project_access",
+  "superagent_fetch_url", "superagent_web_search",
+  "superagent_lan_discover", "superagent_lan_pair_request",
+  "superagent_lan_pair_cancel", "superagent_lan_pair",
+  "superagent_lan_session_open", "superagent_lan_session_close",
+  "superagent_lan_revoke_device", "superagent_lan_device_exec",
+  "superagent_lan_terminal_exec", "superagent_lan_terminal_fleet_open",
+  "superagent_lan_terminal_fleet_close", "superagent_lan_terminal_fleet_start",
+  "superagent_lan_terminal_fleet_read", "superagent_lan_terminal_fleet_input",
+  "superagent_lan_terminal_fleet_key", "superagent_lan_terminal_fleet_resize",
+  "superagent_lan_terminal_fleet_stop", "superagent_lan_terminal_start",
+  "superagent_lan_terminal_read", "superagent_lan_terminal_input",
+  "superagent_lan_terminal_resize", "superagent_lan_terminal_key",
+  "superagent_lan_terminal_stop", "superagent_lan_android_diagnostic",
+  "superagent_lan_android_shell", "superagent_lan_android_ui_schema",
+  "superagent_lan_android_ui_click", "superagent_lan_android_screen",
+  "superagent_lan_android_input",
+  "superagent_device_tunnel_pair_request", "superagent_device_tunnel_tv_approve",
+  "superagent_device_tunnel_qr_approve", "superagent_device_tunnel_revoke",
+  "superagent_device_pair_cancel", "superagent_device_revoke",
+  "superagent_device_session_open", "superagent_device_session_close",
+  "superagent_device_exec", "superagent_device_terminal_fleet_open",
+  "superagent_device_terminal_fleet_close", "superagent_device_terminal_fleet_start",
+  "superagent_device_terminal_fleet_read", "superagent_device_terminal_fleet_input",
+  "superagent_device_terminal_fleet_key", "superagent_device_terminal_fleet_resize",
+  "superagent_device_terminal_fleet_stop", "superagent_device_terminal_start",
+  "superagent_device_terminal_read", "superagent_device_terminal_input",
+  "superagent_device_terminal_resize", "superagent_device_terminal_key",
+  "superagent_device_terminal_stop", "superagent_device_android_diagnostic",
+  "superagent_device_android_shell", "superagent_device_android_ui_schema",
+  "superagent_device_android_ui_click", "superagent_device_android_screen",
+  "superagent_device_android_input",
+]);
 /**
  * The Delegate history sync writes only its app-owned SQLite mirror. It is NOT
  * a read-only operation and still requires MCP write scope + Security Approval.
@@ -211,8 +268,8 @@ function certifiedDelegateHistorySync(args: Args | undefined): boolean {
       (!Number.isSafeInteger(args.refreshRecent) || Number(args.refreshRecent) < 0 || Number(args.refreshRecent) > 100)) return false;
   return args.force === undefined || typeof args.force === "boolean";
 }
-export type PermanentFileToolReadiness = "certified_metadata" | "certified_app_storage" |
-  "requires_explicit_files" | "action_dependent" | "uncertified";
+export type PermanentFileToolReadiness = "certified_metadata" | "certified_non_file" |
+  "certified_app_storage" | "requires_explicit_files" | "action_dependent" | "uncertified";
 /**
  * This describes ONLY the host file-policy gate, never the final authorization.
  * OAuth, principal grants, workspace scope and native approvals still apply.
@@ -241,6 +298,8 @@ export function describePermanentFileToolReadiness(name:string):string {
   const readiness=getPermanentFileToolReadiness(name);
   if(readiness==="requires_explicit_files")
     return "Supply each canonical input/target file path inside the authorized project, with matching permanent host file rules; implicit outputs are not certified.";
+  if(readiness==="certified_non_file")
+    return "No MCP-host filesystem effect. OAuth, project/MCP approval, target identity and native consent still apply.";
   if(readiness==="certified_app_storage")
     return "Bounded app-owned Delegate index synchronization only; no caller-selected file paths. MCP write scope and independent connection approval still required.";
   if(readiness==="certified_metadata")
@@ -252,7 +311,9 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
   if (BENIGN.has(name)) return "certified_metadata";
   if (name === "superagent_chrome_cdp_observe") return "certified_metadata";
   if (name === "superagent_chrome_cdp_web") return "action_dependent";
-  if (name === "superagent_delegate_sync_history") return "certified_app_storage";
+  if (name === "superagent_delegate_sync_history" || CERTIFIED_APP_STORAGE_TOOLS.has(name))
+    return "certified_app_storage";
+  if (CERTIFIED_NON_FILE_TOOLS.has(name)) return "certified_non_file";
   if (READ_TOOLS.has(name) || WRITE_TOOLS.has(name) || PATCH_TOOLS.has(name) ||
       Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,name) ||
       name==="superagent_media_plan")
@@ -352,6 +413,8 @@ export function registeredFileToolGate(
   const identity=(options.identity ?? identityOfSelf)();
   if(!identity)return "Core executable identity could not be verified.";
   if(BENIGN.has(call.name))return null;
+  if(CERTIFIED_NON_FILE_TOOLS.has(call.name))return null;
+  if(CERTIFIED_APP_STORAGE_TOOLS.has(call.name))return null;
   if (call.name === "superagent_delegate_sync_history" && certifiedDelegateHistorySync(call.args))
     return null; // App-owned index only; never a general file write exemption.
   // No blanket Chrome exemption: only side-effect-free, non-file inventory
