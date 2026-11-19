@@ -361,6 +361,21 @@ const CERTIFIED_NON_FILE_TOOLS = new Set([
  * a read-only operation and still requires MCP write scope + Security Approval.
  * No workspace/filePath or other caller-selected filesystem argument is allowed.
  */
+
+function certifiedSkillAccess(name:string,args:Args|undefined):boolean {
+  if(!args||typeof args!=="object"||Array.isArray(args))return false;
+  if(name==="superagent_get_skills")
+    return Object.keys(args).every(key=>key==="query") &&
+      (args.query===undefined||typeof args.query==="string");
+  if(name!=="superagent_use_skill")return false;
+  if(Object.keys(args).some(key=>!["skillName","path"].includes(key)))return false;
+  return typeof args.skillName==="string"&&args.skillName.trim().length>0&&args.path===undefined;
+}
+function certifiedWorktreeMetadata(args:Args|undefined):boolean {
+  if(!args||typeof args!=="object"||Array.isArray(args))return false;
+  if(args.action!=="list")return false;
+  return Object.keys(args).every(key=>["action","workspace","projectId"].includes(key));
+}
 function certifiedDelegateHistorySync(args: Args | undefined): boolean {
   if (!args || typeof args !== "object" || Array.isArray(args)) return false;
   if (Object.keys(args).some(key => !["clientId","maxChats","refreshRecent","force"].includes(key))) return false;
@@ -399,6 +414,10 @@ export function describePermanentFileToolReadiness(name:string):string {
     return "Recursive grep is denied; supply filePaths of explicitly approved files, a literal query, and bounded offset/limit.";
   if(name==="superagent_manage_services")
     return "Read-only status, inventory, owner_status, doctor, health, dashboard, logs or profile actions only; lifecycle mutations remain restricted.";
+  if(name==="superagent_use_skill")
+    return "Skill-name lookup is app-owned storage; an explicit path requires permanent read permission.";
+  if(name==="superagent_manage_worktrees")
+    return "List is certified metadata; recursive worktree removal remains blocked until every child file is mediated.";
   const readiness=getPermanentFileToolReadiness(name);
   if(readiness==="requires_explicit_files")
     return "Supply each canonical input/target file path inside the authorized project, with matching permanent host file rules; implicit outputs are not certified.";
@@ -415,7 +434,8 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
   if (BENIGN.has(name)) return "certified_metadata";
   if (name === "superagent_chrome_cdp_observe") return "certified_metadata";
   if (name === "superagent_chrome_cdp_web") return "action_dependent";
-  if (name === "superagent_delegate_sync_history" || CERTIFIED_APP_STORAGE_TOOLS.has(name))
+  if (name === "superagent_delegate_sync_history" || CERTIFIED_APP_STORAGE_TOOLS.has(name) ||
+      name==="superagent_get_skills")
     return "certified_app_storage";
   if (CERTIFIED_NON_FILE_TOOLS.has(name)) return "certified_non_file";
   if (READ_TOOLS.has(name) || WRITE_TOOLS.has(name) || PATCH_TOOLS.has(name) ||
@@ -425,7 +445,8 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
   if (BROWSER_OBSERVATION_TOOLS.has(name) || name === "superagent_manage_services" ||
       name === "superagent_tool_execute" || name === "superagent_grep_search" ||
       CERTIFIED_LAN_INVENTORY.has(name) || CERTIFIED_PAIR_STATUS.has(name) ||
-      CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name) || name === "superagent_desktop_ui")
+      CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name) || name === "superagent_desktop_ui" ||
+      name==="superagent_use_skill" || name==="superagent_manage_worktrees")
     return "action_dependent";
   return "uncertified";
 }
@@ -519,6 +540,9 @@ export function registeredFileToolGate(
   if(BENIGN.has(call.name))return null;
   if(CERTIFIED_NON_FILE_TOOLS.has(call.name))return null;
   if(CERTIFIED_APP_STORAGE_TOOLS.has(call.name))return null;
+  if(call.name==="superagent_get_skills"&&certifiedSkillAccess(call.name,call.args))return null;
+  if(call.name==="superagent_use_skill"&&certifiedSkillAccess(call.name,call.args))return null;
+  if(call.name==="superagent_manage_worktrees"&&certifiedWorktreeMetadata(call.args))return null;
   if (call.name === "superagent_delegate_sync_history" && certifiedDelegateHistorySync(call.args))
     return null; // App-owned index only; never a general file write exemption.
   // No blanket Chrome exemption: only side-effect-free, non-file inventory
