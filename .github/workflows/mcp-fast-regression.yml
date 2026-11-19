@@ -8,6 +8,13 @@ on:
       - "scripts/install-superagent-tray.ts"
       - "bun.lock"
       - "src/core/tools/mcpTools.ts"
+      - "src/core/tools/helpers.ts"
+      - "src/core/desktopApp/windows.ts"
+      - "src/core/desktopUi/adapters/windows.ts"
+      - "tests/delegateForwardedHostDispatch.test.ts"
+      - "tests/windows-bun-path.test.ts"
+      - "tests/desktop-app-independent-audit/windows-registry-inventory.test.ts"
+      - "tests/desktop-ui-discovery/providers.test.ts"
       - "src/app.tsx" # CLI StatusBar uses the same Core build entrypoint
       - "scripts/mcp-tool-policy-live-verify.ts"
       - "scripts/report-mcp-policy-readiness.ts"
@@ -83,6 +90,13 @@ on:
       - "scripts/install-superagent-tray.ts"
       - "bun.lock"
       - "src/core/tools/mcpTools.ts"
+      - "src/core/tools/helpers.ts"
+      - "src/core/desktopApp/windows.ts"
+      - "src/core/desktopUi/adapters/windows.ts"
+      - "tests/delegateForwardedHostDispatch.test.ts"
+      - "tests/windows-bun-path.test.ts"
+      - "tests/desktop-app-independent-audit/windows-registry-inventory.test.ts"
+      - "tests/desktop-ui-discovery/providers.test.ts"
       - "src/app.tsx" # CLI StatusBar uses the same Core build entrypoint
       - "scripts/mcp-tool-policy-live-verify.ts"
       - "scripts/report-mcp-policy-readiness.ts"
@@ -189,6 +203,10 @@ jobs:
             tests/mcpOAuthRoutes.test.ts \
             tests/mcpOAuthStore.test.ts \
             tests/mcpDelegateWebCertification.test.ts \
+            tests/delegateForwardedHostDispatch.test.ts \
+            tests/windows-bun-path.test.ts \
+            tests/desktop-app-independent-audit/windows-registry-inventory.test.ts \
+            tests/desktop-ui-discovery/providers.test.ts \
             tests/mcpPolicyReadinessReport.test.ts \
             tests/mcpApprovalAndFilePolicy.test.ts \
             tests/mcpPermissionDecision.test.ts \
