@@ -131,11 +131,29 @@
 .shutdown-manager .shutdown-danger {border-color:#b34c55;background:#972f43;color:#fff}
 .shutdown-manager .shutdown-danger:hover:not(:disabled) {background:#ad3d50}
 #shutdown-manager-dialog :focus-visible {outline:2px solid #8bc4ff;outline-offset:3px}
-@media(min-width:1100px){
+@media(min-width:1080px){
   .shutdown-manager .modal-header {padding:22px 28px 18px}
-  .shutdown-manager .modal-body {padding:22px 28px;gap:16px}
+  .shutdown-manager .modal-body {
+    padding:22px 28px;
+    gap:16px;
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    align-content:start;
+  }
+  .shutdown-stats,
+  .shutdown-panel-heading,
+  .shutdown-feedback,
+  .shutdown-services,
+  .shutdown-note,
+  .shutdown-progress {grid-column:1/-1}
   .shutdown-service {padding:13px 15px;gap:14px}
-  .shutdown-force-panel {grid-template-columns:minmax(0,1.25fr) minmax(320px,.55fr)}
+  .shutdown-force-panel {
+    grid-column:1;
+    grid-template-columns:minmax(0,1fr);
+    align-content:start;
+  }
+  .shutdown-force-copy {grid-row:auto}
+  .shutdown-manual-panel {grid-column:2}
 }
 @media(max-width:680px){
   #shutdown-manager-dialog {padding:7px}
