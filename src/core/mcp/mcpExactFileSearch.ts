@@ -5,9 +5,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
-  absoluteCanonical, certifiedExplicitGrepSearchArgs,
-  fileRulesRegistered, isPathAllowedByPermanentRegistry,
+  absoluteCanonical, fileRulesRegistered, isPathAllowedByPermanentRegistry,
 } from "../tools/registeredFileToolGate.js";
+import { certifiedExplicitGrepSearchArgs } from "../tools/filePolicyArgumentCertification.js";
 
 const MAX_FILE_BYTES=1024*1024;
 const MAX_TOTAL_BYTES=8*1024*1024;
