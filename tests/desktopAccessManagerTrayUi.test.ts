@@ -954,6 +954,110 @@ describe("independent MCP Connections and Project Access UI", () => {
   });
 });
 
+describe("complete MCP tool catalog in Security Approval Manager", () => {
+  const identityHandle="idh_0123456789abcdef";
+  const base={
+    identities:[{identityHandle,subject:"ChatGPT test",mode:"oauth",scopes:["mcp:tools","mcp:tools:write"]}],
+    projects:[{projectId:"superagent",name:"SuperAgent",type:"local",target:"D:/superagent",enabled:true}],
+    requests:[],
+  };
+  it("renders a 238-tool inventory with search, filters, pagination, host status and no automatic grants", async () => {
+    const tools=Array.from({length:238},(_,i)=>({
+      name:i===0?"superagent_terminal_example":("superagent_catalog_"+String(i).padStart(3,"0")),
+      description:i===0?"Terminal command example":"Bounded metadata tool "+i,
+      risk:i===0?"dangerous":"safe",approvalKind:i===0?"project":"read_only",
+      capability:i===0?"execute":null,
+      hostReadiness:i===0?"uncertified":"certified_metadata",
+      hostRequirement:i===0?"Uncertified host operation.":"Metadata only.",
+      hostBlocked:i===0,operationStatus:i===0?"host_uncertified":"recheck_at_execution",
+      oauthScopesRequired:i===0?["mcp:tools","mcp:tools:write"]:["mcp:tools"],
+      grantState:i===0?"choose_identity_project":"not_required",
+    }));
+    const ui=boot(true,{...base,tools});await flush();
+    expect(ui.document.getElementById("access-mcp-tool-count")!.textContent).toContain("238 aktif");
+    const list=ui.document.getElementById("access-mcp-tool-list")!;
+    expect(list.children).toHaveLength(25);
+    expect(ui.document.getElementById("access-mcp-tool-summary")!.textContent).toContain("238 dari 238");
+    ui.document.getElementById("access-mcp-tool-more")!.click();
+    expect(list.children).toHaveLength(50);
+    const search=ui.document.getElementById("access-mcp-tool-search")!;
+    search.value="terminal";search.input();
+    expect(list.children).toHaveLength(1);
+    expect(list.textContent).toContain("superagent_terminal_example");
+    expect(list.textContent).toContain("Diblokir oleh host file policy v2");
+    search.value="";search.input();
+    const filter=ui.document.getElementById("access-mcp-tool-filter")!;
+    filter.value="host_uncertified";filter.change();
+    expect(list.children).toHaveLength(1);
+    expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
+      ["approve","direct_grant"].includes(c.args.action))).toBe(false);
+  });
+
+  it("prepares only the selected Git action capability and never grants it automatically", async () => {
+    const ui=boot(true,base);await flush();
+    const identity=ui.document.getElementById("access-mcp-ident-select")!;
+    const project=ui.document.getElementById("access-mcp-proj-select")!;
+    identity.value=identityHandle;project.value="superagent";
+    identity.change();project.change();await flush();
+    const git=ui.document.getElementById("access-mcp-tool-review-superagent_git_action")!;
+    git.click();
+    expect(ui.document.getElementById("access-cap-read")!.checked).toBe(true);
+    expect(ui.document.getElementById("access-cap-execute")!.checked).toBe(false);
+    const action=ui.document.getElementById("access-mcp-tool-git-action-superagent_git_action")!;
+    action.value="commit";git.click();
+    expect(ui.document.getElementById("access-cap-git")!.checked).toBe(true);
+    expect(ui.document.getElementById("access-cap-read")!.checked).toBe(false);
+    expect(ui.document.getElementById("access-mcp-tool-selection-note")!.textContent)
+      .toContain("Tidak ada grant otomatis");
+    expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
+      ["direct_grant","approve"].includes(c.args.action))).toBe(false);
+  });
+
+  it("shows missing project selection and host certification as independent blockers", async () => {
+    const ui=boot(true,base);await flush();
+    ui.document.getElementById("access-mcp-tool-review-superagent_exec_command")!.click();
+    expect(ui.document.getElementById("access-status")!.textContent)
+      .toContain("Pilih Identitas MCP");
+    ui.document.getElementById("access-mcp-tool-host-superagent_exec_command")!.click();
+    expect(ui.document.getElementById("access-pane-rules")!.hidden).toBe(false);
+    expect(ui.document.getElementById("access-status")!.textContent)
+      .toContain("membuat aturan Allow tidak otomatis memperbaikinya");
+    expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
+      ["direct_grant","approve"].includes(c.args.action))).toBe(false);
+  });
+
+  it("fails closed when catalog loading fails; never displays stale grants", async () => {
+    const ui=boot(true,{...base,failActions:["tools"]});await flush();
+    expect(ui.document.getElementById("access-mcp-tool-list")!.textContent)
+      .toContain("Data belum terverifikasi");
+    expect(ui.document.getElementById("access-mcp-tool-summary")!.textContent)
+      .toContain("Inventaris tools gagal dimuat");
+    expect(ui.document.getElementById("access-mcp-tool-count")!.textContent)
+      .toContain("Tidak tersedia");
+  });
+
+  it("sends legacy mcp-connection approvals only to a native denial panel, not to OAuth grants", async () => {
+    const legacy={requestId:"req_legacy",projectId:"mcp-connection",projectName:"MCP Connection Controls",
+      status:"pending",subject:"Old client",capabilities:["execute"],reason:"Old request"};
+    const ui=boot(true,{...base,requests:[legacy]});await flush();
+    const panel=ui.document.getElementById("access-mcp-legacy-requests")!;
+    expect(panel.hidden).toBe(false);
+    expect(panel.textContent).toContain("tidak boleh disetujui");
+    const focus=await ui.window.__superagentAccessManagerFocusRequest("req_legacy","connections");
+    expect(focus).toEqual({targetFound:true,tab:"mcp"});
+    expect(ui.document.getElementById("access-pane-connections")!.hidden).toBe(true);
+    expect(ui.document.getElementById("access-mcp-pending-list")!.textContent)
+      .not.toContain("req_legacy");
+    const deny=ui.document.getElementById("access-mcp-legacy-list")!.firstChild!.lastChild!;
+    expect(deny.textContent).toBe("Tolak permintaan lama");
+    deny.click();await flush();
+    expect(ui.calls.some(c=>c.name==="mcp_project_access_action" && c.args.action==="deny" &&
+      c.args.payload.requestId==="req_legacy")).toBe(true);
+    expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
+      ["approve","direct_grant"].includes(c.args.action))).toBe(false);
+  });
+});
+
 describe("bulk permanent access rule operations", () => {
   it("hides bulk toolbar when no rules are registered, and displays it when rules exist", async () => {
     const ui = boot(); await flush();
