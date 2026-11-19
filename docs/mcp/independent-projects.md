@@ -62,6 +62,20 @@ The agent receives `APPROVAL_PENDING` until the owner approves in SuperAgent Tra
 
 Project grants never authorize unrelated MCP tools or other projects. OAuth scopes, native host access rules, protected files and tool restrictions remain enforced. Changing/disabling/removing a project revokes existing grants.
 
+### Security Approval Manager: three independent layers
+
+The Tray intentionally separates **connection identity**, **project capabilities**, and **host boundaries**:
+
+| Tray tab | Controls | Does not authorize |
+| --- | --- | --- |
+| **Koneksi MCP** | MCP OAuth authentication, verified identities, and connection/session inventory | Read, Write, Execute, Git, or any project/file access |
+| **Akses Proyek** | Principal-bound capability grants for a named, enabled registered project | Bypassing native device consent, host file rules, protected paths, or tool certification |
+| **Aplikasi & File** / **Aturan Aktif** | Native desktop application/window access and permanent-file rules enforced by SuperAgent Core | Selecting a project or granting an MCP identity project capabilities |
+
+Recommended sequence: authenticate the MCP client, register/select the intended project, grant only needed capabilities in **Akses Proyek** with human review, then configure or inspect host boundaries in **Aplikasi & File** and **Aturan Aktif**. A rule in the host file inventory is not evidence that an agent can read a project. Likewise, a project **Read** or **Execute** grant does not automatically create a host-file allow rule. Both checks must pass and tools which remain uncertified under Permanent File Policy still fail closed.
+
+Use the native Tray links **Kelola Akses Proyek**, **Atur Batas File Host**, and **Lihat Aturan File Aktif** to move between these independent controls; navigation never creates, upgrades, or approves a grant.
+
 ### Non-project MCP actions
 
 An MCP connection is authenticated and approved through the **OAuth connection flow**. This only authorizes connection and OAuth scopes; it grants **no tool execution**. For service management, LAN/device controls, and Desktop UI, first select a registered, enabled **local** project as the MCP session's active workspace and request `{ projectId: "superagent", capabilities: ["execute"], reason: "Operator-approved actions in this project" }` using the actual project ID. Approve in SuperAgent Tray > **Akses Proyek**. Only an approved, identity-bound Execute grant for the selected project can authorize these operations; any historical `mcp-connection` Execute grant is ignored. This remains subject to OAuth write scope, host permanent-file rules, and per-device/native consent. Remote or ambiguous project roots fail closed for these host-level operations.
