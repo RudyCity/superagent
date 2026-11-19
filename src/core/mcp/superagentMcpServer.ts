@@ -1,5 +1,10 @@
-import { registeredFileToolGate, fileRulesRegistered, getPermanentFileToolReadiness, describePermanentFileToolReadiness } from "../tools/registeredFileToolGate.js";
-import { describeBoundedDesktopPermission, describeBoundedServicePermission } from "./mcpPermissionDecision.js";
+import { registeredFileToolGate, fileRulesRegistered, getPermanentFileToolReadiness, describePermanentFileToolReadiness, CERTIFIED_DESKTOP_DISCOVERY } from "../tools/registeredFileToolGate.js";
+import {
+  describeBoundedBrowserObservePermission,
+  describeBoundedDesktopPermission,
+  describeBoundedServiceManagePermission,
+  describeBoundedServicePermission,
+} from "./mcpPermissionDecision.js";
 /**
  * superagentMcpServer.ts — Complete 3-Pillar (Tools, Resources, Prompts) MCP Server for Superagent.
  *
@@ -97,7 +102,7 @@ import { LIFECYCLE_MCP_TOOL_DEFS, dispatchLifecycleMcpTool } from "./tools/lifec
 import { PDF_MCP_TOOL_DEFS, PDF_MCP_TOOL_NAMES, dispatchPdfMcpTool } from "./tools/pdfMcpTools.js";
 import { MEDIA_MCP_TOOL_DEFS, MEDIA_MCP_TOOL_NAMES, dispatchMediaMcpTool } from "./tools/mediaMcpTools.js";
 import { DESKTOP_UI_MCP_TOOL_DEFS, dispatchDesktopUiMcpTool } from "./tools/desktopUiMcpTools.js";
-import { sanitizeDesktopUiLogPayload, sanitizeDesktopUiLogText } from "../tools/desktopUiTools.js";
+import { DISCOVERY_COMMAND_FIELDS, sanitizeDesktopUiLogPayload, sanitizeDesktopUiLogText } from "../tools/desktopUiTools.js";
 import {
   DIAGNOSTICS_MCP_TOOL_DEFS,
   dispatchDiagnosticsMcpTool,
@@ -1216,11 +1221,19 @@ function extractMcpResultText(result: unknown): string {
     const desktopCall = toolName === "superagent_desktop_ui" ||
       (toolName === MCP_GATEWAY_TOOL_NAMES.execute && rawArgs.name === "superagent_desktop_ui");
     const desktopArgs = toolName === "superagent_desktop_ui" ? rawArgs : rawArgs.arguments || {};
+    const gatewayCall = toolName === MCP_GATEWAY_TOOL_NAMES.execute;
+    const gatewayAuditArgs = {
+      targetTool: typeof rawArgs.name === "string" ? rawArgs.name : "invalid",
+      nestedRedacted: true,
+    };
     // Never persist caller-provided permission-check arguments: they may hold
     // titles, opaque tokens or protected paths, even though no tool executes.
     const permissionPreflightCall = toolName === MCP_GATEWAY_TOOL_NAMES.describe &&
       Object.prototype.hasOwnProperty.call(rawArgs, "checkArguments");
-    const permissionPreflightAuditArgs = { tool: "superagent_desktop_ui", permissionPreflight: true };
+    const permissionPreflightAuditArgs = {
+      tool: typeof rawArgs.name === "string" ? rawArgs.name : "unknown",
+      permissionPreflight: true,
+    };
     const desktopAuditArgs = Object.fromEntries(Object.entries(
       sanitizeDesktopUiLogPayload(desktopArgs as Record<string, unknown>),
     ).map(([key, value]) => [
@@ -1401,89 +1414,83 @@ function extractMcpResultText(result: unknown): string {
       emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
       throw new McpError(ErrorCode.InvalidRequest, reason);
     }
-    if (toolName !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(toolName)
-      && (typeof rawArgs.projectId === "string" || typeof rawArgs.workspace === "string" || typeof rawArgs.cwd === "string" || typeof rawArgs.worktreePath === "string")) {
-      try {
-        const resolvedTarget = resolveMcpProjectTarget(toolName, {
-          projectId: rawArgs.projectId,
-          workspace: rawArgs.workspace,
-          cwd: rawArgs.cwd,
-          worktreePath: rawArgs.worktreePath,
-          sessionWorkspace: activeWorkspace || process.cwd(),
-        });
-        effectiveWs = resolvedTarget.workspace;
-        effectiveProjectId = resolvedTarget.projectId;
-        auditContext.projectId = resolvedTarget.projectId;
-        auditContext.providerKind = resolvedTarget.project?.type ?? null;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const rawExplicitTarget = [rawArgs.workspace, rawArgs.cwd, rawArgs.worktreePath]
-          .find((value) => typeof value === "string" && value.trim()) as string | undefined;
-        if (!rawArgs.projectId && rawExplicitTarget && !/^(?:ssh:|chain:)/i.test(rawExplicitTarget)
-          && message.includes("Workspace target is not registered or authorized")) {
-          effectiveWs = path.isAbsolute(rawExplicitTarget)
-            ? path.resolve(rawExplicitTarget)
-            : path.resolve(activeWorkspace || process.cwd(), rawExplicitTarget);
-        } else {
-          emitAudit({ tool: toolName, args: rawArgs, ok: false, error: message, durationMs: 0 });
-          throw new McpError(ErrorCode.InvalidParams, message);
-        }
-      }
-    }
-
-    // For nested gateway calls, derive file scope from the target operation,
-    // not the gateway wrapper's active workspace (which may be unrelated).
-    const nestedFileArgs = toolName === MCP_GATEWAY_TOOL_NAMES.execute
-      && rawArgs.arguments && typeof rawArgs.arguments === "object"
-      && !Array.isArray(rawArgs.arguments)
-      ? rawArgs.arguments as Record<string,unknown> : rawArgs;
-    let fileGuardWorkspace = effectiveWs;
-    if (nestedFileArgs !== rawArgs) {
-      const explicitProject = typeof nestedFileArgs.projectId === "string"
-        ? getProject(nestedFileArgs.projectId) : null;
-      if (typeof nestedFileArgs.projectId === "string" &&
-          (!explicitProject || !explicitProject.enabled || explicitProject.type !== "local" ||
-            !explicitProject.root)) {
-        fileGuardWorkspace = ""; // fail closed for missing/remote project
-      } else {
-        fileGuardWorkspace = explicitProject?.root || fileGuardWorkspace;
-        for (const key of ["cwd","workspace","worktreePath"]) {
-          if (typeof nestedFileArgs[key] === "string" && nestedFileArgs[key]) {
-            fileGuardWorkspace = String(nestedFileArgs[key]);
-            break;
+    if (!gatewayCall) {
+      if (toolName !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(toolName)
+        && (typeof rawArgs.projectId === "string" || typeof rawArgs.workspace === "string" || typeof rawArgs.cwd === "string" || typeof rawArgs.worktreePath === "string")) {
+        try {
+          const resolvedTarget = resolveMcpProjectTarget(toolName, {
+            projectId: rawArgs.projectId,
+            workspace: rawArgs.workspace,
+            cwd: rawArgs.cwd,
+            worktreePath: rawArgs.worktreePath,
+            sessionWorkspace: activeWorkspace || process.cwd(),
+          });
+          effectiveWs = resolvedTarget.workspace;
+          effectiveProjectId = resolvedTarget.projectId;
+          auditContext.projectId = resolvedTarget.projectId;
+          auditContext.providerKind = resolvedTarget.project?.type ?? null;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const rawExplicitTarget = [rawArgs.workspace, rawArgs.cwd, rawArgs.worktreePath]
+            .find((value) => typeof value === "string" && value.trim()) as string | undefined;
+          if (!rawArgs.projectId && rawExplicitTarget && !/^(?:ssh:|chain:)/i.test(rawExplicitTarget)
+            && message.includes("Workspace target is not registered or authorized")) {
+            effectiveWs = path.isAbsolute(rawExplicitTarget)
+              ? path.resolve(rawExplicitTarget)
+              : path.resolve(activeWorkspace || process.cwd(), rawExplicitTarget);
+          } else {
+            emitAudit({
+              tool: toolName,
+              args: desktopCall ? desktopAuditArgs : permissionPreflightCall ? permissionPreflightAuditArgs : summarizeArgs(rawArgs),
+              ok: false,
+              error: message,
+              durationMs: 0,
+            });
+            throw new McpError(ErrorCode.InvalidParams, message);
           }
         }
       }
-    }
-    const permanentFileBlock = registeredFileToolGate({
-      name: toolName, args: rawArgs,
-    }, fileGuardWorkspace);
-    if (permanentFileBlock) {
-      auditContext.authorizationDecision = "denied";
-      auditContext.errorCode = "permanent_file_policy_denied";
-      emitAudit({ tool: toolName, args: {}, ok: false,
-        error: "Permanent file restriction denied this call", durationMs: 0 });
-      return {
-        content: [{ type: "text", text: "Access denied by host permanent file policy: " + permanentFileBlock }],
-        isError: true,
-      };
-    }
-    const blockedRoot = blockedYoloToolCall(rawArgs, effectiveWs);
-    if (blockedRoot) {
-      emitAudit({ tool: toolName, args: rawArgs, ok: false, error: "MCP hard safety blocklist denied access" });
-      return {
-        content: [{ type: "text", text: `Access denied by MCP hard safety blocklist: ${blockedRoot}` }],
-        isError: true,
-      };
+
+      const permanentFileBlock = registeredFileToolGate({
+        name: toolName, args: rawArgs,
+      }, effectiveWs);
+      if (permanentFileBlock) {
+        auditContext.authorizationDecision = "denied";
+        auditContext.errorCode = "permanent_file_policy_denied";
+        emitAudit({ tool: toolName, args: {}, ok: false,
+          error: "Permanent file restriction denied this call", durationMs: 0 });
+        return {
+          content: [{ type: "text", text: "Access denied by host permanent file policy: " + permanentFileBlock }],
+          isError: true,
+        };
+      }
+      const blockedRoot = blockedYoloToolCall(rawArgs, effectiveWs);
+      if (blockedRoot) {
+        emitAudit({
+          tool: toolName,
+          args: desktopCall ? desktopAuditArgs : permissionPreflightCall ? permissionPreflightAuditArgs : summarizeArgs(rawArgs),
+          ok: false,
+          error: "MCP hard safety blocklist denied access",
+        });
+        return {
+          content: [{ type: "text", text: `Access denied by MCP hard safety blocklist: ${blockedRoot}` }],
+          isError: true,
+        };
+      }
     }
 
     if (effectiveAllowedTools && !effectiveAllowedTools.includes(toolName)) {
       const errReason = "blocked by MCP tool allowlist";
-      emitAudit({ tool: toolName, args: rawArgs, ok: false, error: errReason });
+      const safeBlockedArgs = gatewayCall ? gatewayAuditArgs
+        : desktopCall ? desktopAuditArgs
+        : permissionPreflightCall ? permissionPreflightAuditArgs
+        : toolName.startsWith("superagent_lifecycle") ? { action: rawArgs.action }
+        : summarizeArgs(rawArgs);
+      emitAudit({ tool: toolName, args: safeBlockedArgs, ok: false, error: errReason });
       emitMcpActivity({
         type: "tool_call",
         tool: toolName,
-        args: toolName.startsWith("superagent_lifecycle") ? { action: rawArgs.action } : rawArgs,
+        args: safeBlockedArgs,
         ok: false,
         error: "Blocked by MCP tool allowlist",
         durationMs: 0,
@@ -1537,73 +1544,134 @@ function extractMcpResultText(result: unknown): string {
       } else if (toolName === MCP_GATEWAY_TOOL_NAMES.describe) {
         const found = describeGatewayTool(authorizedTools, rawArgs.name);
         const filePolicyActive = fileRulesRegistered();
-        // Optional preflight is narrowly bounded to Desktop UI and pure
-        // service-status argument shapes. Arbitrary target files, searches or
-        // mutation plans cannot be queried through a discovery oracle.
-        // Runtime still rechecks OAuth, grants, host policy and owner identity.
+        // Optional preflight is narrowly bounded to allowlisted tools/actions.
+        // Arbitrary target files, searches or mutation plans cannot be queried
+        // through a discovery oracle. Runtime still rechecks all gates.
         const hasCheckArguments = Object.prototype.hasOwnProperty.call(rawArgs, "checkArguments");
-        let preflight: Record<string, unknown> | undefined;
-        if (found && hasCheckArguments) {
-          const checkedArgs = rawArgs.checkArguments;
-          if (!["superagent_desktop_ui","superagent_services_status"].includes(found.name) ||
-              !checkedArgs || typeof checkedArgs !== "object" || Array.isArray(checkedArgs)) {
-            result = { content: [{ type: "text",
-              text: "Permission preflight requires a bounded object for an allowlisted tool." }], isError: true };
-          } else if (found.name === "superagent_services_status") {
-            const safe = describeBoundedServicePermission(checkedArgs,filePolicyActive);
-            preflight = {
-              ...safe,
-              hostFilePolicy: {active:filePolicyActive,
-                decision:!filePolicyActive?"inactive":
-                  safe.decisionCode==="SCHEMA_INVALID"?"blocked":"eligible",
-                reasonCode:safe.decisionCode==="SCHEMA_INVALID"
-                  ?"unsupported_arguments":null},
-              mcpConnectionExecute:{decision:"not_required"},
-              oauthScope:{decision:"visible_under_current_token"},
-              nativeHostApproval:{decision:"not_checked"},
-              note:"Read-only service metadata preflight. No owner scan, grants, lifecycle plan or command execution.",
-            };
-          } else {
-            const commandArgs = checkedArgs as Record<string,unknown>;
-            const command = typeof commandArgs.command === "string" ? commandArgs.command
-              : typeof commandArgs.action === "string" ? commandArgs.action : "";
-            const knownCommands = new Set(["probe","list_windows","get_active_window","find_window",
-              "inspect_window","list_installed_apps","inspect_security_prompts","live_inventory",
-              "live_stop","open","snapshot","action","close","launch_app","focus_window",
-              "close_app","restart_app","plan_package_change","apply_package_change"]);
-            const hostBlock = filePolicyActive
-              ? registeredFileToolGate({name:found.name,args:commandArgs},activeWorkspace) : null;
-            // A corrupt or unreadable grant store is not authorization.
-            // Keep diagnostics fail-closed and never expose its local path.
-            let connectionDecision: "granted" | "approval_required" | "unavailable" = "approval_required";
+        const PREFLIGHT_ALLOWLIST = new Set([
+          "superagent_desktop_ui",
+          "superagent_services_status",
+          "superagent_manage_services",
+          "superagent_chrome_cdp_observe",
+        ]);
+        const evaluatePreflight = (
+          targetToolName: string,
+          checkedArgs: Record<string, unknown>,
+        ): Record<string, unknown> => {
+          const readConnectionDecision = (): "granted" | "approval_required" | "unavailable" => {
             try {
               if (callerIdentity?.subject &&
-                  hasProjectAccess(callerIdentity,MCP_CONNECTION_PROJECT_ID,"execute"))
-                connectionDecision = "granted";
+                  hasProjectAccess(callerIdentity, MCP_CONNECTION_PROJECT_ID, "execute")) {
+                return "granted";
+              }
+              return "approval_required";
             } catch {
-              connectionDecision = "unavailable";
+              return "unavailable";
             }
-            preflight = {
-              command: knownCommands.has(command) ? command : "unrecognized",
+          };
+          if (targetToolName === "superagent_services_status") {
+            const safe = describeBoundedServicePermission(checkedArgs, filePolicyActive);
+            return {
+              ...safe,
               hostFilePolicy: {
                 active: filePolicyActive,
-                decision: !filePolicyActive ? "inactive" : hostBlock ? "blocked" : "eligible",
-                reasonCode: hostBlock
-                  ? hostBlock.includes("unsupported arguments") ? "unsupported_arguments"
-                    : "not_certified_or_denied"
-                  : null,
+                decision: !filePolicyActive ? "inactive"
+                  : safe.decisionCode === "SCHEMA_INVALID" ? "blocked" : "eligible",
+                reasonCode: safe.decisionCode === "SCHEMA_INVALID" ? "unsupported_arguments" : null,
+              },
+              mcpConnectionExecute: { decision: "not_required" },
+              oauthScope: { decision: "visible_under_current_token" },
+              nativeHostApproval: { decision: "not_checked" },
+              note: "Read-only service metadata preflight. No owner scan, grants, lifecycle plan or command execution.",
+            };
+          }
+          if (targetToolName === "superagent_chrome_cdp_observe") {
+            const safe = describeBoundedBrowserObservePermission(checkedArgs, filePolicyActive, true);
+            return {
+              ...safe,
+              hostFilePolicy: {
+                active: filePolicyActive,
+                decision: !filePolicyActive ? "inactive"
+                  : safe.decisionCode === "SCHEMA_INVALID" ? "blocked" : "eligible",
+                reasonCode: safe.decisionCode === "SCHEMA_INVALID" ? "unsupported_arguments" : null,
+              },
+              mcpConnectionExecute: { decision: "not_required" },
+              oauthScope: { decision: "visible_under_current_token" },
+              nativeHostApproval: { decision: "not_checked" },
+              note: "Metadata-only Chrome observation preflight. No CDP attach, DOM read, or file access.",
+            };
+          }
+          if (targetToolName === "superagent_manage_services") {
+            const hostBlock = filePolicyActive
+              ? registeredFileToolGate({ name: targetToolName, args: checkedArgs }, activeWorkspace) : null;
+            const connectionDecision = readConnectionDecision();
+            const safe = describeBoundedServiceManagePermission({
+              args: checkedArgs,
+              oauthAllowed: true,
+              connectionDecision,
+              filePolicyActive,
+              hostBlock,
+            });
+            return {
+              ...safe,
+              hostFilePolicy: {
+                active: filePolicyActive,
+                decision: !filePolicyActive ? "inactive"
+                  : safe.decisionCode === "SCHEMA_INVALID" || hostBlock ? "blocked" : "eligible",
+                reasonCode: safe.decisionCode === "SCHEMA_INVALID" ? "unsupported_arguments"
+                  : hostBlock ? "not_certified_or_denied" : null,
               },
               mcpConnectionExecute: { decision: connectionDecision },
               oauthScope: { decision: "visible_under_current_token" },
               nativeHostApproval: { decision: "not_checked" },
-              ...describeBoundedDesktopPermission({
-                oauthAllowed: true, // found came from the current OAuth-authorized catalog.
-                connectionDecision,
-                filePolicyActive,
-                hostBlock,
-              }),
-              note: "Read-only advisory snapshot. No approval is created; no window is opened. Runtime rechecks all policy layers, target identity and native consent.",
+              note: "Read-only service manager preflight. No owner scan, approval creation, or lifecycle mutation.",
             };
+          }
+          const command = typeof checkedArgs.command === "string" ? checkedArgs.command
+            : typeof checkedArgs.action === "string" ? checkedArgs.action : "";
+          const knownCommands = new Set([
+            ...CERTIFIED_DESKTOP_DISCOVERY,
+            ...Object.keys(DISCOVERY_COMMAND_FIELDS),
+            "live_inventory", "live_stop", "open", "snapshot", "action", "close",
+          ]);
+          const hostBlock = filePolicyActive
+            ? registeredFileToolGate({ name: targetToolName, args: checkedArgs }, activeWorkspace) : null;
+          const connectionDecision = readConnectionDecision();
+          const supportedFields = DISCOVERY_COMMAND_FIELDS[command]
+            ? [...DISCOVERY_COMMAND_FIELDS[command]] : undefined;
+          return {
+            command: knownCommands.has(command) ? command : "unrecognized",
+            hostFilePolicy: {
+              active: filePolicyActive,
+              decision: !filePolicyActive ? "inactive" : hostBlock ? "blocked" : "eligible",
+              reasonCode: hostBlock
+                ? hostBlock.includes("unsupported arguments") ? "unsupported_arguments"
+                  : "not_certified_or_denied"
+                : null,
+            },
+            mcpConnectionExecute: { decision: connectionDecision },
+            oauthScope: { decision: "visible_under_current_token" },
+            nativeHostApproval: { decision: "not_checked" },
+            ...describeBoundedDesktopPermission({
+              oauthAllowed: true, // found came from the current OAuth-authorized catalog.
+              connectionDecision,
+              filePolicyActive,
+              hostBlock,
+              supportedFields,
+            }),
+            note: "Read-only advisory snapshot. No approval is created; no window is opened. Runtime rechecks all policy layers, target identity and native consent.",
+          };
+        };
+
+        let preflight: Record<string, unknown> | undefined;
+        if (found && hasCheckArguments) {
+          const checkedArgs = rawArgs.checkArguments;
+          if (!PREFLIGHT_ALLOWLIST.has(found.name) ||
+              !checkedArgs || typeof checkedArgs !== "object" || Array.isArray(checkedArgs)) {
+            result = { content: [{ type: "text",
+              text: "Permission preflight requires a bounded object for an allowlisted tool." }], isError: true };
+          } else {
+            preflight = evaluatePreflight(found.name, checkedArgs as Record<string, unknown>);
           }
         }
         if (result === undefined) {
@@ -1671,14 +1739,16 @@ function extractMcpResultText(result: unknown): string {
         : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
           ? { action: lifecycleParams.action, workflowId: lifecycleParams.workflowId,
               runId: lifecycleParams.runId, stepId: lifecycleParams.stepId,
-              workerId: lifecycleParams.workerId } : rawArgs;
+              workerId: lifecycleParams.workerId }
+        : gatewayCall ? gatewayAuditArgs
+        : rawArgs;
       const safeActivityOutput = privateBrowser
         ? "[DELEGATE_CDP_RESPONSE_REDACTED]"
         : desktopCall ? "[DESKTOP_UI_RESPONSE_REDACTED]"
         : permissionPreflightCall ? "[TOOL_PERMISSION_PREFLIGHT_REDACTED]"
         : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
           ? "[EXTERNAL_LIFECYCLE_RESPONSE_REDACTED]" : outputText;
-      emitAudit({ tool: toolName, args: rawArgs, ok: !failed, ...(failed ? { error: outputText } : {}), durationMs });
+      emitAudit({ tool: toolName, args: safeActivityArgs, ok: !failed, ...(failed ? { error: safeActivityOutput } : {}), durationMs });
       emitMcpActivity({
         type: "tool_call",
         tool: toolName,
@@ -1704,7 +1774,9 @@ function extractMcpResultText(result: unknown): string {
         : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
           ? { action: lifecycleParams.action, workflowId: lifecycleParams.workflowId,
               runId: lifecycleParams.runId, stepId: lifecycleParams.stepId,
-              workerId: lifecycleParams.workerId } : rawArgs;
+              workerId: lifecycleParams.workerId }
+        : gatewayCall ? gatewayAuditArgs
+        : rawArgs;
       const safeErrorMsg = desktopCall
         ? "DESKTOP_UI_CALL_FAILED"
         : permissionPreflightCall ? "TOOL_PERMISSION_PREFLIGHT_FAILED"
@@ -1712,9 +1784,9 @@ function extractMcpResultText(result: unknown): string {
           ? "EXTERNAL_LIFECYCLE_CALL_FAILED" : errorMsg;
       emitAudit({
         tool: toolName,
-        args: rawArgs,
+        args: safeActivityArgs,
         ok: false,
-        error: errorMsg,
+        error: safeErrorMsg,
         durationMs,
       });
       emitMcpActivity({

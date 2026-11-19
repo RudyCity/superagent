@@ -158,6 +158,124 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       });
       expect(hidden.isError).toBe(true);
       expect(JSON.stringify(hidden)).not.toContain("mcpConnectionExecute");
+
+      // Nor can a read-only principal probe dangerous tools via superagent_tool_execute
+      // or superagent_tool_describe on superagent_tool_execute.
+      const hiddenGatewayDescribe=await invoke(server,"superagent_tool_describe",{
+        name:"superagent_tool_execute",
+        checkArguments:{name:"superagent_desktop_ui",arguments:{command:"inspect_window"}},
+      });
+      expect(hiddenGatewayDescribe.isError).toBe(true);
+      expect(JSON.stringify(hiddenGatewayDescribe)).not.toMatch(/permanent file|mcpConnectionExecute/i);
+
+      const oracleProbe=await invoke(server,"superagent_tool_execute",{
+        name:"superagent_desktop_ui",
+        arguments:{command:"inspect_window",pid:1234,nativeId:"567"},
+      });
+      expect(oracleProbe.isError).toBe(true);
+      expect(oracleProbe.content[0].text).toBe("Target tool unavailable, unauthorized, or arguments invalid.");
+      expect(JSON.stringify(oracleProbe)).not.toMatch(/permanent file policy|certified/i);
+
+      // Read-only principal CAN preflight certified read-only Chrome observe metadata.
+      const chromePreflightRes=await invoke(server,"superagent_tool_describe",{
+        name:"superagent_chrome_cdp_observe",
+        checkArguments:{command:"list_targets",transport:"delegate",delegateClientId:"client_1234"},
+      });
+      expect(chromePreflightRes.isError).not.toBe(true);
+      expect(JSON.parse(chromePreflightRes.content[0].text).permissionPreflight.decisionCode).toBe("ALLOWED_TO_ATTEMPT");
     }finally{await server.close();}
+  });
+
+  it("maintains direct vs gateway parity, redacts nested payloads in audit, and isolates distinct OAuth principals",async()=>{
+    prior=process.env.SUPERAGENT_CONFIG_DIR;
+    isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-v2-parity-"));
+    process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    fs.writeFileSync(path.join(isolated,"desktop-access-registry.json"),
+      JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
+    const clientA={mode:"oauth" as const,subject:"client-alpha",scopes:["mcp:tools","mcp:tools:write"]};
+    const clientB={mode:"oauth" as const,subject:"client-beta",scopes:["mcp:tools","mcp:tools:write"]};
+    let activeIdentity=clientA;
+    const audits:any[]=[];
+    const activities:any[]=[];
+    const unsubscribe=onMcpActivity((event)=>activities.push(event));
+    const server=createSuperagentMcpServer({
+      toolExposure:"gateway",authMode:"oauth",
+      getIdentity:()=>activeIdentity,
+      allowDangerous:true,
+      onToolCall:(event)=>audits.push(event),
+    });
+    const secretTitle="SECRET_GATEWAY_TITLE_991";
+    const secretPath="C:\\Users\\Private\\top-secret-file.env";
+    try {
+      // Preflight via superagent_desktop_ui returns machine-readable supportedFields
+      // when schema arguments are invalid, and superagent_tool_execute cannot be described directly.
+      const preflightRes=await invoke(server,"superagent_tool_describe",{
+        name:"superagent_desktop_ui",
+        checkArguments:{command:"inspect_security_prompts",limit:5},
+      });
+      const preflight=JSON.parse(preflightRes.content[0].text).permissionPreflight;
+      expect(preflight.decisionCode).toBe("SCHEMA_INVALID");
+      expect(preflight.remediationAction).toMatchObject({
+        kind:"fix_arguments",
+        supportedFields:["command","action"],
+      });
+
+      const describeExecute=await invoke(server,"superagent_tool_describe",{
+        name:"superagent_tool_execute",
+        checkArguments:{name:"superagent_desktop_ui",arguments:{command:"probe"}},
+      });
+      expect(describeExecute.isError).toBe(true);
+
+      // Preflight for superagent_manage_services separates Execute requirement from uncertified mutations.
+      const manageNeedsGrant=await invoke(server,"superagent_tool_describe",{
+        name:"superagent_manage_services",
+        checkArguments:{action:"owner_status",service:"tray"},
+      });
+      expect(JSON.parse(manageNeedsGrant.content[0].text).permissionPreflight.decisionCode)
+        .toBe("MCP_CONNECTION_EXECUTE_REQUIRED");
+      const manageUncertified=await invoke(server,"superagent_tool_describe",{
+        name:"superagent_manage_services",
+        checkArguments:{action:"restart",service:"tray",confirm:true},
+      });
+      expect(JSON.parse(manageUncertified.content[0].text).permissionPreflight.decisionCode)
+        .toBe("HOST_FILE_POLICY_UNCERTIFIED");
+
+      // Grant clientA only; clientB remains unapproved and isolated.
+      grantProjectAccess(clientA,MCP_CONNECTION_PROJECT_ID,["execute"]);
+      const gwOk=await invoke(server,"superagent_tool_execute",{
+        name:"superagent_desktop_ui",arguments:{command:"find_window",query:secretTitle,limit:5},
+      });
+      expect(gwOk.isError).not.toBe(true);
+      const gwInvalidProbe=await invoke(server,"superagent_tool_execute",{
+        name:"superagent_desktop_ui",arguments:{command:"probe",title:secretTitle},
+      });
+      expect(gwInvalidProbe.isError).toBe(true);
+      expect(gwInvalidProbe.content[0].text).toMatch(/unsupported arguments/);
+
+      // ClientB with identical server cannot inherit clientA's grant.
+      activeIdentity=clientB;
+      await expect(invoke(server,"superagent_tool_execute",{
+        name:"superagent_desktop_ui",arguments:{command:"probe",title:secretTitle},
+      })).rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
+
+      // ClientA loses grant between preflight and execute -> fails closed.
+      activeIdentity=clientA;
+      expect(revokeProjectAccess(clientA,MCP_CONNECTION_PROJECT_ID)).toBe(true);
+      await expect(invoke(server,"superagent_tool_execute",{
+        name:"superagent_desktop_ui",arguments:{command:"probe"},
+      })).rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
+
+      // Host file policy denial via gateway must not echo nested path in audit/activity.
+      grantProjectAccess(clientA,MCP_CONNECTION_PROJECT_ID,["execute"]);
+      const deniedWrite=await invoke(server,"superagent_tool_execute",{
+        name:"superagent_write_files",
+        arguments:{files:[{filePath:secretPath,content:secretTitle}]},
+      });
+      expect(deniedWrite.isError).toBe(true);
+
+      const serializedTelemetry=JSON.stringify([...audits,...activities]);
+      expect(serializedTelemetry).not.toContain(secretTitle);
+      expect(serializedTelemetry).not.toContain(secretPath);
+    }finally{unsubscribe();await server.close();}
   });
 });

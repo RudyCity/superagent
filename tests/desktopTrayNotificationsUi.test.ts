@@ -532,4 +532,61 @@ describe("Tray Notification Manager", () => {
     expect(rust).toContain("An operation reported an issue.");
     expect(rust).not.toContain('tray_notification_center::publish(\n        &config_dir()?, &scope, severity, &id, &title,\n        error');
   });
+
+  it("supports keyboard Enter/Space activation on cards and preserves unread on failed ack", async () => {
+    for (const key of ["Enter", " "]) {
+      const mounted = mount([{
+        id: "mcp-pending:connections:request-kbd", source: "security", severity: "critical",
+        title: "MCP permission pending", body: "Review connection",
+        createdAt: Date.now(), readAt: null, archivedAt: null,
+      }]);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const card = mounted.get("tray-notification-recent").children[0];
+      expect(card.tabIndex).toBe(0);
+      mounted.window.__superagentAccessManagerFocusRequest = vi.fn(async () =>
+        ({ targetFound: true, tab: "connections" }));
+      const preventDefault = vi.fn();
+      card.trigger("keydown", { key, target: card, preventDefault });
+      expect(preventDefault).toHaveBeenCalledTimes(1);
+      expect(mounted.nav).toHaveBeenCalledWith("security:connections");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(mounted.mockInvocations.filter(call =>
+        call.action === "read" && call.id === "mcp-pending:connections:request-kbd")).toHaveLength(1);
+    }
+
+    // Missing/expired request must still consume the native nonce with targetFound:false,
+    // surface a non-read error, and never mark the notification read.
+    const missingTarget = mount([{
+      id: "mcp-pending:connections:request-gone", source: "security", severity: "critical",
+      title: "MCP permission pending", body: "Review connection",
+      createdAt: Date.now(), readAt: null, archivedAt: null,
+    }]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    missingTarget.window.__superagentAccessManagerFocusRequest = vi.fn(async () =>
+      ({ targetFound: false, tab: "connections" }));
+    const missingCard = missingTarget.get("tray-notification-recent").children[0];
+    missingCard.trigger("click", { target: { closest: () => null } });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(missingTarget.mockInvocations.some(call =>
+      call.action === "navigation-ack" && call.id === "mcp-pending:connections:request-gone")).toBe(true);
+    expect(missingTarget.mockInvocations.some(call =>
+      call.action === "read" && call.id === "mcp-pending:connections:request-gone")).toBe(false);
+    expect(missingTarget.get("tray-notification-count").hidden).toBe(false);
+    expect(missingTarget.get("tray-notification-recent").children[0].textContent).toMatch(/remains unread/i);
+
+    // Tab-not-loaded race (focus helper absent): consumes ticket as NOT_DELIVERED without marking read.
+    const unloadedTab = mount([{
+      id: "mcp-pending:mcp:request-unloaded", source: "security", severity: "critical",
+      title: "Project access pending", body: "Review project",
+      createdAt: Date.now(), readAt: null, archivedAt: null,
+    }]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    unloadedTab.get("tray-notification-recent").children[0].trigger("click", { target: { closest: () => null } });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(unloadedTab.mockInvocations.some(call =>
+      call.action === "navigation-ack" && call.id === "mcp-pending:mcp:request-unloaded")).toBe(true);
+    expect(unloadedTab.mockInvocations.some(call =>
+      call.action === "read" && call.id === "mcp-pending:mcp:request-unloaded")).toBe(false);
+    expect(unloadedTab.get("tray-notification-recent").children[0].textContent).toMatch(/remains unread/i);
+  });
 });

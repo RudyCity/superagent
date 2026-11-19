@@ -209,17 +209,34 @@
           typeof ticket.nonce !== "string") return;
       let targetFound = true;
       if (pending) {
+        if (typeof window.__superagentAccessManagerFocusRequest !== "function") {
+          for (let attempt = 0; attempt < 3 && typeof window.__superagentAccessManagerFocusRequest !== "function"; attempt += 1) {
+            await Promise.resolve();
+            if (typeof window.setTimeout === "function") {
+              await new Promise((resolve) => window.setTimeout(resolve, 25));
+            }
+          }
+        }
         const focus = window.__superagentAccessManagerFocusRequest;
-        if (typeof focus !== "function") return;
-        const focused = await focus(pending.requestId, pending.tab);
-        targetFound = focused?.targetFound === true;
+        if (typeof focus !== "function") {
+          targetFound = false;
+        } else {
+          const focused = await focus(pending.requestId, pending.tab);
+          targetFound = focused?.targetFound === true;
+        }
       }
-      if (!targetFound) return;
       const receipt = await call("tray_notification_center_ack_navigation", {
         incidentId: item.id, nonce: ticket.nonce, route, targetFound,
       });
       if (receipt?.status === "DELIVERED" && receipt.route === route) {
         void refresh();
+      } else {
+        state.error = receipt?.status === "TARGET_EXPIRED"
+          ? "Notification target expired or already handled. Incident remains unread."
+          : receipt?.status === "BACKEND_UNAVAILABLE"
+            ? "Core backend unavailable to verify target. Incident remains unread."
+            : "Target incident could not be focused. Incident remains unread.";
+        render();
       }
     }).catch(() => {
       state.error = "Native notification receipt unavailable. Incident remains unread.";
@@ -234,10 +251,19 @@
       (item.archivedAt ? " is-archived" : ""));
     const page = incidentRoute(item);
     if (page) wrapper.className += " is-navigable";
-    // Every card body click is an explicit read. Lifecycle buttons do not
-    // accidentally navigate; their native actions mark read atomically.
+    wrapper.tabIndex = 0;
+    // Every card body click or keyboard activation is an explicit read. Lifecycle
+    // buttons do not accidentally navigate; their native actions mark read atomically.
     wrapper.addEventListener("click", (event) => {
       if (event.target?.closest?.("button, a, input, select, textarea")) return;
+      if (page) openDestination(item);
+      else scheduleRead(item);
+    });
+    wrapper.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      if (event.target && event.target !== wrapper &&
+          event.target.closest?.("button, a, input, select, textarea")) return;
+      event.preventDefault?.();
       if (page) openDestination(item);
       else scheduleRead(item);
     });

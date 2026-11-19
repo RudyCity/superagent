@@ -79,7 +79,7 @@ export const DESKTOP_UI_APP_COMMANDS = [
   "inspect_security_prompts",
 ] as const;
 
-const DISCOVERY_COMMAND_FIELDS: Record<string, ReadonlySet<string>> = {
+export const DISCOVERY_COMMAND_FIELDS: Record<string, ReadonlySet<string>> = {
   list_windows: new Set(["command", "action", "limit"]),
   get_active_window: new Set(["command", "action"]),
   find_window: new Set(["command", "action", "query", "pid", "limit"]),

@@ -1944,8 +1944,14 @@
         // The native incident identifies the tab even if Core is still loading.
         // Authenticated request data can correct stale hints on refresh.
         setActiveTab(tab || "mcp");
+        const wasRefreshing = Boolean(mcpCache.refreshing);
         await refreshMcpRequests();
-        return {targetFound:highlightMcpNotificationRequest() === true,
+        let found = highlightMcpNotificationRequest() === true;
+        if (!found && wasRefreshing) {
+          await refreshMcpRequests();
+          found = highlightMcpNotificationRequest() === true;
+        }
+        return {targetFound:found,
           tab:state.activeTab};
       };
       window.__superagentAccessManagerRefresh = () => {

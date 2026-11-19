@@ -122,8 +122,17 @@ pub fn consume(dir:&Path, incident_id:&str, nonce:&str, route:&str,
     Ok(Some(entry))
 }
 pub fn receipt(incident_id:&str,route:&str,status:&str)->Value{
-    json!({"status":status,"route":route,"incidentHash":hash_id(incident_id),
-        "nativeVersion":env!("CARGO_PKG_VERSION")})
+    let target_tab = route.split_once(':').map(|(_, tab)| tab);
+    json!({
+        "status": status,
+        "route": route,
+        "targetTab": target_tab,
+        "targetFound": status == "DELIVERED",
+        "incidentHash": hash_id(incident_id),
+        "nativeVersion": env!("CARGO_PKG_VERSION"),
+        "webviewDigest": env!("SUPERAGENT_TRAY_UI_DIGEST"),
+        "sourceBuildSha": option_env!("SUPERAGENT_TRAY_SOURCE_REVISION"),
+    })
 }
 #[cfg(test)]
 mod tests {
@@ -153,6 +162,8 @@ mod tests {
             "security:connections",true).unwrap().is_none());
         assert!(consume(&dir,"mcp-pending:connections:req_valid",nonce,
             "security:connections",true).unwrap().is_none());
+        assert!(consume(&dir,"mcp-pending:connections:req_valid","../tampered",
+            "security:connections",true).unwrap().is_none());
         let issued=issue(&dir,"mcp-pending:connections:req_valid").unwrap();
         let nonce=issued["nonce"].as_str().unwrap();
         assert!(consume(&dir,"mcp-pending:connections:req_valid",nonce,
@@ -167,6 +178,12 @@ mod tests {
             "security:connections",true).unwrap().is_some());
         assert!(consume(&dir,"mcp-pending:connections:req_valid",nonce,
             "security:connections",true).unwrap().is_none());
+        let delivered = receipt("mcp-pending:connections:req_valid", "security:connections", "DELIVERED");
+        assert_eq!(delivered["targetFound"], Value::Bool(true));
+        assert_eq!(delivered["targetTab"], Value::String("connections".into()));
+        assert_eq!(delivered["webviewDigest"].as_str().map(str::len), Some(64));
+        let not_delivered = receipt("mcp-pending:connections:req_valid", "security:connections", "NOT_DELIVERED");
+        assert_eq!(not_delivered["targetFound"], Value::Bool(false));
         tray_notification_center::resolve(&dir,"mcp-pending:connections:req_valid").unwrap();
         assert!(issue(&dir,"mcp-pending:connections:req_valid").is_err());
         let _=std::fs::remove_dir_all(dir);

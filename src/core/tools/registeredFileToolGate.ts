@@ -122,11 +122,11 @@ const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace
   "superagent_process_pool_status","superagent_lan_capabilities",
   "superagent_media_capabilities",
 ]);
-const READ_ONLY_SERVICE_ACTIONS = new Set([
+export const READ_ONLY_SERVICE_ACTIONS = new Set([
   "status","inventory","owner_status","doctor","health","dashboard","logs","profile",
 ]);
 /** Read-only service inspection cannot carry restart/upgrade/file arguments. */
-function certifiedServiceInspection(args:Args|undefined):boolean {
+export function certifiedServiceInspection(args:Args|undefined):boolean {
   if (!args || typeof args!=="object" || Array.isArray(args) ||
       !READ_ONLY_SERVICE_ACTIONS.has(String(args.action))) return false;
   if (Object.keys(args).some(key => !["action","service","port","limit"].includes(key)))
@@ -141,7 +141,7 @@ function certifiedServiceInspection(args:Args|undefined):boolean {
     return false;
   return true;
 }
-const CERTIFIED_DESKTOP_DISCOVERY = new Set([
+export const CERTIFIED_DESKTOP_DISCOVERY = new Set([
   "probe","list_windows","get_active_window","find_window",
   "list_installed_apps","live_inventory","inspect_security_prompts",
 ]);

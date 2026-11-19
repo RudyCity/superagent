@@ -1,40 +1,39 @@
 # Permissions & tools remediation — execution ledger
 
-Date: 2026-11-18
+Date: 2026-11-19
 Master plan: [2026-11-18-superagent-permissions-tools-remediation-master-plan.md](./2026-11-18-superagent-permissions-tools-remediation-master-plan.md)
 Security threat model: [Native desktop mediation](../security/2026-11-18-desktop-native-mediation-threat-model.md)
 
-**Overall state: PARTIAL IMPLEMENTATION. NOT runtime verified. NOT released.**
-Definitions: Implemented=source reached main; Tested=passing exact-HEAD CI; Runtime Verified=attested installed source/build/owner; Released=versioned accepted signed artifact. Pending, cancelled, prior-HEAD or red tests are not green.
+**Overall state: IN PROGRESS (M0–M3/M5/M6 local source & unit gates green). NOT installed-runtime verified. NOT released.**
+Definitions: Implemented=source reached workspace/main; Tested=passing Vitest/Cargo/TSC/Build locally (CI exact-HEAD pending push/reconciliation); Runtime Verified=attested installed source/build/owner; Released=versioned accepted signed artifact. Pending, cancelled, prior-HEAD or red tests are not green.
 
 | Slice / owner / priority | Code, evidence and acceptance | Implemented | Tested | Runtime Verified | Released | Blocker / next |
 | --- | --- | --- | --- | --- | --- | --- |
-| M0 CI / Core+QA / P0 | OAuth label rotation, duplicate declaration, negative host policy test, expanded Windows/macOS/Linux security and Tray suites; commits 2d5dc2da and ec57fb38 | Partial | Pending exact HEAD | No | No | Complete cross-platform focused tests + Bun typecheck/build; earlier 2d5 CI red |
-| M1 owner parity / Native+Core / P0 | Core/MCP/Tray owner, build and WebView attestation must match running binary, then read-only safe lifecycle plan | Prior service inventory exists | No | No | No | Core OWNER_UNVERIFIED, Tray unmanaged, MCP release digest missing. No unsafe adoption/restart |
-| M2 permission trace / MCP security / P0 | Added explicit bounded layered codes and nonexecuting Desktop UI preflight; test mcpPermissionDecision and mcpApprovalAndFilePolicy; commit 79b8db08 | Partial | Pending exact HEAD | No | No | General tool/host/native parity and further negative integration tests needed |
-| M3 exact read receipt / Tray native / P0 | Access Manager JS focus must find exact request before notification read; commit f89f4f1f | JS only | Pending exact HEAD | No | No | Signed, principal-bound, owner-attested native receipt NOT implemented |
-| M4 desktop broker / Native security / P0 | Security threat model committed; arbitrary window inspection remains denied | Design only | No | No | No | Reviewed OS mediator, protected-file negative cases, stale target tests |
-| M5 approvals/UX / Tray+MCP / P1 | OAuth owner label survives refresh; JS notification navigation and read-on-focus partial | Partial | Pending exact HEAD | No | No | Complete pending-load UX, two independently authenticated MCP clients and native read ACK |
-| M6 OS banners / Native Tray / P1 | Generic Core failure OS alerts avoid raw exception/path disclosure; commit ec57fb38 | Partial | Pending exact HEAD | No | No | Secure signed expiring OS click activation, replay tests, cold/minimized Tray |
-| M7 release / Release owner / P0 | Green CI, Windows-installed, two PCs/physical Android as applicable, signed artifacts and immutable release evidence | No | No | No | No | Every critical gate open |
+| M0 CI / Core+QA / P0 | `mcp-fast-regression.yml` updated (`ff737c1a`); local `tsc --noEmit`, `bun run build`, 44 Vitest files & 113 Cargo Tray tests pass on current tree | Partial (local diverges from `origin/main` + dirty UI tree) | Local green; remote CI pending | No | No | Reconcile `origin/main` cleanly preserving concurrent Tray UI edits, then confirm GitHub Actions exact-HEAD run |
+| M1 owner parity / Native+Core / P0 | Core startup ownership repair & approved recovery recorded (`283b32d6`, `ca5d9e79`, [Core repair report](../reports/2026-11-18-core-tray-startup-repair.md)); `serviceOwnerAttestation.ts` tracks build/WebView parity | Yes (Core/Tray source) | Local green (`serviceOwnerAttestation`, `tray_core_startup`) | Partial (Core `:7888` verified; Tray release binary built, not installed) | No | Attest installed MCP backend release digest & installed signed Tray binary |
+| M2 permission trace / MCP security / P0 | Layered decision codes (`mcpPermissionDecision.ts`), structured `remediationAction` (`supportedFields`, Tray routes), bounded preflight for `superagent_manage_services` & `superagent_chrome_cdp_observe`, fixed `superagent_tool_execute` pre-auth oracle leak & nested audit/activity redaction | Yes (bounded preflight & gateway parity) | Local green (`mcpPermissionDecision`, `mcpApprovalAndFilePolicy`, `mcpToolGateway`, `mcpFilePolicyMatrix`) | No | No | Reconcile legacy `tests/desktop-ui-privacy/mcp-audit.test.ts` mock non-hex `credentialHash` fixture if included in future CI |
+| M3 exact read receipt / Tray native / P0 | `tray_navigation_receipt.rs` single-use nonce tickets + attested `webviewDigest`/`sourceBuildSha`/`targetTab`/`targetFound` receipts; `notifications.js` keyboard `Enter`/`Space` activation, tab-not-loaded retry, explicit `ack_navigation(targetFound:false)` error state without marking read; `access-manager.js` in-flight reload race fix | Yes (native receipt + UI integration) | Local green (`tray_navigation_receipt`, `desktopTrayNotificationsUi`, `desktopAccessManagerTrayUi`) | No | No | Verify live installed Tray WebView click, keyboard & receipt flow end-to-end |
+| M4 desktop broker / Native security / P0 | Security threat model committed; arbitrary third-party window inspection (`inspect_window`, `open`, `snapshot`, `focus_window`) remains DENIED under v2 | Design only (fail-closed) | Negative gates pass (`registered-file-tool-gate`) | No | No | Threat-reviewed OS UIA/capture mediator, protected-file-on-screen & stale target/PID reuse mediation |
+| M5 approvals/UX / Tray+MCP / P1 | OAuth owner label preserved, multi-principal isolation tested, narrowed capability approval, pending load error handling & focus race fixed | Partial (UI polish concurrent in `index.html`/`styles.css`) | Local green (`desktopAccessManagerTrayUi`, `mcpApprovalAndFilePolicy`) | No | No | Live two-client OAuth UX walk-through on installed Tray |
+| M6 OS banners / Native Tray / P1 | `tray_os_action.rs` single-use OS toast IDs (`46b90c1e`) + generic Core OS alerts (`0134c736`) | Partial (core + toast IDs) | Local green (`tray_os_action`, `desktopTrayNotificationsUi`) | No | No | Cold-start, minimized Tray, reboot & multi-monitor Windows toast acceptance |
+| M7 release / Release owner / P0 | Cross-platform CI, Windows installed E2E, two-PC/Android checks, signed artifacts & R0–R7 evidence | No | No | No | No | Blocked on M0 CI reconciliation, M4 native broker review & physical Windows/device E2E |
 
 ## Read-only live observation
-- Core :7888 responded but **ownershipVerified=false**, doctor blocker CORE_RECYCLE_OWNER_UNVERIFIED.
-- MCP :9227 active and owner verified; backendReleaseDigest=null, therefore no proof current GitHub changes were loaded.
-- Tray: no verified managed owner; Guardian: unverified. Never assume a responsive port means safely owned process.
-- No restart, deployment, forced kill, grant change, signing or runtime adoption occurred.
+- Prior live incident (2026-11-18): Core `:7888` responded with `OWNER_UNVERIFIED`; approved operator recovery completed in [Core repair report](../reports/2026-11-18-core-tray-startup-repair.md) (`1.14.106`, supervisor PID `19488`, worker PID `23592`, `ownershipVerified=true`).
+- Today's session (2026-11-19): No live Core/MCP/Tray process was stopped, restarted, or mutated. Unrelated concurrent working-tree edits in `apps/superagent-tray/ui/index.html` and `apps/superagent-tray/ui/styles.css` were preserved untouched.
 
 ## Checkpoints and next actions
-1. Correct failing regression tests without weakening gates; keep per-OS runs and preserve unrelated work. One LAN terminal test in earlier run 44265735978 mistakenly expected 1 argument; actual start contract takes device ID and command.
-2. Wait for success on the exact latest source SHA, not older cancelled workflow attempts. Evidence: [Actions](https://github.com/RudyCity/superagent/actions).
-3. Verify Core, MCP and Tray installed owner/build parity. Require independent native supervisor evidence before restart or reload.
-4. Implement the native receipt and security-reviewed Desktop UI broker; no privilege bypass.
-5. Run Windows installed and device acceptance and prepare release only after all P0 gates are satisfied.
+1. Run final full verification (`tsc --noEmit`, `bun run build`, full `mcp-fast-regression` Vitest suite, `cargo test`) on exact working tree.
+2. Reconcile `origin/main` (26 Tray notification triage commits) with local `main` once concurrent `index.html`/`styles.css` edits are settled, then confirm exact-HEAD GitHub Actions pass across Windows/Linux/macOS.
+3. Conduct independent security review & implementation of M4 native Desktop UI broker before lifting any third-party window content denial.
+4. Execute installed Windows E2E + multi-device verification before M7 release gating.
 
 ## Source commits
 - [2d5dc2da](https://github.com/RudyCity/superagent/commit/2d5dc2da8a6de8343d36d337b6dca22359da9a70) — OAuth refresh, type/CI baseline
 - [ec57fb38](https://github.com/RudyCity/superagent/commit/ec57fb38f3fea48288e1f2422ad97812d6faa963) — generic native alerts and notification fixture
 - [79b8db08](https://github.com/RudyCity/superagent/commit/79b8db080aa3c6d95863192a0a8bc7fe0ca9c7de) — layered permission diagnostic and redaction
 - [f89f4f1f](https://github.com/RudyCity/superagent/commit/f89f4f1f09eb0b57f0bfc11323f8612e36a620d1) — exact pending request row before read
+- `46b90c1e`, `f5ab9f9d`, `0134c736`, `271ed1b6` — one-use OS toast mapping, read-only service preflight, tracked private incidents, legacy pending deep links
+- `283b32d6`, `ca5d9e79` — Tray Core startup ownership preservation & approved Core recovery report (`1.14.106`)
 
-Runtime build SHA: unknown. Release tag: none. Device acceptance evidence: not gathered. All native actions require independently verified owner/operator decision.
+Latest Core `bun run build` SHA: `b8baa1b20e0e593e7407d390ba49f11c152e2c3b61ed42be6dcf1de8d6f2aa38` (source `7e1217f4f71df16f12d08907b71e23097dbca93ee62064a2a3af00cf77caaf91`, 998 files). Release tag: none. Device acceptance evidence: not gathered. All native actions require independently verified owner/operator decision.

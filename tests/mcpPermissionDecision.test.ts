@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { describeBoundedDesktopPermission, describeBoundedServicePermission, MCP_PERMISSION_DECISION_CODES } from "../src/core/mcp/mcpPermissionDecision.js";
+import {
+  describeBoundedBrowserObservePermission,
+  describeBoundedDesktopPermission,
+  describeBoundedServiceManagePermission,
+  describeBoundedServicePermission,
+  MCP_PERMISSION_DECISION_CODES,
+} from "../src/core/mcp/mcpPermissionDecision.js";
 
 describe("bounded MCP permission trace never grants an action", () => {
   const allowed = { oauthAllowed:true, connectionDecision:"granted" as const,
@@ -52,5 +58,72 @@ describe("bounded MCP permission trace never grants an action", () => {
     const result = describeBoundedDesktopPermission({...allowed,
       hostBlock:"Not certified: "+secret});
     expect(JSON.stringify(result)).not.toContain(secret);
+  });
+
+  it("provides structured machine-readable remediationAction and supports bounded service-manage and browser-observe preflight", () => {
+    const missingGrant = describeBoundedDesktopPermission({
+      ...allowed, connectionDecision: "approval_required",
+    });
+    expect(missingGrant.remediationAction).toMatchObject({
+      kind: "open_tray_section",
+      trayPage: "security",
+      trayTab: "connections",
+      projectId: "mcp-connection",
+      requiredCapability: "execute",
+      retryableAfterGrant: true,
+    });
+
+    const badFields = describeBoundedDesktopPermission({
+      ...allowed,
+      hostBlock: "Desktop UI metadata command has unsupported arguments",
+      supportedFields: ["command", "action"],
+    });
+    expect(badFields.decisionCode).toBe("SCHEMA_INVALID");
+    expect(badFields.remediationAction).toMatchObject({
+      kind: "fix_arguments",
+      supportedFields: ["command", "action"],
+      retryableWithMcpGrant: false,
+    });
+
+    const manageRead = describeBoundedServiceManagePermission({
+      args: { action: "owner_status", service: "tray" },
+      oauthAllowed: true,
+      connectionDecision: "granted",
+      filePolicyActive: true,
+      hostBlock: null,
+    });
+    expect(manageRead.decisionCode).toBe("ALLOWED_TO_ATTEMPT");
+    expect(manageRead.remediationAction).toMatchObject({ kind: "none", advisoryOnly: true });
+
+    const manageMutate = describeBoundedServiceManagePermission({
+      args: { action: "restart", service: "tray", confirm: true },
+      oauthAllowed: true,
+      connectionDecision: "granted",
+      filePolicyActive: true,
+      hostBlock: "Tool is not certified for permanent file access restrictions.",
+    });
+    expect(manageMutate.decisionCode).toBe("HOST_FILE_POLICY_UNCERTIFIED");
+    expect(manageMutate.remediationAction).toMatchObject({
+      kind: "host_policy_blocked",
+      retryableWithMcpGrant: false,
+    });
+
+    const browserOk = describeBoundedBrowserObservePermission(
+      { command: "list_targets", transport: "delegate", delegateClientId: "client_1234" },
+      true,
+      true,
+    );
+    expect(browserOk.decisionCode).toBe("ALLOWED_TO_ATTEMPT");
+
+    const browserBad = describeBoundedBrowserObservePermission(
+      { command: "navigate", transport: "delegate", url: "https://example.com" },
+      true,
+      true,
+    );
+    expect(browserBad.decisionCode).toBe("SCHEMA_INVALID");
+    expect(browserBad.remediationAction).toMatchObject({
+      kind: "fix_arguments",
+      supportedActions: ["list_targets", "transport_status"],
+    });
   });
 });

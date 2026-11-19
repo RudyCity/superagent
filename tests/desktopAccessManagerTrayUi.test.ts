@@ -4,10 +4,13 @@ import fs from "node:fs";
 const code=fs.readFileSync("apps/superagent-tray/ui/access-manager.js","utf8");
 class Element {
   tagName:string;id="";className="";placeholder="";type="";#textContent="";title="";hidden=false;disabled=false;checked=false;
+  tabIndex=0;
   rel="";href="";src="";readOnly=false;style:Record<string,string>={};dataset:Record<string,string>={};parentNode:Element|null=null;
   children:Element[]=[];events=new Map<string,Function>();attributes=new Map<string,string>();
+  classList={add:(_c:string)=>{},remove:(_c:string)=>{},toggle:(_c:string,_b?:boolean)=>{}};
   #value:string|undefined;
   constructor(tag:string){this.tagName=tag.toLowerCase();}
+  focus=vi.fn();
   get textContent():string{
     if(this.#textContent)return this.#textContent;
     return this.children.map(c=>c.textContent).join(" ");
@@ -146,11 +149,11 @@ function boot(nativeEnabled=true, mcpData?: {
     },
     createElement:(tag:string)=>new Element(tag),
   };
-  const window={__TAURI__:{core:{invoke}},addEventListener:(k:string,f:Function)=>listeners.set(k,f),
+  const window:any={__TAURI__:{core:{invoke}},addEventListener:(k:string,f:Function)=>listeners.set(k,f),
     confirm:vi.fn(()=>true)};
   vm.runInNewContext(code,{document,window,location:{hash:"#settings"},
     Number,String,Array,Object,Boolean,Error,Promise,Date,Math});
-  return {document,parent,old,calls,invoke,listeners,getPolicy:()=>policy};
+  return {document,parent,old,calls,invoke,listeners,window,mcpRequests,getPolicy:()=>policy};
 }
 describe("real permanent Access Manager Tray panel",()=>{
   it("mounts only after native v2 registry verified and shows zero-grant onboarding",async()=>{
@@ -838,5 +841,26 @@ describe("independent MCP Connections and Project Access UI", () => {
     expect(ui.old.hidden).toBe(false);
     ui.document.getElementById("access-trusted-session-toggle")!.click();
     expect(ui.old.hidden).toBe(true);
+  });
+
+  it("re-queries Core when focusRequest arrives during an in-flight reload", async () => {
+    const ui=boot(true,{...fixtures,requests:[]});await flush();
+    // Start a refresh while requests array is empty, then append the new pending request
+    // before focusing so the first in-flight response does not yet contain req_late.
+    ui.window.__superagentAccessManagerRefresh();
+    ui.mcpRequests.push({
+      requestId:"req_late",
+      projectId:"mcp-connection",
+      identityHandle:handle,
+      ownerConnectionName:"Late Client",
+      clientLabel:"Late Client",
+      capabilities:["execute"],
+      status:"pending",
+      requestedAt:Date.now(),
+    });
+    const outcome=await ui.window.__superagentAccessManagerFocusRequest("req_late","connections");
+    expect(outcome).toEqual({targetFound:true,tab:"connections"});
+    const list=ui.document.getElementById("access-mcp-connection-pending-list")!;
+    expect(list.children.some(c=>c.dataset.requestId==="req_late")).toBe(true);
   });
 });
