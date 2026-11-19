@@ -776,7 +776,7 @@
     introCopy.append(
       make("h3", "", "Koneksi MCP"),
       make("p", "access-mcp-description",
-        "Kelola izin operasi non-proyek untuk koneksi MCP secara terpisah dari hak akses file proyek. Mode YOLO Chat Agent tidak memberi izin MCP.")
+        "Koneksi MCP hanya untuk otorisasi dan pemantauan koneksi OAuth. Hak operasi Read, Write, Execute, Git, dan lainnya dikelola di Akses Proyek. Mode YOLO tidak menambah izin.")
     );
     const introRefresh = action("Muat ulang", "access-audit-refresh", () => void refreshMcpRequests());
     introRefresh.id = "access-mcp-connections-refresh";
@@ -788,57 +788,18 @@
     notice.setAttribute("role", "alert");
     notice.hidden = true;
 
-    const pendingCard = make("section", "access-stored access-mcp-card");
-    const pendingHead = make("div", "access-stored-head");
-    pendingHead.append(make("h3", "", "Permintaan Izin Koneksi"));
-    const pendingCount = make("span", "access-count", "Memuat...");
-    pendingCount.id = "access-mcp-connection-count";
-    const pendingControls = make("div", "access-mcp-pending-controls");
-    const pendingLoad = action("Load", "access-audit-refresh", () => void refreshMcpRequests());
-    pendingLoad.id = "access-mcp-connection-pending-load";
-    pendingLoad.title = "Muat ulang permintaan izin koneksi";
-    pendingLoad.setAttribute("aria-label", pendingLoad.title);
-    pendingControls.append(pendingCount, pendingLoad);
-    pendingHead.append(pendingControls);
-    const pendingList = make("div", "access-mcp-list");
-    pendingList.id = "access-mcp-connection-pending-list";
-    pendingCard.append(pendingHead, pendingList);
-
-    const grantCard = make("section", "access-editor access-mcp-card");
-    grantCard.append(
-      make("h3", "", "Berikan Izin Operasi Koneksi"),
-      make("p", "access-hint", "Izin ini khusus untuk operasi MCP non-proyek dan tidak memberi akses baca atau tulis ke file mana pun.")
+    const oauthCard = make("section", "access-stored access-mcp-card");
+    oauthCard.append(
+      make("h3", "", "Permintaan Koneksi MCP"),
+      make("p", "access-hint",
+        "Persetujuan koneksi baru dilakukan melalui alur OAuth MCP owner. Otorisasi koneksi tidak memberikan hak menjalankan tools. Untuk mengatur operasi, buka Akses Proyek, pilih identitas, proyek, dan capability."),
     );
-    const grantForm = make("div", "access-mcp-grant-form");
-    const identitySelect = select("access-mcp-connection-identity", [["", "Memuat identitas MCP..."]]);
-    const grant = action("Tinjau Izin Koneksi MCP (Execute)", "access-submit access-mcp-primary", async () => {
-      const identityHandle = identitySelect.value;
-      if (!identityHandle) {
-        status("Pilih identitas MCP terverifikasi terlebih dahulu.", "warning");
-        return;
-      }
-      // The native Tauri bridge shows the authoritative identity/scope dialog.
-      grant.disabled = true;
-      try {
-        const data = await invoke("mcp_project_access_action", {
-          action: "direct_grant",
-          payload: { identityHandle, projectId: "mcp-connection", capabilities: ["execute"] },
-        });
-        if (!data?.success) throw Error(data?.error || "Persetujuan MCP gagal.");
-        status("MCP Connection Controls disetujui untuk identitas yang dipilih.", "success");
-        await refreshMcpRequests();
-      } catch (err) {
-        status("Gagal memberikan izin koneksi: " + String(err?.message || err), "error");
-      } finally {
-        grant.disabled = false;
-      }
-    });
-    grant.id = "access-mcp-connection-grant";
-    grantForm.append(field("Identitas MCP", identitySelect), grant);
-    grantCard.append(grantForm);
-
+    const connectionLoad = action("Load", "access-audit-refresh", () => void refreshMcpRequests());
+    connectionLoad.id = "access-mcp-connection-pending-load";
+    connectionLoad.title = "Muat ulang sesi koneksi MCP";
+    oauthCard.append(connectionLoad);
     const workspaceGrid = make("div", "access-mcp-grid access-mcp-grid-workspace");
-    workspaceGrid.append(pendingCard, grantCard);
+    workspaceGrid.append(oauthCard);
 
     const connectedCard = make("section", "access-stored access-mcp-card");
     const connectedHead = make("div", "access-stored-head");
@@ -865,7 +826,7 @@
     registeredList.id = "access-mcp-registered-list";
     registeredCard.append(registeredHead,
       make("p", "access-hint",
-        "Dikelompokkan berdasarkan identitas kredensial terautentikasi, bukan URL MCP. Terdaftar tidak berarti memiliki izin Execute atau akses proyek."),
+        "Dikelompokkan berdasarkan identitas kredensial terautentikasi, bukan URL MCP. Terdaftar adalah identitas kredensial yang pernah diamati, bukan izin operasi. Hak operasi hanya melalui Akses Proyek."),
       registeredList);
 
     const telemetryGrid = make("div", "access-mcp-grid access-mcp-grid-equal");
@@ -884,14 +845,8 @@
     identities.id = "access-mcp-identity-list";
     identityCard.append(identities);
 
-    const historyCard = make("section", "access-stored access-mcp-card");
-    historyCard.append(make("h3", "", "Riwayat Keputusan Koneksi"));
-    const historyList = make("div", "access-mcp-list access-mcp-scroll-list");
-    historyList.id = "access-mcp-connection-history-list";
-    historyCard.append(historyList);
-
     const secondaryGrid = make("div", "access-mcp-grid access-mcp-grid-secondary");
-    secondaryGrid.append(identityCard, historyCard);
+    secondaryGrid.append(identityCard);
 
     pane.append(introduction, notice, workspaceGrid, telemetryGrid, secondaryGrid);
     return pane;
@@ -1662,43 +1617,33 @@
       const problems = (keys) => keys.filter(key => failures[key])
         .map(key => key + ": " + failures[key]);
       setMcpLoadError("access-mcp-project-load-error", problems(["requests", "identities", "projects", "inventory"]));
-      setMcpLoadError("access-mcp-connection-load-error", problems(["requests", "identities", "live"]));
+      setMcpLoadError("access-mcp-connection-load-error", problems(["live"]));
 
       const allRequests = mcpCache.requests;
       const projectRequests = allRequests?.filter(req => req.projectId !== "mcp-connection");
-      const connectionRequests = allRequests?.filter(req => req.projectId === "mcp-connection");
       const projectPending = projectRequests?.filter(req => req.status === "pending");
-      const connectionPending = connectionRequests?.filter(req => req.status === "pending");
       const projectHistory = projectRequests?.filter(req => req.status !== "pending");
-      const connectionHistory = connectionRequests?.filter(req => req.status !== "pending");
       const badgeProject = $("access-tab-badge-mcp");
       const badgeConnection = $("access-tab-badge-connections");
-      for (const [badge, count] of [[badgeProject, projectPending?.length], [badgeConnection, connectionPending?.length]]) {
+      const connectionSessions = Array.isArray(mcpCache.live?.clients) ? mcpCache.live.clients.length : 0;
+      for (const [badge, count] of [[badgeProject, projectPending?.length], [badgeConnection, connectionSessions]]) {
         if (badge) {
           badge.textContent = typeof count === "number" ? String(count) : "!";
-          badge.className = "access-nav-tab-badge" + (count > 0 ? " pending" : count === 0 ? " zero" : "");
+          badge.className = "access-nav-tab-badge" + (badge === badgeProject && count > 0 ? " pending" : count === 0 ? " zero" : "");
         }
       }
       if ($("access-mcp-pending-count")) {
         $("access-mcp-pending-count").textContent =
           projectPending ? projectPending.length + " permintaan" : "Belum dimuat";
       }
-      if ($("access-mcp-connection-count")) {
-        $("access-mcp-connection-count").textContent =
-          connectionPending ? connectionPending.length + " permintaan" : "Belum dimuat";
-      }
-
       // Failed refreshes never leave stale, actionable approval buttons on screen.
       renderMcpPending("access-mcp-pending-list", failures.requests ? null : projectPending, false);
-      renderMcpPending("access-mcp-connection-pending-list", failures.requests ? null : connectionPending, true);
       renderMcpHistory("access-mcp-history-list", failures.requests ? null : projectHistory);
-      renderMcpHistory("access-mcp-connection-history-list", failures.requests ? null : connectionHistory);
       highlightMcpNotificationRequest();
       renderMcpConnectedClients(mcpCache.live);
       renderMcpRegisteredConnections(mcpCache.live);
       renderMcpIdentities(failures.identities ? null : mcpCache.identities);
       populateMcpIdentitySelect("access-mcp-ident-select", mcpCache.identities);
-      populateMcpIdentitySelect("access-mcp-connection-identity", mcpCache.identities);
 
       const validProjects = Array.isArray(mcpCache.projects) ?
         mcpCache.projects.filter(project => project.projectId &&
@@ -1722,9 +1667,6 @@
       if ($("access-mcp-project-grant")) {
         $("access-mcp-project-grant").disabled =
           Boolean(failures.identities || failures.projects) || !identitiesAvailable || !validProjects.length;
-      }
-      if ($("access-mcp-connection-grant")) {
-        $("access-mcp-connection-grant").disabled = Boolean(failures.identities) || !identitiesAvailable;
       }
       if (Object.keys(failures).length) {
         status("Ada data izin MCP yang gagal dimuat. Lihat pesan pada tab MCP.", "warning");
