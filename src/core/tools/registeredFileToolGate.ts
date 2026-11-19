@@ -202,6 +202,9 @@ const CERTIFIED_APP_STORAGE_TOOLS = new Set([
   "superagent_export_session", "superagent_compact_context",
   "superagent_lifecycle_status", "superagent_lifecycle",
   "superagent_daemon_status", "superagent_daemon_inspect_run",
+  "superagent_get_logs", "superagent_get_status", "superagent_search_journal",
+  "superagent_list_workspace_chains", "superagent_muse_chat_status",
+  "superagent_muse_tunnel_start", "superagent_muse_tunnel_restart",
 ]);
 
 /**
@@ -221,6 +224,9 @@ const CERTIFIED_NON_FILE_TOOLS = new Set([
   "superagent_remove_project", "superagent_grant_project_access",
   "superagent_revoke_project_access",
   "superagent_fetch_url", "superagent_web_search",
+  "superagent_list_active", "superagent_get_process_status",
+  "superagent_close_chrome_window", "superagent_close_chrome_profile",
+  "superagent_muse_chat", "superagent_telegram_send_to_muse",
   "superagent_lan_discover", "superagent_lan_pair_request",
   "superagent_lan_pair_cancel", "superagent_lan_pair",
   "superagent_lan_session_open", "superagent_lan_session_close",
