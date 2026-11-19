@@ -535,6 +535,76 @@ function certifiedMixedAction(name:string,args:Args|undefined):boolean {
   }
   return false;
 }
+/** Git may traverse every tracked path and update the index. Certify only
+ * when the native registry grants recursive access to the entire workspace
+ * for each required effect and has no overlapping explicit deny for this
+ * executable. This does NOT elevate the independent MCP Git capability.
+ */
+const GIT_WORKSPACE_EFFECTS:Record<string,FileOperation[]> = {
+  status:["read"],diff:["read"],
+  add:["read","write"],commit:["read","write"],
+  restore:["read","write","delete"],clean:["read","write","delete"],
+};
+function sameGitApp(a:ExecutableIdentity,b:ExecutableIdentity):boolean {
+  const norm=(value:string)=>a.platform==="win32"?value.toLowerCase():value;
+  return a.platform===b.platform && norm(a.executablePath)===norm(b.executablePath) &&
+    a.sha256.toLowerCase()===b.sha256.toLowerCase();
+}
+function gitPathWithin(parent:string,child:string,platform:ExecutableIdentity["platform"]):boolean {
+  const lib=platform==="win32"?path.win32:path.posix;
+  const norm=(value:string)=>platform==="win32"?lib.normalize(value).toLowerCase():lib.normalize(value);
+  const root=norm(parent),candidate=norm(child);
+  return candidate===root || candidate.startsWith(root.endsWith(lib.sep)?root:root+lib.sep);
+}
+function certifiedGitWorkspaceAction(
+  args:Args|undefined,workspace:string,policy:PersistentAccessPolicy,identity:ExecutableIdentity,
+):boolean {
+  if(!args||typeof args!=="object"||Array.isArray(args))return false;
+  const action=typeof args.action==="string"?args.action:"";
+  const operations=GIT_WORKSPACE_EFFECTS[action];
+  if(!operations || !path.isAbsolute(workspace))return false;
+  const allKeys=["action","workspace","projectId","files","message"];
+  if(Object.keys(args).some(key=>!allKeys.includes(key)))return false;
+  if(action==="commit" && (typeof args.message!=="string" || !args.message.trim() ||
+      args.message.length>500))return false;
+  if(action!=="commit" && args.message!==undefined)return false;
+  const isTargeted=["add","restore","clean"].includes(action);
+  if(isTargeted) {
+    if(!Array.isArray(args.files)||args.files.length<1||args.files.length>50)return false;
+  }else if(args.files!==undefined)return false;
+  const root=absoluteCanonical(".",workspace);
+  if(!root)return false;
+  // Git commands can traverse the entire working tree, so a per-file grant
+  // alone is never sufficient for workspace-wide status/diff/index actions.
+  const allowed=operations.every(operation=>policy.rules.some(rule=>
+    rule.kind==="file" && rule.effect==="allow" && sameGitApp(rule.app,identity) &&
+    rule.scope.recursive && rule.operations.includes(operation) &&
+    gitPathWithin(rule.scope.path,root,identity.platform)));
+  if(!allowed)return false;
+  const overlapsDenied=policy.rules.some(rule=>rule.kind==="file" &&
+    rule.effect==="deny" && sameGitApp(rule.app,identity) &&
+    rule.operations.some(op=>operations.includes(op)) &&
+    (gitPathWithin(root,rule.scope.path,identity.platform) ||
+     gitPathWithin(rule.scope.path,root,identity.platform)));
+  if(overlapsDenied)return false;
+  if(!isTargeted)return true;
+  for(const file of args.files as unknown[]) {
+    if(typeof file!=="string"||!file.trim()||file.length>2048 ||
+       path.isAbsolute(file) || /[*?\[\]!:]/.test(file) ||
+       file.split(/[\\/]/).some(part=>part==="."||part===".."||part===".git"))return false;
+    const target=absoluteCanonical(file,root);
+    if(!target||target===root||!gitPathWithin(root,target,identity.platform))return false;
+    // Directory pathspecs and symlink targets are not certified: they can
+    // represent an unbounded collection or escape the selected project.
+    try { if(fs.existsSync(target)&&!fs.lstatSync(target).isFile())return false; }
+    catch { return false; }
+    for(const operation of operations) {
+      if(evaluatePersistentAccess(policy,{kind:"file",app:identity,path:target,operation}).effect!=="allow")
+        return false;
+    }
+  }
+  return true;
+}
 function certifiedSkillAccess(name:string,args:Args|undefined):boolean {
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
   if(name==="superagent_get_skills")
@@ -612,7 +682,7 @@ export function describePermanentFileToolReadiness(name:string):string {
   if(name==="superagent_exec_command")
     return "Only strict toolchain version diagnostics are non-file certified; arbitrary shell commands remain blocked pending native filesystem sandboxing.";
   if(name==="superagent_git_action")
-    return "Only bounded, read-only Git log (1-50 commits) is certified under permanent file policy. Status and diff are denied because they may expose protected workspace paths or contents; Git writes remain separately restricted.";
+    return "Git log (1-50) is certified. Status/diff and targeted add/commit/restore/clean require recursive native host read/write/delete grants appropriate to the action, with no denied child files. Add/restore/clean require exact file paths. MCP project Git/OAuth approvals remain separate.";
   if(name==="superagent_office_cli")
     return "Recognized Office CLI document commands are parsed into explicit read/write file effects; unknown commands remain blocked.";
   if(MIXED_ACTION_TOOLS.has(name))
@@ -754,11 +824,10 @@ export function registeredFileToolGate(
   if(call.name==="superagent_manage_worktrees"&&certifiedWorktreeMetadata(call.args))return null;
   if(call.name==="superagent_launch_chrome"&&certifiedManagedChromeLaunch(call.args))return null;
   if(MIXED_ACTION_TOOLS.has(call.name)&&certifiedMixedAction(call.name,call.args))return null;
-  // Workspace-wide status/diff can disclose protected file names and contents.
-  // A Git capability grant never bypasses the native permanent file registry.
-  if(call.name==="superagent_git_action" &&
-     ["status","diff"].includes(String(call.args?.action??"")))
-    return "Git status/diff is not certified under permanent file access restrictions because it can enumerate protected workspace files. Use an explicitly authorized file operation or inspect Git locally.";
+  if(call.name==="superagent_git_action"){
+    if(certifiedGitWorkspaceAction(call.args,workspace,policy,identity))return null;
+    return "Git action requires an exact project workspace with recursive native file grants for the action, no protected child paths, and explicit file targets for add/restore/clean. Project Git approval alone is insufficient.";
+  }
   const officeEffects=call.name==="superagent_office_cli"?officeCliEffects(call.args):null;
   const planningEffects=FIXED_PLANNING_TOOLS.has(call.name)
     ?fixedPlanningEffects(call.name,call.args,workspace)
