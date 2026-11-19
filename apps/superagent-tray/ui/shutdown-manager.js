@@ -54,6 +54,12 @@
     $("shutdown-manual-kill").disabled=lock||!state.preview||!state.manualSelected.size||
       $("shutdown-manual-confirm").value!=="KILL SELECTED";
     $("shutdown-manual-select-all").disabled=lock||!manualReady().length;
+    const gracefulReady=(state.preview?.services??[]).filter(item=>item.selectable&&active(item));
+    $("shutdown-bulk-graceful").disabled=lock||!gracefulReady.length||
+      gracefulReady.every(item=>state.selected.has(item.id));
+    $("shutdown-bulk-manual").disabled=lock||!manualReady().length||
+      manualReady().every(item=>state.manualSelected.has(item.id));
+    $("shutdown-bulk-clear").disabled=lock||(!state.selected.size&&!state.manualSelected.size);
     $("shutdown-refresh").disabled=lock;
     $("shutdown-close").disabled=state.loading;
     const selectedPids=new Set((state.preview?.services??[])
@@ -247,9 +253,22 @@
     }catch(error){feedback(safe(error),true);}
     finally{state.loading=false;buttons();}
   }
+  function selectGracefulAll(){
+    if(state.busy||state.loading||!state.preview)return;
+    for(const item of state.preview.services){
+      if(item.selectable&&active(item))state.selected.add(item.id);
+    }
+    drawServices();
+  }
   function selectManualAll(){
     if(state.busy||state.loading||!state.preview)return;
     for(const item of manualReady())state.manualSelected.add(item.id);
+    drawServices();
+  }
+  function clearBulkSelection(){
+    if(state.busy||state.loading)return;
+    state.selected.clear();
+    state.manualSelected.clear();
     drawServices();
   }
   async function manualKill(){
@@ -326,6 +345,9 @@
     $("shutdown-force-confirm")?.addEventListener("input",buttons);
     $("shutdown-manual-confirm")?.addEventListener("input",buttons);
     $("shutdown-manual-select-all")?.addEventListener("click",selectManualAll);
+    $("shutdown-bulk-graceful")?.addEventListener("click",selectGracefulAll);
+    $("shutdown-bulk-manual")?.addEventListener("click",selectManualAll);
+    $("shutdown-bulk-clear")?.addEventListener("click",clearBulkSelection);
     $("shutdown-manual-kill")?.addEventListener("click",()=>{void manualKill();});
     $("shutdown-force-all")?.addEventListener("click",()=>{void forceAll();});
     $("shutdown-manager-dialog")?.addEventListener("keydown",event=>{
