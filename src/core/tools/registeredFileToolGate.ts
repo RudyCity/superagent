@@ -154,6 +154,22 @@ function explicitFileEffects(name:string,args:Args|undefined):ExplicitFileEffect
     if(!add(args.inputPath,["read"]))return null;
     return effects;
   }
+  if(name==="superagent_pdf_render"){
+    if(!add(args.inputPath,["read"])||typeof args.outputPrefix!=="string"||!args.outputPrefix.trim()||
+       !Array.isArray(args.pages)||args.pages.length<1||args.pages.length>20)return null;
+    for(const pageNo of args.pages){
+      if(!Number.isSafeInteger(pageNo)||Number(pageNo)<1)return null;
+      if(!add(String(args.outputPrefix)+"-page-"+pageNo+".png",["write"]))return null;
+    }
+    return effects;
+  }
+  if(name==="superagent_pdf_split"){
+    if(!add(args.inputPath,["read"])||typeof args.outputPrefix!=="string"||!args.outputPrefix.trim()||
+       !Array.isArray(args.groups)||args.groups.length<1||args.groups.length>20)return null;
+    for(let i=0;i<args.groups.length;i++)
+      if(!add(String(args.outputPrefix)+"-part-"+(i+1)+".pdf",["write"]))return null;
+    return effects;
+  }
   return null;
 }
 
@@ -207,6 +223,7 @@ const EXPLICIT_EFFECT_TOOLS = new Set([
   "superagent_media_convert","superagent_media_transform","superagent_media_batch",
   "superagent_pdf_edit","superagent_pdf_edit_vector_exact","superagent_pdf_ocr_searchable",
   "superagent_pdf_redact_raster","superagent_pdf_sign","superagent_pdf_verify_signature",
+  "superagent_pdf_render","superagent_pdf_split",
 ]);
 
 /** No recursive traversal or regular expressions: search only granted file paths. */
