@@ -9,7 +9,7 @@ import {
 } from "../tools/registeredFileToolGate.js";
 
 const EFFECTS: readonly PermanentFileToolReadiness[] = [
-  "certified_metadata", "certified_app_storage", "requires_explicit_files",
+  "certified_metadata", "certified_non_file", "certified_app_storage", "requires_explicit_files",
   "action_dependent", "uncertified",
 ];
 
