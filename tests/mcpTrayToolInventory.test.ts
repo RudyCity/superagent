@@ -47,7 +47,9 @@ describe("local-operator MCP full tool inventory authorization read model",()=>{
     expect(new Set(result.tools.map(t=>t.name)).size).toBe(result.active);
     expect(result.tools.every(t=>!Object.prototype.hasOwnProperty.call(t,"runnable"))).toBe(true);
     expect(result.hostPolicyActive).toBe(true);
-    expect(result.counts.hostBlocked).toBe(0);\n    expect(result.counts.uncertified).toBe(0);\n    expect(result.counts.actionDependent).toBeGreaterThan(0);
+    expect(result.counts.hostBlocked).toBe(0);
+    expect(result.counts.uncertified).toBe(0);
+    expect(result.counts.actionDependent).toBeGreaterThan(0);
     const terminal=find(result,"superagent_exec_command");
     expect(terminal).toMatchObject({
       approvalKind:"project",capability:"execute",hostBlocked:false,
