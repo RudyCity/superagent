@@ -483,9 +483,9 @@ describe("Tray Notification Manager", () => {
     expect(install).toContain("window.__superagentPendingAccessNotificationId");
   });
   it.each([
-    ["connections", "Review MCP Connections"],
+    ["connections", "Review MCP Project Access"],
     ["mcp", "Review MCP Project Access"],
-  ])("routes pending %s notifications into the exact Security Approval tab", async (tab, label) => {
+  ])("routes all operation requests, including legacy %s, into Project Access", async (tab, label) => {
     const mounted = mount([{
       id: "mcp-pending:" + tab + ":req_x7", source: "security", severity: "critical",
       title: "Security approval pending", body: "Review MCP permission",
@@ -498,14 +498,14 @@ describe("Tray Notification Manager", () => {
     const open = card.children[1].children[3].children[0];
     expect(open.textContent).toBe(label);
     card.trigger("click", { target: { closest: () => null } });
-    expect(mounted.nav).toHaveBeenCalledWith("security:" + tab);
+    expect(mounted.nav).toHaveBeenCalledWith("security:mcp");
     expect(mounted.window.__superagentPendingAccessNotificationId).toBe("req_x7");
-    expect(mounted.window.__superagentPendingAccessNotificationTab).toBe(tab);
+    expect(mounted.window.__superagentPendingAccessNotificationTab).toBe("mcp");
     const focus = vi.fn(async () => undefined);
     mounted.window.__superagentAccessManagerFocusRequest = focus;
     open.trigger("click");
     await new Promise<void>((resolve)=>setImmediate(resolve));
-    expect(focus).toHaveBeenCalledWith("req_x7", tab);
+    expect(focus).toHaveBeenCalledWith("req_x7", "mcp");
     expect(mounted.mockInvocations.some(call => call.action === "approve")).toBe(false);
   });
   it("keeps missing or expired pending approvals unread until the exact request is focused", async () => {
@@ -516,11 +516,11 @@ describe("Tray Notification Manager", () => {
     }]);
     await new Promise<void>((resolve) => setImmediate(resolve));
     const card = mounted.get("tray-notification-recent").children[0];
-    const focus = vi.fn(async () => ({targetFound:false,tab:"connections"}));
+    const focus = vi.fn(async () => ({targetFound:false,tab:"mcp"}));
     mounted.window.__superagentAccessManagerFocusRequest = focus;
     card.trigger("click", { target: { closest: () => null } });
     await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(focus).toHaveBeenCalledWith("missing-approval", "connections");
+    expect(focus).toHaveBeenCalledWith("missing-approval", "mcp");
     expect(mounted.mockInvocations.some((call) => call.action === "read")).toBe(false);
     focus.mockResolvedValue({targetFound:true,tab:"mcp"});
     card.trigger("click", { target: { closest: () => null } });
