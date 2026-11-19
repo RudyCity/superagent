@@ -3270,6 +3270,9 @@ async fn mcp_project_access_action(
         } else if action == "direct_grant" {
             let identity_handle = text_field("identityHandle", 96)?;
             let project_id = text_field("projectId", 63)?;
+            if project_id == "mcp-connection" {
+                return Err("Koneksi MCP hanya untuk autentikasi OAuth; izin operasi harus diberikan pada proyek terdaftar".into());
+            }
             let caps = checked_capabilities()?;
             let inventory = core_request(Method::GET, "/api/desktop/access/identities", None).await?;
             let identities = inventory.get("identities").and_then(Value::as_array)
@@ -3303,6 +3306,9 @@ async fn mcp_project_access_action(
             let current_status = request.get("status").and_then(Value::as_str).unwrap_or("");
             if (action == "approve" || action == "deny") && current_status != "pending" {
                 return Err("Access request is no longer pending".into());
+            }
+            if action == "approve" && request.get("projectId").and_then(Value::as_str) == Some("mcp-connection") {
+                return Err("Permintaan Execute koneksi lama tidak dapat disetujui; gunakan Akses Proyek".into());
             }
             if action == "revoke" && current_status != "approved" {
                 return Err("Only an approved access request may be revoked".into());
