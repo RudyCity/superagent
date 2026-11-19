@@ -111,6 +111,24 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       ["superagent_list_chrome_profiles",{}],
     ] as const)expect(gate(name,args)).toMatch(/not certified/);
   });
+  it("does not use permanent file policy as a catch-all blocker for non-file capabilities",()=>{
+    const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
+    const gate=(name:string,args:Record<string,unknown>={})=>
+      registeredFileToolGate({name,args},a.root,opts);
+    for(const [name,args] of [
+      ["superagent_find_process",{query:"bun",limit:3}],
+      ["superagent_sync_projects",{mode:"dry-run"}],
+      ["superagent_device_android_diagnostic",{deviceId:"device-123",kind:"battery"}],
+      ["superagent_fetch_url",{url:"https://example.com"}],
+      ["superagent_memory_search",{query:"hello",limit:5}],
+      ["superagent_lifecycle_status",{projectId:"demo"}],
+    ] as const){
+      expect(getPermanentFileToolReadiness(name)).not.toBe("uncertified");
+      expect(gate(name,args as Record<string,unknown>)).toBeNull();
+    }
+    expect(gate("superagent_exec_command",{command:"echo still-blocked"})).toMatch(/not certified/);
+  });
+
   it("distinguishes metadata, app-owned storage, explicit file paths and action-dependent tools",()=>{
     const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
     const gate=(name:string,args:Record<string,unknown>)=>registeredFileToolGate({name,args},a.root,opts);
