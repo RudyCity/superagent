@@ -157,6 +157,14 @@ function explicitFileEffects(name:string,args:Args|undefined):ExplicitFileEffect
   return null;
 }
 
+
+function projectHealthEffects(workspace:string):ExplicitFileEffect[]|null {
+  if(!path.isAbsolute(workspace))return null;
+  return [".git","package.json","pyproject.toml","Cargo.toml","go.mod","composer.json",
+    "Gemfile","pom.xml","build.gradle","Makefile"].map(raw=>({
+      raw:path.join(workspace,raw),operations:["read"] as FileOperation[],
+    }));
+}
 const FIXED_PLANNING_TOOLS = new Set([
   "superagent_get_current_task","superagent_get_plan_and_tasks",
   "superagent_manage_plan","superagent_manage_tasks","superagent_update_tasks",
@@ -497,6 +505,8 @@ export function describePermanentFileToolReadiness(name:string):string {
     return "Only non-file sub-actions are certified; shell/file/content-capable actions remain independently blocked.";
   if(FIXED_PLANNING_TOOLS.has(name))
     return "Current-workspace task/plan actions are mediated against fixed plan/task filenames; cross-instance targets remain blocked.";
+  if(name==="superagent_check_project_health")
+    return "Local project health reads only bounded root metadata, .git marker and common manifest names; SSH health remains separately restricted.";
   const readiness=getPermanentFileToolReadiness(name);
   if(readiness==="requires_explicit_files")
     return "Supply each canonical input/target file path inside the authorized project, with matching permanent host file rules; implicit outputs are not certified.";
@@ -526,7 +536,8 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
       CERTIFIED_LAN_INVENTORY.has(name) || CERTIFIED_PAIR_STATUS.has(name) ||
       CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name) || name === "superagent_desktop_ui" ||
       name==="superagent_use_skill" || name==="superagent_manage_worktrees" ||
-      FIXED_PLANNING_TOOLS.has(name) || MIXED_ACTION_TOOLS.has(name))
+      FIXED_PLANNING_TOOLS.has(name) || MIXED_ACTION_TOOLS.has(name) ||
+      name==="superagent_check_project_health")
     return "action_dependent";
   return "uncertified";
 }
@@ -625,7 +636,8 @@ export function registeredFileToolGate(
   if(call.name==="superagent_manage_worktrees"&&certifiedWorktreeMetadata(call.args))return null;
   if(MIXED_ACTION_TOOLS.has(call.name)&&certifiedMixedAction(call.name,call.args))return null;
   const planningEffects=FIXED_PLANNING_TOOLS.has(call.name)
-    ?fixedPlanningEffects(call.name,call.args,workspace):null;
+    ?fixedPlanningEffects(call.name,call.args,workspace)
+    :call.name==="superagent_check_project_health"?projectHealthEffects(workspace):null;
   if(FIXED_PLANNING_TOOLS.has(call.name)&&planningEffects?.length===0)return null;
   if (call.name === "superagent_delegate_sync_history" && certifiedDelegateHistorySync(call.args))
     return null; // App-owned index only; never a general file write exemption.
@@ -663,7 +675,8 @@ export function registeredFileToolGate(
   const explicitEffects=EXPLICIT_EFFECT_TOOLS.has(call.name)
     ? explicitFileEffects(call.name,call.args)
     : planningEffects;
-  if((EXPLICIT_EFFECT_TOOLS.has(call.name)||FIXED_PLANNING_TOOLS.has(call.name)) && !explicitEffects)
+  if((EXPLICIT_EFFECT_TOOLS.has(call.name)||FIXED_PLANNING_TOOLS.has(call.name)||
+      call.name==="superagent_check_project_health") && !explicitEffects)
     return "Tool requires explicit certified file effects for the selected action.";
   const mediaPlanPaths=call.name==="superagent_media_plan"
     ? certifiedMediaPlanPaths(call.args) : null;
