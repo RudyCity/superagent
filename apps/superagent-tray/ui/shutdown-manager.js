@@ -67,8 +67,7 @@
     $("shutdown-select-all").disabled=lock||!forceable.length||allSelected;
     $("shutdown-clear").disabled=lock||state.selected.size===0;
     $("shutdown-refresh").disabled=lock;
-    $("shutdown-force-selected").disabled=lock||selectedProcesses().length===0||
-      $("shutdown-force-confirm").value!=="FORCE SELECTED";
+    $("shutdown-force-selected").disabled=lock||selectedProcesses().length===0;
     $("shutdown-close").disabled=state.loading;
 
     $("shutdown-selection-count").textContent=
@@ -167,7 +166,6 @@
     if(!state.busy){
       state.preview=null;
       state.selected.clear();
-      $("shutdown-force-confirm").value="";
       drawServices();
     }
 
@@ -209,7 +207,6 @@
     state.loading=true;
     state.preview=null;
     state.selected.clear();
-    $("shutdown-force-confirm").value="";
     buttons();
     feedback("Reading local process inventory…");
 
@@ -247,20 +244,18 @@
   }
 
   async function forceSelected(){
-    if(state.busy||state.loading||!state.preview||
-       $("shutdown-force-confirm").value!=="FORCE SELECTED")return;
+    if(state.busy||state.loading||!state.preview)return;
     const selected=selectedProcesses().map(item=>item.id);
     if(!selected.length)return;
 
     state.loading=true;
     buttons();
-    feedback("Awaiting native confirmation for "+selected.length+" selected process(es)…");
+    feedback("Force stopping "+selected.length+" selected process(es)…");
 
     try{
       const response=await invoke("force_selected",{
         previewId:state.preview.previewId,
         selected,
-        forceConfirmation:"FORCE SELECTED",
       });
       if(!response?.accepted||!response.runId){
         throw Error("Native force approval rejected");
@@ -317,7 +312,6 @@
     $("shutdown-refresh")?.addEventListener("click",()=>{void refresh();});
     $("shutdown-select-all")?.addEventListener("click",selectAll);
     $("shutdown-clear")?.addEventListener("click",clearSelection);
-    $("shutdown-force-confirm")?.addEventListener("input",buttons);
     $("shutdown-force-selected")?.addEventListener("click",()=>{void forceSelected();});
     $("shutdown-manager-dialog")?.addEventListener("keydown",event=>{
       if(event.key==="Escape"&&!state.busy)close();
