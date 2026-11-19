@@ -401,6 +401,42 @@ const CERTIFIED_NON_FILE_TOOLS = new Set([
  * No workspace/filePath or other caller-selected filesystem argument is allowed.
  */
 
+
+const MIXED_ACTION_TOOLS = new Set([
+  "superagent_brain","superagent_cli_bridge","superagent_git_action",
+  "superagent_chrome_vision","superagent_manage_workspace_chain",
+  "superagent_cross_workspace_exec",
+]);
+function certifiedMixedAction(name:string,args:Args|undefined):boolean {
+  if(!args||typeof args!=="object"||Array.isArray(args))return false;
+  if(name==="superagent_git_action")
+    return args.action==="log" &&
+      Object.keys(args).every(key=>["action","limit","workspace","projectId"].includes(key));
+  if(name==="superagent_chrome_vision")
+    return args.command==="status" &&
+      Object.keys(args).every(key=>["command"].includes(key));
+  if(name==="superagent_manage_workspace_chain"){
+    const action=String(args.action??"");
+    if(!["create","list","activate","deactivate","delete","add-node","remove-node","status","topology","update"].includes(action))
+      return false;
+    // Config mutations store path strings but do not open those paths. SSH/file use
+    // happens later through independently authorized chain operations.
+    return true;
+  }
+  if(name==="superagent_cross_workspace_exec")
+    return ["disconnect","switch-node"].includes(String(args.operation??""));
+  if(name==="superagent_cli_bridge"){
+    const action=String(args.action??"");
+    return ["list","profile.list","role.list","delegate.jobs","delegate.agents",
+      "delegate.slots","delegate.health","session.list"].includes(action);
+  }
+  if(name==="superagent_brain"){
+    const action=String(args.action??"");
+    const executionActions=new Set(["delegate.start","task.delegate.start","task.autostart","task.retry"]);
+    return action.length>0&&!executionActions.has(action);
+  }
+  return false;
+}
 function certifiedSkillAccess(name:string,args:Args|undefined):boolean {
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
   if(name==="superagent_get_skills")
@@ -457,6 +493,8 @@ export function describePermanentFileToolReadiness(name:string):string {
     return "Skill-name lookup is app-owned storage; an explicit path requires permanent read permission.";
   if(name==="superagent_manage_worktrees")
     return "List is certified metadata; recursive worktree removal remains blocked until every child file is mediated.";
+  if(MIXED_ACTION_TOOLS.has(name))
+    return "Only non-file sub-actions are certified; shell/file/content-capable actions remain independently blocked.";
   if(FIXED_PLANNING_TOOLS.has(name))
     return "Current-workspace task/plan actions are mediated against fixed plan/task filenames; cross-instance targets remain blocked.";
   const readiness=getPermanentFileToolReadiness(name);
@@ -488,7 +526,7 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
       CERTIFIED_LAN_INVENTORY.has(name) || CERTIFIED_PAIR_STATUS.has(name) ||
       CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name) || name === "superagent_desktop_ui" ||
       name==="superagent_use_skill" || name==="superagent_manage_worktrees" ||
-      FIXED_PLANNING_TOOLS.has(name))
+      FIXED_PLANNING_TOOLS.has(name) || MIXED_ACTION_TOOLS.has(name))
     return "action_dependent";
   return "uncertified";
 }
@@ -585,6 +623,7 @@ export function registeredFileToolGate(
   if(call.name==="superagent_get_skills"&&certifiedSkillAccess(call.name,call.args))return null;
   if(call.name==="superagent_use_skill"&&certifiedSkillAccess(call.name,call.args))return null;
   if(call.name==="superagent_manage_worktrees"&&certifiedWorktreeMetadata(call.args))return null;
+  if(MIXED_ACTION_TOOLS.has(call.name)&&certifiedMixedAction(call.name,call.args))return null;
   const planningEffects=FIXED_PLANNING_TOOLS.has(call.name)
     ?fixedPlanningEffects(call.name,call.args,workspace):null;
   if(FIXED_PLANNING_TOOLS.has(call.name)&&planningEffects?.length===0)return null;
