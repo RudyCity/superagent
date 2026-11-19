@@ -55,7 +55,7 @@ describe("narrow direct Delegate web workflow",()=>{
       expect(readNames).not.toContain("superagent_chrome_cdp_web");
       const web=writeTools.find(t=>t.name==="superagent_chrome_cdp_web");
       expect(web?._meta.mcpApproval).toMatchObject({
-        kind:"connection_execute",oauthScope:"mcp:tools:write",capability:"execute",
+        kind:"project",oauthScope:"mcp:tools:write",capability:"execute",
       });
     }finally{await read.close();await write.close();}
   });
