@@ -1005,3 +1005,42 @@
   line-height: 1.5;
   margin: 0 16px 10px;
 }
+
+/* Separate inbox categories, not separate bell badges. */
+.notification-popover-categories {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 9px 12px;
+  background: var(--notif-surface);
+  border-bottom: 1px solid var(--notif-edge);
+}
+.notification-popover-category {
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--notif-muted);
+  font: 650 12px/1.25 var(--font-sans, system-ui);
+  cursor: pointer;
+}
+.notification-popover-category span {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  opacity: 0.8;
+}
+.notification-popover-category.active {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(96, 165, 250, 0.3);
+  color: var(--notif-accent);
+}
+.notification-popover-category:hover { background: rgba(148, 163, 184, 0.12); }
+.notification-popover-category:focus-visible {
+  outline: 2px solid var(--border-focus, #3b82f6);
+  outline-offset: 2px;
+}
