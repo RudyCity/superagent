@@ -189,8 +189,7 @@ jobs:
             tests/managedChromeTrayUi.test.ts \
             tests/browserRuntimeLaunchOwnership.test.ts \
             tests/desktop-ui-integration/desktop-native-mediator.test.ts \
-            tests/desktop-ui-integration/desktop-native-mediator.test.ts
-          tests/desktop-ui-integration/registered-file-tool-gate.test.ts
+            tests/desktop-ui-integration/registered-file-tool-gate.test.ts
 
       - name: Non-mutating source policy and release-readiness report
         run: bun scripts/report-mcp-policy-readiness.ts
