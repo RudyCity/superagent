@@ -733,6 +733,7 @@ mod tests {
             "macos-dmg",
             "linux-appimage",
             "linux-deb",
+            "mcp-backend",
             "chrome-delegate",
             "chrome-sidepanel",
             "android-lan",
