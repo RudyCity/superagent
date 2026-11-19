@@ -96,8 +96,10 @@
         item.activeSessions!=null?item.activeSessions+" active jobs/sessions":null,
       ].filter(Boolean).join(" · ");
       node(copy,"small","",details||item.detail);
-      if(item.manualKillSelectable && item.processPath)
-        node(copy,"small","shutdown-executable","Executable: "+item.processPath);
+      if(item.manualKillSelectable && item.processPath){
+        const executable=node(copy,"small","shutdown-executable","Executable: "+item.processPath);
+        executable.setAttribute("title",item.processPath);
+      }
       if(item.id?.startsWith("guardian-os:"))
         node(copy,"span","shutdown-explanation",
           "Local Guardian lease + live OS PID; Core API not required for manual kill.");
