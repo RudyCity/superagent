@@ -1755,7 +1755,10 @@ function extractMcpResultText(result: unknown): string {
         }
       } else if (toolName === MCP_GATEWAY_TOOL_NAMES.status) {
         const filePolicyActive = fileRulesRegistered();
-        const filePolicyReadinessCounts: Record<string,number> = {};
+        const filePolicyReadinessCounts: Record<string,number> = Object.fromEntries([
+          "certified_metadata","certified_non_file","certified_app_storage",
+          "requires_explicit_files","action_dependent","uncertified",
+        ].map(key=>[key,0]));
         if (filePolicyActive) {
           for (const tool of getGatewayVisibleCatalog(authorizedTools)) {
             const readiness = getPermanentFileToolReadiness(tool.name);
