@@ -156,6 +156,45 @@ function explicitFileEffects(name:string,args:Args|undefined):ExplicitFileEffect
   }
   return null;
 }
+
+const FIXED_PLANNING_TOOLS = new Set([
+  "superagent_get_current_task","superagent_get_plan_and_tasks",
+  "superagent_manage_plan","superagent_manage_tasks","superagent_update_tasks",
+]);
+function fixedPlanningEffects(name:string,args:Args|undefined,workspace:string):ExplicitFileEffect[]|null {
+  if(!FIXED_PLANNING_TOOLS.has(name)||!path.isAbsolute(workspace)||
+     !args||typeof args!=="object"||Array.isArray(args))return null;
+  if(["superagent_get_current_task","superagent_get_plan_and_tasks","superagent_update_tasks"].includes(name) &&
+     ["superagentId","instanceId","id"].some(key=>args[key]!==undefined))return null;
+  if((name==="superagent_manage_plan"||name==="superagent_manage_tasks") &&
+     typeof args.sessionId==="string"&&args.sessionId.trim())return [];
+  const effect=(file:string,operations:FileOperation[]):ExplicitFileEffect=>({
+    raw:path.join(workspace,file),operations,
+  });
+  if(name==="superagent_get_current_task")
+    return ["_task.md","task.md","tasks.md"].map(file=>effect(file,["read"]));
+  if(name==="superagent_get_plan_and_tasks")
+    return ["_task.md","task.md","tasks.md","_plan.md","plan.md",
+      "_implementation_plan.md","implementation_plan.md"].map(file=>effect(file,["read"]));
+  if(name==="superagent_manage_plan"){
+    const action=String(args.action??"");
+    if(!["create","edit","sync","get"].includes(action))return null;
+    const ops:FileOperation[]=action==="get"?["read"]:["read","write"];
+    return [effect("implementation_plan.md",ops),effect("task.md",ops)];
+  }
+  if(name==="superagent_manage_tasks"){
+    const action=String(args.action??"");
+    if(!["list","add","add_bulk","update","remove","update_bulk","remove_bulk"].includes(action))return null;
+    return [effect("task.md",action==="list"?["read"]:["read","write"])];
+  }
+  if(name==="superagent_update_tasks"){
+    const action=String(args.action??"");
+    if(!["mark_completed","mark_in_progress","add_task","get_status","get_current_task"].includes(action))return null;
+    return [effect("task.md",["read",...(action.startsWith("get_")?[]:["write"])] as FileOperation[])];
+  }
+  return null;
+}
+
 const EXPLICIT_EFFECT_TOOLS = new Set([
   "superagent_media_convert","superagent_media_transform","superagent_media_batch",
   "superagent_pdf_edit","superagent_pdf_edit_vector_exact","superagent_pdf_ocr_searchable",
@@ -418,6 +457,8 @@ export function describePermanentFileToolReadiness(name:string):string {
     return "Skill-name lookup is app-owned storage; an explicit path requires permanent read permission.";
   if(name==="superagent_manage_worktrees")
     return "List is certified metadata; recursive worktree removal remains blocked until every child file is mediated.";
+  if(FIXED_PLANNING_TOOLS.has(name))
+    return "Current-workspace task/plan actions are mediated against fixed plan/task filenames; cross-instance targets remain blocked.";
   const readiness=getPermanentFileToolReadiness(name);
   if(readiness==="requires_explicit_files")
     return "Supply each canonical input/target file path inside the authorized project, with matching permanent host file rules; implicit outputs are not certified.";
@@ -446,7 +487,8 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
       name === "superagent_tool_execute" || name === "superagent_grep_search" ||
       CERTIFIED_LAN_INVENTORY.has(name) || CERTIFIED_PAIR_STATUS.has(name) ||
       CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name) || name === "superagent_desktop_ui" ||
-      name==="superagent_use_skill" || name==="superagent_manage_worktrees")
+      name==="superagent_use_skill" || name==="superagent_manage_worktrees" ||
+      FIXED_PLANNING_TOOLS.has(name))
     return "action_dependent";
   return "uncertified";
 }
@@ -543,6 +585,9 @@ export function registeredFileToolGate(
   if(call.name==="superagent_get_skills"&&certifiedSkillAccess(call.name,call.args))return null;
   if(call.name==="superagent_use_skill"&&certifiedSkillAccess(call.name,call.args))return null;
   if(call.name==="superagent_manage_worktrees"&&certifiedWorktreeMetadata(call.args))return null;
+  const planningEffects=FIXED_PLANNING_TOOLS.has(call.name)
+    ?fixedPlanningEffects(call.name,call.args,workspace):null;
+  if(FIXED_PLANNING_TOOLS.has(call.name)&&planningEffects?.length===0)return null;
   if (call.name === "superagent_delegate_sync_history" && certifiedDelegateHistorySync(call.args))
     return null; // App-owned index only; never a general file write exemption.
   // No blanket Chrome exemption: only side-effect-free, non-file inventory
@@ -577,9 +622,10 @@ export function registeredFileToolGate(
       !certifiedInputReaderArguments(call.name,call.args))
     return "Document/media reader requires exactly one explicit input path and certified argument keys.";
   const explicitEffects=EXPLICIT_EFFECT_TOOLS.has(call.name)
-    ? explicitFileEffects(call.name,call.args) : null;
-  if(EXPLICIT_EFFECT_TOOLS.has(call.name) && !explicitEffects)
-    return "Tool requires explicit certified input/output file effects.";
+    ? explicitFileEffects(call.name,call.args)
+    : planningEffects;
+  if((EXPLICIT_EFFECT_TOOLS.has(call.name)||FIXED_PLANNING_TOOLS.has(call.name)) && !explicitEffects)
+    return "Tool requires explicit certified file effects for the selected action.";
   const mediaPlanPaths=call.name==="superagent_media_plan"
     ? certifiedMediaPlanPaths(call.args) : null;
   if(call.name==="superagent_media_plan" && !mediaPlanPaths)
