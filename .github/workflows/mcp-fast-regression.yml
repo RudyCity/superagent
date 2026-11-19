@@ -294,6 +294,10 @@ jobs:
           tests/mcpAllToolsAuthorizationMatrix.test.ts
           tests/mcpTrayToolInventory.test.ts
           tests/mcpDelegateWebCertification.test.ts
+          tests/delegateForwardedHostDispatch.test.ts
+          tests/windows-bun-path.test.ts
+          tests/desktop-app-independent-audit/windows-registry-inventory.test.ts
+          tests/desktop-ui-discovery/providers.test.ts
           tests/mcpPolicyReadinessReport.test.ts
           tests/desktop-ui-integration/desktop-native-mediator.test.ts
           tests/desktop-ui-integration/registered-file-tool-gate.test.ts
