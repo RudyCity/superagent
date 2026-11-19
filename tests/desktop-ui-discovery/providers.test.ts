@@ -28,6 +28,7 @@ describe("platform window discovery providers", () => {
     });
     const result = await createWindowsDesktopUiAdapter(runner).listWindows!(7);
     expect(result.windows[0]).toMatchObject({ nativeId: "12345", application: "FixtureApp", active: true });
+    expect(script).toContain("[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)");
     expect(script).toContain("EnumWindows");
     expect(script).toContain("GetForegroundWindow");
     expect(script).toContain("GetDpiForWindow");
