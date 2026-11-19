@@ -361,6 +361,7 @@ fn component_catalog(
     let sidepanel = versioned_asset(release, "superagent-sidepanel-", ".zip")?;
     let android = versioned_asset(release, "SuperAgent-LAN-Android-", "-debug.apk")?;
     let lan = versioned_asset(release, "SuperAgent-LAN-Client-", "-Windows-x64-setup.exe")?;
+    let mcp_backend=versioned_asset(release, "SuperAgent-MCP-Backend-", "-windows-x64.tgz")?;
     let core_state = release_state(
         current_version,
         release_version,
@@ -383,6 +384,10 @@ fn component_catalog(
             None, "installed_unknown"),
         ("linux-deb", "Linux Debian/Ubuntu DEB", deb,
             "Linux x64 (transferable)", "Install the verified DEB manually with your OS package manager after checking active workloads; no remote root command is executed.",
+            None, "installed_unknown"),
+        ("mcp-backend", "MCP Backend (Windows x64)", mcp_backend,
+            "Windows x64 (separately staged)",
+            "Verified download only. The backend is NOT installed or activated: stage the full archive with the official backend release stager, then review the owner-bound plan/activate handoff. Never restart the Quick Tunnel.",
             None, "installed_unknown"),
         ("chrome-delegate", "Chrome Delegate Extension", delegate,
             "Chrome (all desktop OS)", "Unzip the archive. In chrome://extensions enable Developer mode, then Load unpacked (or update/reload the existing unpacked extension) after active delegated sessions are finished.",
@@ -661,6 +666,7 @@ fn downloadable_component_id(id: &str) -> bool {
             | "macos-dmg"
             | "linux-appimage"
             | "linux-deb"
+            | "mcp-backend"
             | "chrome-delegate"
             | "chrome-sidepanel"
             | "android-lan"
@@ -753,6 +759,7 @@ mod tests {
             "superagent-sidepanel-1.0.0.zip",
             "SuperAgent-LAN-Android-0.10.0-native-dashboard-debug.apk",
             "SuperAgent-LAN-Client-0.2.0-Windows-x64-setup.exe",
+            "SuperAgent-MCP-Backend-1.14.83-windows-x64.tgz",
         ];
         let mut manifest = String::new();
         let assets: Vec<ReleaseAsset> = names
@@ -784,6 +791,7 @@ mod tests {
         let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
         for id in [
             "superagent",
+            "mcp-backend",
             "chrome-delegate",
             "chrome-sidepanel",
             "android-lan",
