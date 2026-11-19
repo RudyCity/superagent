@@ -206,6 +206,193 @@ pub fn run_headless_smoke(dir:&Path)->Result<(),String>{
     Ok(())
 }
 
+/// A second manual launch must get a user choice before Tauri's
+/// single-instance plugin redirects it to the old UI. This preflight runs
+/// ONLY in the new process, before initializing the plugin. Background
+/// autostarts remain silent and never replace the active desktop owner.
+#[cfg(windows)]
+fn read_launch_owner(dir:&Path)->Result<Option<TrayOwner>,String>{
+    let file=owner_path(dir);
+    let meta=match fs::symlink_metadata(&file){
+        Ok(meta)=>meta,
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(None),
+        Err(_)=>return Err("Cannot inspect the existing Tray owner record".into()),
+    };
+    if !meta.is_file()||meta.file_type().is_symlink()||meta.len()==0||meta.len()>2048 {
+        return Err("Existing Tray owner record is unsafe; no process will be stopped".into());
+    }
+    let bytes=fs::read(&file).map_err(|_|"Cannot read existing Tray owner record")?;
+    let owner:TrayOwner=serde_json::from_slice(&bytes)
+        .map_err(|_|"Existing Tray owner record is invalid; no process will be stopped")?;
+    if owner.version!=1||owner.pid==0||owner.control_port<1024||
+        owner.instance_id.len()!=32||!owner.instance_id.bytes().all(|b|b.is_ascii_hexdigit())||
+        owner.token.len()!=64||!owner.token.bytes().all(|b|b.is_ascii_hexdigit())||
+        owner.executable_path.is_empty()||owner.executable_path.len()>2048 {
+        return Err("Existing Tray owner identity is invalid; no process will be stopped".into());
+    }
+    Ok(Some(owner))
+}
+
+#[cfg(windows)]
+fn same_tray_process(owner:&TrayOwner)->Result<Option<u64>,String>{
+    let mut system=System::new();
+    system.refresh_processes();
+    let Some(process)=system.process(Pid::from_u32(owner.pid)) else{return Ok(None)};
+    if owner.pid==std::process::id(){
+        return Err("A Tray owner record points at this process".into());
+    }
+    let actual=process.exe().ok_or("Existing Tray process executable is not visible")?;
+    let registered=fs::canonicalize(&owner.executable_path)
+        .map_err(|_|"Existing Tray executable path is not verifiable")?;
+    let observed=fs::canonicalize(actual)
+        .map_err(|_|"Existing Tray process executable is not verifiable")?;
+    let filename=observed.file_name().and_then(|s|s.to_str()).unwrap_or("");
+    if !filename.eq_ignore_ascii_case("superagent-tray.exe")||
+        !registered.to_string_lossy().eq_ignore_ascii_case(&observed.to_string_lossy()) {
+        return Err("Existing Tray PID does not match its registered executable".into());
+    }
+    Ok(Some(process.start_time()))
+}
+
+#[cfg(windows)]
+fn tray_private_request(owner:&TrayOwner,method:&str,body:Option<&str>)
+    ->Result<serde_json::Value,String>{
+    use std::net::{SocketAddr,IpAddr,Ipv4Addr};
+    let endpoint=SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST),owner.control_port);
+    let mut stream=TcpStream::connect_timeout(&endpoint,Duration::from_secs(2))
+        .map_err(|_|"Existing Tray private control endpoint did not respond")?;
+    stream.set_read_timeout(Some(Duration::from_secs(3))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(3))).ok();
+    let path=if method=="GET"{"/tray/health"}else{"/tray/control"};
+    let data=body.unwrap_or("");
+    let request=format!(
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        owner.control_port,owner.token,data.len(),data
+    );
+    stream.write_all(request.as_bytes())
+        .map_err(|_|"Existing Tray private request could not be sent")?;
+    let mut response=Vec::new();
+    stream.take(8193).read_to_end(&mut response)
+        .map_err(|_|"Existing Tray private response timed out")?;
+    if response.len()>8192{return Err("Existing Tray response exceeded limit".into());}
+    let text=std::str::from_utf8(&response)
+        .map_err(|_|"Existing Tray response is not UTF-8")?;
+    let (headers,payload)=text.split_once("\r\n\r\n")
+        .ok_or("Existing Tray response has invalid framing")?;
+    if !headers.starts_with("HTTP/1.1 200 "){
+        return Err("Existing Tray refused the private owner request".into());
+    }
+    serde_json::from_str(payload).map_err(|_|"Existing Tray response is invalid JSON".into())
+}
+
+#[cfg(windows)]
+fn verify_launch_owner(owner:&TrayOwner)->Result<Option<u64>,String>{
+    let Some(birth)=same_tray_process(owner)? else {return Ok(None)};
+    let health=tray_private_request(owner,"GET",None)?;
+    if health.get("service").and_then(|v|v.as_str())!=Some("superagent-tray")||
+        health.get("pid").and_then(|v|v.as_u64())!=Some(owner.pid as u64)||
+        health.get("instanceId").and_then(|v|v.as_str())!=Some(owner.instance_id.as_str())||
+        health.get("controlPort").and_then(|v|v.as_u64())!=Some(owner.control_port as u64)||
+        health.get("ownerVerified").and_then(|v|v.as_bool())!=Some(true){
+        return Err("Existing Tray private owner identity could not be authenticated".into());
+    }
+    if same_tray_process(owner)?!=Some(birth){
+        return Err("Existing Tray PID changed during owner verification".into());
+    }
+    Ok(Some(birth))
+}
+
+#[cfg(windows)]
+fn request_graceful_replacement(owner:&TrayOwner)->Result<(),String>{
+    let body=json!({"action":"stop","instanceId":owner.instance_id}).to_string();
+    let result=tray_private_request(owner,"POST",Some(&body))?;
+    if result.get("ok").and_then(|v|v.as_bool())!=Some(true)||
+        result.get("stopping").and_then(|v|v.as_bool())!=Some(true)||
+        result.get("coreUnaffected").and_then(|v|v.as_bool())!=Some(true){
+        return Err("Existing Tray did not acknowledge a Tray-only shutdown".into());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn wait_for_tray_exit(owner:&TrayOwner,birth:u64)->bool{
+    for _ in 0..40{
+        if matches!(same_tray_process(owner),Ok(None)){return true;}
+        // If this PID is recycled, it is NOT our old Tray.
+        if matches!(same_tray_process(owner),Ok(Some(now)) if now!=birth){return true;}
+        thread::sleep(Duration::from_millis(200));
+    }
+    false
+}
+
+#[cfg(windows)]
+fn native_launch_question(title:&str,message:&str)->bool{
+    use std::ffi::c_void;
+    #[link(name="user32")]
+    extern "system" {
+        fn MessageBoxW(hwnd:*mut c_void,text:*const u16,caption:*const u16,flags:u32)->i32;
+    }
+    let title:Vec<u16>=title.encode_utf16().chain(std::iter::once(0)).collect();
+    let message:Vec<u16>=message.encode_utf16().chain(std::iter::once(0)).collect();
+    // YES/NO + question icon + foreground/topmost. No webview or shell required.
+    unsafe {MessageBoxW(std::ptr::null_mut(),message.as_ptr(),title.as_ptr(),
+        0x0000_0004|0x0000_0020|0x0001_0000|0x0004_0000)}==6
+}
+
+#[cfg(windows)]
+pub fn launch_error_dialog(message:&str){
+    use std::ffi::c_void;
+    #[link(name="user32")]
+    extern "system" {
+        fn MessageBoxW(hwnd:*mut c_void,text:*const u16,caption:*const u16,flags:u32)->i32;
+    }
+    let title:Vec<u16>="SuperAgent Tray — Replacement blocked".encode_utf16()
+        .chain(std::iter::once(0)).collect();
+    let text:Vec<u16>=message.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {MessageBoxW(std::ptr::null_mut(),text.as_ptr(),title.as_ptr(),
+        0x0000_0010|0x0001_0000|0x0004_0000);}
+}
+
+/// Returns false when the new manual launch was cancelled. Only a verified
+/// owner may be replaced; no Core/MCP/foreign PID is ever a stop target.
+/// A still-running verified Tray gets a second prompt before any force stop.
+#[cfg(windows)]
+pub fn replace_existing_on_manual_launch(dir:&Path,background:bool)->Result<bool,String>{
+    if background{return Ok(true);}
+    let Some(owner)=read_launch_owner(dir)? else{return Ok(true)};
+    let Some(birth)=verify_launch_owner(&owner)? else{return Ok(true)};
+    if !native_launch_question("SuperAgent Tray is already running",
+        &format!("SuperAgent Tray (PID {}) is already running.\n\nReplace it with this new launch?\n\nYes: close only the existing Tray and start the new version.\nNo: keep the existing Tray running.\n\nCore, MCP, tunnels and agent sessions are not affected.",owner.pid)){
+        return Ok(false);
+    }
+    if read_launch_owner(dir)?!=Some(owner.clone())||
+        verify_launch_owner(&owner)?!=Some(birth){
+        return Err("The running Tray owner changed after approval".into());
+    }
+    request_graceful_replacement(&owner)?;
+    if wait_for_tray_exit(&owner,birth){return Ok(true);}
+    // The ordinary shutdown timed out. Ask AGAIN before any OS process kill.
+    // A PID, owner record, authenticated health AND OS creation time must all
+    // still agree. Never kill an unverified or reused PID.
+    if !native_launch_question("SuperAgent Tray is not responding",
+        &format!("The verified Tray (PID {}) did not exit gracefully.\n\nForce close ONLY this Tray and continue startup?\n\nNo other SuperAgent service will be stopped.",owner.pid)){
+        return Ok(false);
+    }
+    if read_launch_owner(dir)?!=Some(owner.clone())||
+        verify_launch_owner(&owner)?!=Some(birth){
+        return Err("Tray owner changed before the force-close request".into());
+    }
+    let mut system=System::new();
+    system.refresh_processes();
+    let process=system.process(Pid::from_u32(owner.pid))
+        .ok_or("Original Tray PID is no longer present")?;
+    if process.start_time()!=birth||!process.kill(){
+        return Err("Verified Tray could not be stopped; original instance is unchanged".into());
+    }
+    if wait_for_tray_exit(&owner,birth){return Ok(true);}
+    Err("Old Tray did not exit after confirmed force close; new startup was cancelled".into())
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
