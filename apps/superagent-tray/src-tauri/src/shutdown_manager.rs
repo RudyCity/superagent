@@ -752,7 +752,10 @@ async fn force_stop_daemon(item:&Item)->Result<(),String> {
     if !item.force_selectable || !manual_os_identity_matches(item) {
         return Err("SHUTDOWN_FORCE_DAEMON_IDENTITY_CHANGED".into());
     }
-    let status=core_request(Method::GET,"/api/daemon/status",None).await?;
+    let status=match core_request(Method::GET,"/api/daemon/status",None).await {
+        Ok(status)=>status,
+        Err(_)=>return manual_kill_one(item).await,
+    };
     if pid_of(&status["pid"])!=item.pid {
         return Err("SHUTDOWN_FORCE_DAEMON_OWNER_CHANGED".into());
     }
@@ -765,7 +768,10 @@ async fn force_stop_daemon(item:&Item)->Result<(),String> {
     // First request cooperative cancellation of every active daemon run and
     // stop future scheduling. This also works when the tick scheduler was
     // already stopped but one or more daemon jobs are still executing.
-    core_request(Method::POST,"/api/daemon/stop",Some(json!({"force":true}))).await?;
+    if core_request(Method::POST,"/api/daemon/stop",
+        Some(json!({"force":true}))).await.is_err() {
+        return manual_kill_one(item).await;
+    }
     let began=Instant::now();
     loop {
         let after=core_request(Method::GET,"/api/daemon/status",None).await?;
@@ -807,7 +813,20 @@ async fn force_stop_one(item:&Item)->Result<(),String> {
     if !os_birth_matches(item) {
         return Ok(());
     }
-    // Confirm fresh native identity, not a stale cached preview or WebView PID.
+
+    // Local SuperAgent owners were independently verified in the preview and
+    // are pinned to PID + birth + executable. Do not depend on a parent
+    // supervisor remaining alive after that parent was intentionally stopped.
+    match item.kind.as_str() {
+        "managed" if item.id=="managed:daemon"=>return force_stop_daemon(item).await,
+        "daemon-direct"=>return force_stop_daemon(item).await,
+        "managed"|"core"|"core-supervisor"|"muse-watch"=>
+            return force_stop_verified_local(item).await,
+        _=>{}
+    }
+
+    // Remote owner classes still require their private/registry provenance to
+    // be freshly present immediately before mutation.
     let fresh=inspect().await?;
     let live=fresh.services.iter().find(|current|current.id==item.id);
     if !live.is_some_and(|current|same_force_owner(item,current)) {
@@ -854,15 +873,6 @@ async fn force_stop_one(item:&Item)->Result<(),String> {
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
         }
-        // Daemon force-stop is deliberately stronger than graceful stop:
-        // abort active runs, stop scheduling, then exact-PID terminate the
-        // verified Core worker only if cooperative cancellation does not settle.
-        "managed" if item.id=="managed:daemon"=>force_stop_daemon(item).await,
-        "daemon-direct"=>force_stop_daemon(item).await,
-        // Every other local background owner must still be independently
-        // verified and birth-pinned; no arbitrary PID or process-tree kill.
-        "managed"|"core"|"core-supervisor"|"muse-watch"=>
-            force_stop_verified_local(item).await,
         _=>Err("SHUTDOWN_FORCE_NO_OWNER_PROTOCOL".into()),
     }
 }
