@@ -985,13 +985,12 @@ async fn run_manual_shutdown(app:AppHandle,chosen:Vec<Item>,mut progress:Progres
 }
 
 async fn run_force_shutdown(app:AppHandle, chosen:Vec<Item>, mut progress:Progress) {
-    for (index,item) in chosen.iter().enumerate(){
+    let mut partial=false;
+    for item in &chosen {
         let Some(step)=progress.steps.iter().position(|step|step.id==item.id) else {
-            progress.stage="partial".into();
+            partial=true;
             progress.error=Some("SHUTDOWN_FORCE_PROGRESS_MISMATCH".into());
-            set_progress(&app,&progress);
-            if let Ok(mut state)=locked(){state.busy=false;state.preview=None;}
-            return;
+            continue;
         };
         progress.steps[step].status="stopping".into();
         progress.steps[step].message="Revalidating registered owner and process birth".into();
@@ -1000,24 +999,17 @@ async fn run_force_shutdown(app:AppHandle, chosen:Vec<Item>, mut progress:Progre
             Ok(())=>{
                 progress.steps[step].status="stopped".into();
                 progress.steps[step].message="Registered owner exit verified".into();
-                set_progress(&app,&progress);
             }
             Err(error)=>{
+                partial=true;
                 progress.steps[step].status="blocked".into();
                 progress.steps[step].message=redacted(&error);
                 progress.error=Some(redacted(&error));
-                progress.stage="partial".into();
-                for later in chosen.iter().skip(index+1){
-                    if let Some(other)=progress.steps.iter_mut().find(|s|s.id==later.id){
-                        other.status="skipped".into();
-                        other.message="Not attempted after an uncertain force-stop result".into();
-                    }
-                }
-                set_progress(&app,&progress);
-                if let Ok(mut state)=locked(){state.busy=false;state.preview=None;}
-                return;
             }
         }
+        // Force Stop All must attempt every independently pinned owner. A
+        // failure in one daemon must not silently skip the remaining daemons.
+        set_progress(&app,&progress);
     }
     // Unknown/foreign owners are never taken over. A force-stop may finish
     // only partially; keep the Tray running for evidence and reconciliation.
@@ -1025,10 +1017,12 @@ async fn run_force_shutdown(app:AppHandle, chosen:Vec<Item>, mut progress:Progre
         after.active().any(|item|!matches!(item.kind.as_str(),"daemon-direct") ||
             item.state=="active"));
     match remaining{
-        Ok(false)=>progress.stage="complete".into(),
+        Ok(false) if !partial=>progress.stage="complete".into(),
         _=>{
             progress.stage="partial".into();
-            progress.error=Some("SHUTDOWN_FORCE_REMAINING_OWNERS_REQUIRE_REVIEW".into());
+            if progress.error.is_none() {
+                progress.error=Some("SHUTDOWN_FORCE_REMAINING_OWNERS_REQUIRE_REVIEW".into());
+            }
         }
     }
     set_progress(&app,&progress);
