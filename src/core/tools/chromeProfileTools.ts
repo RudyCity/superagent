@@ -38,7 +38,7 @@ export function clearChromeProfilesCache(): void {
   _profilesCache = null;
 }
 
-export async function detectChromeProfiles(customUserDataPath?: string): Promise<ChromeProfileInfo[]> {
+export async function detectChromeProfiles(customUserDataPath?: string, allowDirectoryFallback = true): Promise<ChromeProfileInfo[]> {
   if (!customUserDataPath && _profilesCache && Date.now() - _profilesCache.at < PROFILES_CACHE_TTL_MS) {
     return _profilesCache.profiles;
   }
@@ -66,7 +66,9 @@ export async function detectChromeProfiles(customUserDataPath?: string): Promise
       }
     }
   } catch {
-    // Fallback to directory scanning if Local State is unavailable or corrupted
+    // MCP callers can disable fallback so a denied/unreadable Local State cannot
+    // silently degrade into broader directory enumeration.
+    if (!allowDirectoryFallback) return [];
     try {
       const entries = await fs.readdir(userDataPath, { withFileTypes: true });
       for (const entry of entries) {
@@ -102,9 +104,9 @@ export const listChromeProfilesTool: Tool = {
       },
     },
   },
-  execute: async ({ customUserDataPath }: { customUserDataPath?: string }) => {
+  execute: async ({ customUserDataPath, strictLocalState }: { customUserDataPath?: string; strictLocalState?: boolean }) => {
     const userDataPath = customUserDataPath || getChromeUserDataPath();
-    const profiles = await detectChromeProfiles(userDataPath);
+    const profiles = await detectChromeProfiles(userDataPath, !strictLocalState);
 
     if (profiles.length === 0) {
       return `No Chrome profiles detected in User Data directory: \`${userDataPath}\`. Ensure Google Chrome is installed on this system.`;
