@@ -324,7 +324,7 @@ export async function handleServerRoute(
           const result = response.content.map(item => item.type === "text" ? item.text : "").join("\n");
           sendJSON(res, failed ? 409 : 200, {
             success: !failed,
-            ...(failed ? { error: "DELEGATE_MCP_TOOL_FAILED" } : { result }),
+            ...(failed ? { error: result.match(/\b(DELEGATE_WEB_TARGET_NOT_PUBLIC_HTTP|DELEGATE_WEB_TARGET_NOT_VISIBLE|DELEGATE_WEB_TARGET_INVALID|DELEGATE_WEB_VERIFIED_PRINCIPAL_REQUIRED|DELEGATE_WEB_ARGUMENTS_NOT_CERTIFIED)\b/)?.[1] || "DELEGATE_MCP_TOOL_FAILED" } : { result }),
           });
           return;
         }
