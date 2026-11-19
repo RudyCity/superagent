@@ -258,7 +258,7 @@
         selected,
       });
       if(!response?.accepted||!response.runId){
-        throw Error("Native force approval rejected");
+        throw Error("Native force execution rejected");
       }
 
       state.busy=true;
