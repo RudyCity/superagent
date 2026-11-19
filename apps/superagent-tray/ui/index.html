@@ -4079,21 +4079,21 @@
     </div>
   </footer>
 
-  <!-- Native-only Shutdown Manager. It displays owner-scoped plans; no direct OS process controls. -->
+  <!-- Native Shutdown Manager: owner-agnostic force selection, exact OS PID revalidation. -->
   <div id="shutdown-manager-dialog" class="overlay" hidden>
     <section class="modal-dialog shutdown-manager" role="dialog" aria-modal="true"
       aria-labelledby="shutdown-manager-title" aria-describedby="shutdown-manager-description">
       <header class="modal-header">
         <div>
-          <div class="modal-eyebrow">NATIVE · LIFECYCLE &amp; MANUAL OVERRIDE</div>
+          <div class="modal-eyebrow">NATIVE · FORCE PROCESS CONTROL</div>
           <h2 id="shutdown-manager-title">Shutdown Manager</h2>
           <p id="shutdown-manager-description" class="shutdown-description">
-            Review running services and ownership before stopping anything.
-            Graceful stop uses authenticated owners; Manual Kill is an explicit PID override with native confirmation.
+            Select any observed process below and force it by exact PID. Owner status is ignored.
+            PID, executable and process start time are revalidated immediately before termination.
           </p>
         </div>
         <button type="button" id="shutdown-close" class="icon-button"
-          aria-label="Close Shutdown Manager" title="Close preview (does not cancel running operations)">
+          aria-label="Close Shutdown Manager" title="Close preview (does not cancel a running force operation)">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none"
             stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M6 6l12 12M18 6L6 18"></path>
@@ -4101,62 +4101,41 @@
         </button>
       </header>
       <div class="modal-body">
-        <div class="shutdown-stats" aria-label="Service readiness summary">
-          <div class="shutdown-stat"><strong id="shutdown-active-count">0</strong><span>Observed active</span></div>
-          <div class="shutdown-stat"><strong id="shutdown-ready-count">0</strong><span>Verified &amp; stoppable</span></div>
-          <div class="shutdown-stat blocked"><strong id="shutdown-blocked-count">0</strong><span>Needs review</span></div>
-        </div>
         <div class="shutdown-panel-heading">
-          <h3>Service inventory</h3>
-          <div class="shutdown-bulk-actions" role="group" aria-label="Bulk service selection">
-            <button id="shutdown-bulk-graceful" type="button" class="button ghost" disabled>Select all stoppable</button>
-            <button id="shutdown-bulk-manual" type="button" class="button ghost" disabled>Select all Kill PIDs</button>
-            <button id="shutdown-bulk-clear" type="button" class="button ghost" disabled>Clear selection</button>
-            <button id="shutdown-refresh" type="button" class="button ghost">Refresh preview</button>
+          <div>
+            <h3>Processes</h3>
+            <span id="shutdown-process-summary" class="shutdown-process-summary">0 forceable processes</span>
+          </div>
+          <div class="shutdown-bulk-actions" role="group" aria-label="Bulk process selection">
+            <button id="shutdown-select-all" type="button" class="button ghost" disabled>Select all</button>
+            <button id="shutdown-clear" type="button" class="button ghost" disabled>Clear</button>
+            <button id="shutdown-refresh" type="button" class="button ghost">Refresh</button>
           </div>
         </div>
         <div id="shutdown-feedback" class="shutdown-feedback" role="status" aria-live="polite">
-          Open this manager to inspect authenticated runtime owners.
+          Refreshing local process inventory…
         </div>
         <div id="shutdown-services" class="shutdown-services"
-          role="group" aria-label="Select graceful stops or manual OS PID kills"></div>
-        <div id="shutdown-all-note" class="shutdown-note">
-          Full exit requires every active owner to have a supported graceful-stop protocol.
-        </div>
-        <section class="shutdown-force-panel" aria-label="Force stop owner confirmation">
+          role="group" aria-label="Select OS processes to force"></div>
+        <section class="shutdown-force-panel" aria-label="Force selected confirmation">
           <div class="shutdown-force-copy">
-            <strong>Emergency force stop</strong>
-            <small>Stops verified SuperAgent owners even when busy. Unverified OS processes stay in Manual Kill.</small>
+            <strong>Force selected</strong>
+            <small>Ownership is not checked. Critical OS processes and this Tray itself remain protected.</small>
           </div>
-          <label for="shutdown-force-confirm">Type <code>FORCE STOP ALL</code> to unlock</label>
+          <label for="shutdown-force-confirm">Type <code>FORCE SELECTED</code> to unlock</label>
           <input id="shutdown-force-confirm" type="text" maxlength="14" autocomplete="off"
-            spellcheck="false" placeholder="FORCE STOP ALL" aria-label="Force stop confirmation phrase" />
+            spellcheck="false" placeholder="FORCE SELECTED" aria-label="Force selected confirmation phrase" />
         </section>
-        <section class="shutdown-manual-panel" aria-labelledby="shutdown-manual-heading">
-          <div class="shutdown-manual-heading">
-            <div>
-              <strong id="shutdown-manual-heading">Manual Kill · owner override</strong>
-              <small>Kill only checked OS PIDs after executable and process-start revalidation. This can interrupt jobs or connections.</small>
-            </div>
-            <button id="shutdown-manual-select-all" class="button ghost" type="button" disabled>Select all eligible</button>
-          </div>
-          <label for="shutdown-manual-confirm">Type <code>KILL SELECTED</code> to unlock</label>
-          <input id="shutdown-manual-confirm" type="text" maxlength="13" autocomplete="off"
-            spellcheck="false" placeholder="KILL SELECTED" aria-label="Manual kill confirmation phrase" />
-        </section>
-        <section id="shutdown-progress" class="shutdown-progress" aria-label="Shutdown progress"
+        <section id="shutdown-progress" class="shutdown-progress" aria-label="Force process progress"
           aria-live="polite" hidden>
-          <h3 id="shutdown-progress-status">Graceful shutdown progress</h3>
+          <h3 id="shutdown-progress-status">Force operation progress</h3>
           <ol id="shutdown-progress-steps"></ol>
         </section>
       </div>
       <footer class="modal-footer">
         <span id="shutdown-selection-count" class="shutdown-selection-count">0 selected</span>
         <button id="shutdown-cancel" type="button" class="button ghost">Close</button>
-        <button id="shutdown-stop-selected" type="button" class="button secondary" disabled>Stop selected</button>
-        <button id="shutdown-force-all" type="button" class="button shutdown-danger" disabled>Force Stop All</button>
-        <button id="shutdown-manual-kill" type="button" class="button shutdown-danger" disabled>Kill selected PIDs</button>
-        <button id="shutdown-exit-all" type="button" class="button shutdown-danger" disabled>Stop all &amp; exit</button>
+        <button id="shutdown-force-selected" type="button" class="button shutdown-danger" disabled>Force selected</button>
       </footer>
     </section>
   </div>
