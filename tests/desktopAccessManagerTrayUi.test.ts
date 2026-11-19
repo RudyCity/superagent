@@ -39,6 +39,7 @@ const flush=async()=>{for(let i=0;i<6;i++)await new Promise(resolve=>setImmediat
 function boot(nativeEnabled=true, mcpData?: {
   requests?: any[]; identities?: any[]; projects?: any[];
   connectedClients?: {success:boolean;state:string;clients:any[]|null;observedAt?:number};
+  tools?: any[];
   failActions?: string[];
 }){
   const parent=new Element("section");parent.id="settings-subpage-security";
@@ -111,6 +112,32 @@ function boot(nativeEnabled=true, mcpData?: {
       if(args.action==="identities") return {success:true,identities:mcpIdentities};
       if(args.action==="projects") return {success:true,projects:mcpProjects.filter(p=>p.enabled)};
       if(args.action==="project_inventory") return {success:true,projects:mcpProjects};
+      if(args.action==="tools"){
+        const selected=Boolean(args.payload?.identityHandle && args.payload?.projectId);
+        const demo=mcpData?.tools ?? [
+          {name:"superagent_lan_capabilities",description:"LAN metadata",risk:"safe",
+            approvalKind:"read_only",capability:null,hostReadiness:"certified_metadata",
+            hostRequirement:"Metadata only.",hostBlocked:false,operationStatus:"recheck_at_execution",
+            oauthScopesRequired:["mcp:tools"],grantState:"not_required"},
+          {name:"superagent_exec_command",description:"Execute local terminal",risk:"dangerous",
+            approvalKind:"project",capability:"execute",hostReadiness:"uncertified",
+            hostRequirement:"Uncertified terminal under host v2.",hostBlocked:true,
+            operationStatus:"host_uncertified",oauthScopesRequired:["mcp:tools","mcp:tools:write"]},
+          {name:"superagent_git_action",description:"Git command",risk:"dangerous",
+            approvalKind:"project",capability:null,capabilitiesByAction:{status:"read",diff:"read",log:"read",commit:"git",add:"git"},
+            hostReadiness:"action_dependent",hostRequirement:"Check command arguments.",
+            hostBlocked:false,operationStatus:"check_action_arguments",
+            oauthScopesRequired:["mcp:tools","mcp:tools:write"]},
+        ];
+        const tools=demo.map(tool=>({
+          ...tool,
+          grantState:tool.grantState ?? (selected ? tool.capabilitiesByAction ? "action_dependent" : "missing" : "choose_identity_project"),
+        }));
+        return {success:true,registered:tools.length+12,active:tools.length,disabled:12,
+          counts:{hostBlocked:tools.filter(t=>t.hostBlocked).length,
+            missingProjectGrant:tools.filter(t=>t.grantState==="missing").length},
+          tools};
+      }
       if(args.action==="register_project"){
         const input=args.payload;
         const id=input.id||input.name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
