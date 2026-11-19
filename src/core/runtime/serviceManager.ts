@@ -634,9 +634,9 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
       // Disabled optional services must not count as runtime failures.
       const category=ready?"ready":
         item.state==="unverified"?"unverified":
-        item.state==="degraded"||available?"degraded":
-        blocked?"blocked":
         item.state==="unknown"?"failed":
+        blocked?"blocked":
+        item.state==="degraded"||available?"degraded":
         item.state==="inactive"&&!policy.startOnBoot&&!policy.autoRecover?"not_configured":
         item.state==="inactive"&&!policy.startOnBoot?"inactive":"failed";
       return {service:item.service,state:item.state,category,ownerVerified:item.ownershipVerified,
