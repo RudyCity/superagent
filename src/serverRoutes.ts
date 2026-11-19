@@ -1343,7 +1343,8 @@ export async function handleServerRoute(
     const identityHandle = parsedUrl.searchParams.get("identityHandle") || undefined;
     const projectId = parsedUrl.searchParams.get("projectId") || undefined;
     if (keys.some(key => !["identityHandle","projectId"].includes(key)) ||
-        keys.length > 2 || (identityHandle && !/^idh_[a-f0-9]{16}$/.test(identityHandle)) ||
+        keys.length > 2 || new Set(keys).size !== keys.length ||
+        (identityHandle && !/^idh_[a-f0-9]{16}$/.test(identityHandle)) ||
         (projectId && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(projectId))) {
       sendJSON(res, 400, { success: false, code: "INVALID_TOOL_INVENTORY_SELECTION" });
       return true;
