@@ -5,6 +5,7 @@ import vm from "node:vm";
 
 const html=fs.readFileSync(path.resolve("apps/superagent-tray/ui/index.html"),"utf8");
 const script=fs.readFileSync(path.resolve("apps/superagent-tray/ui/shutdown-manager.js"),"utf8");
+const shutdownCss=fs.readFileSync(path.resolve("apps/superagent-tray/ui/shutdown-manager.css"),"utf8");
 const native=fs.readFileSync(path.resolve("apps/superagent-tray/src-tauri/src/shutdown_manager.rs"),"utf8");
 const ownerControl=fs.readFileSync(path.resolve("apps/superagent-tray/src-tauri/src/runtime_control.rs"),"utf8");
 
@@ -73,6 +74,11 @@ describe("native Shutdown Manager UI",()=>{
     expect(html).toContain('src="./shutdown-manager.js"');
     expect(html).toContain('href="./shutdown-manager.css"');
     expect(script).not.toMatch(/innerHTML|eval\s*\(|taskkill|process\.kill/);
+    expect(shutdownCss).toContain("width:min(1680px,calc(100vw - 32px))");
+    expect(shutdownCss).toContain("max-width:none");
+    expect(shutdownCss).not.toContain("max-width:820px");
+    expect(shutdownCss).not.toContain("max-height:35vh");
+    expect(native.match(/\.parent\(&dialog_parent\)/g)).toHaveLength(3);
     expect(native).toContain('force_confirmation.as_deref()!=Some("FORCE STOP ALL")');
     expect(native).toContain('owner.source=="registry"');
     expect(native).toContain('process.start_time())!=item.process_started_at');
