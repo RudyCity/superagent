@@ -154,6 +154,12 @@ function explicitFileEffects(name:string,args:Args|undefined):ExplicitFileEffect
     if(!add(args.inputPath,["read"]))return null;
     return effects;
   }
+  if(name==="superagent_list_chrome_profiles"){
+    if(typeof args.customUserDataPath!=="string"||!args.customUserDataPath.trim())return null;
+    if(Object.keys(args).some(key=>!["customUserDataPath","workspace","projectId"].includes(key)))return null;
+    if(!add(path.join(args.customUserDataPath,"Local State"),["read"]))return null;
+    return effects;
+  }
   if(name==="superagent_brain_publish"){
     const action=String(args.action??"");
     if(action==="confirm")return effects;
@@ -234,7 +240,7 @@ const EXPLICIT_EFFECT_TOOLS = new Set([
   "superagent_pdf_edit","superagent_pdf_edit_vector_exact","superagent_pdf_ocr_searchable",
   "superagent_pdf_redact_raster","superagent_pdf_sign","superagent_pdf_verify_signature",
   "superagent_pdf_render","superagent_pdf_split",
-  "superagent_brain_publish","superagent_use_skill",
+  "superagent_brain_publish","superagent_use_skill","superagent_list_chrome_profiles",
 ]);
 
 /** No recursive traversal or regular expressions: search only granted file paths. */
