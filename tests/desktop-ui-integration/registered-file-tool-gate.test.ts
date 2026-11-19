@@ -130,17 +130,18 @@ describe("permanent file access enforced at Core tool boundary",()=>{
   });
 
   it("mediates complex PDF/media tools per explicit path effect",()=>{
-    const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
-    const gate=(name:string,args:Record<string,unknown>)=>registeredFileToolGate({name,args},a.root,opts);
+    const a=setup();
     const input=path.join(a.root,"input.pdf"),output=path.join(a.root,"output.pdf");
     const cert=path.join(a.root,"cert.p12"),watermark=path.join(a.root,"mark.png");
     fs.writeFileSync(input,"pdf"); fs.writeFileSync(cert,"cert"); fs.writeFileSync(watermark,"png");
-    const allow=(file:string,operations:("read"|"write"|"delete")[])=>{
-      const policy=a.p();
-      policy.rules.push({kind:"file",effect:"allow",path:file,operations,app:a.identity()!});
-      a.save(policy);
-    };
-    allow(input,["read"]); allow(cert,["read"]); allow(watermark,["read"]); allow(output,["write"]);
+    const policy=a.p(
+      a.rule("input","allow",input,["read"]),
+      a.rule("cert","allow",cert,["read"]),
+      a.rule("mark","allow",watermark,["read"]),
+      a.rule("output","allow",output,["write"]),
+    );
+    const opts={registry:()=>policy,identity:a.identity};
+    const gate=(name:string,args:Record<string,unknown>)=>registeredFileToolGate({name,args},a.root,opts);
     expect(gate("superagent_pdf_sign",{inputPath:input,outputPath:output,certificatePath:cert,
       expectedInputSha256:"0".repeat(64),confirmSign:true})).toBeNull();
     expect(gate("superagent_media_transform",{inputPath:input,outputPath:output,
