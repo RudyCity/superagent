@@ -88,8 +88,6 @@
           <path d="M10 21h4" />
         </svg>
         <span id="tray-notification-count" class="notification-count" hidden>0</span>
-        <span id="tray-notification-action-count" class="notification-count notification-action-count"
-              aria-label="0 actions required" hidden>0</span>
       </button>
       <button id="tray-window-reload" class="tray-window-button tray-window-reload" type="button" aria-label="Reload SuperAgent Tray" title="Reload SuperAgent Tray">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -124,7 +122,10 @@
       <button type="button" class="notification-popover-close" data-notification-close
               aria-label="Close notifications">×</button>
     </div>
-    <p id="tray-notification-category-summary" class="notification-popover-summary" aria-live="polite">0 need action · 0 information</p>
+    <div class="notification-popover-categories" role="tablist" aria-label="Notification categories">
+      <button type="button" class="notification-popover-category active" data-popover-category="action" role="tab" aria-selected="true">Action Required <span id="tray-notification-action-total">0</span></button>
+      <button type="button" class="notification-popover-category" data-popover-category="information" role="tab" aria-selected="false">Information <span id="tray-notification-information-total">0</span></button>
+    </div>
     <div id="tray-notification-recent" class="notification-popover-list" aria-live="polite"></div>
     <div class="notification-popover-foot">
       <button id="tray-notification-read-all" class="notification-text-button" type="button">Mark all read</button>
