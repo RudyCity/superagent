@@ -1121,9 +1121,13 @@ pub async fn shutdown_manager_action(
                 "\nOnly the exact OS PIDs selected in this preview are targeted. \
                 No process tree is killed. Continue?");
             let dialog=app.clone();
+            let dialog_parent=window.clone();
             let approved=tauri::async_runtime::spawn_blocking(move||{
                 use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
-                dialog.dialog().message(summary).buttons(
+                dialog.dialog().message(summary)
+                    .title("SuperAgent · Shutdown Manager")
+                    .parent(&dialog_parent)
+                    .buttons(
                     MessageDialogButtons::OkCancelCustom(
                         "Kill selected OS processes".into(),"Cancel".into()
                     )).blocking_show()
@@ -1186,9 +1190,13 @@ pub async fn shutdown_manager_action(
                 The Tray stays open for status verification. Continue?",
                 chosen.len(),blocked);
             let dialog=app.clone();
+            let dialog_parent=window.clone();
             let approved=tauri::async_runtime::spawn_blocking(move||{
                 use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
-                dialog.dialog().message(summary).buttons(
+                dialog.dialog().message(summary)
+                    .title("SuperAgent · Shutdown Manager")
+                    .parent(&dialog_parent)
+                    .buttons(
                     MessageDialogButtons::OkCancelCustom(
                         "Force stop verified owners".into(),"Cancel".into()
                     )).blocking_show()
@@ -1245,6 +1253,7 @@ pub async fn shutdown_manager_action(
             }
             let chosen=validate_selection(&original,&ids,exit)?;
             let dialog=app.clone();
+            let dialog_parent=window.clone();
             let summary=format!(
                 "Stop {} verified service(s){}?\n\n\
                 Active jobs and sessions are never force-killed. Services that change owner, \
@@ -1254,7 +1263,10 @@ pub async fn shutdown_manager_action(
             );
             let approved=tauri::async_runtime::spawn_blocking(move||{
                 use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
-                dialog.dialog().message(summary).buttons(
+                dialog.dialog().message(summary)
+                    .title("SuperAgent · Shutdown Manager")
+                    .parent(&dialog_parent)
+                    .buttons(
                     MessageDialogButtons::OkCancelCustom(
                         "Confirm graceful shutdown".into(),"Cancel".into()
                     )).blocking_show()
