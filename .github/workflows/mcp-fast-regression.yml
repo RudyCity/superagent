@@ -182,6 +182,7 @@ jobs:
             tests/mcpOutputRecovery.test.ts \
             tests/mcpToolGateway.test.ts \
             tests/mcpFilePolicyMatrix.test.ts \
+            tests/mcpAllToolsAuthorizationMatrix.test.ts \
             tests/mcpOAuthRoutes.test.ts \
             tests/mcpOAuthStore.test.ts \
             tests/mcpDelegateWebCertification.test.ts \
@@ -269,6 +270,7 @@ jobs:
           tests/mcpLiveVerifierDiagnostics.test.ts
           tests/desktop-ui-activation/live-activation-gate.test.ts
           tests/mcpFilePolicyMatrix.test.ts
+          tests/mcpAllToolsAuthorizationMatrix.test.ts
           tests/mcpDelegateWebCertification.test.ts
           tests/mcpPolicyReadinessReport.test.ts
           tests/desktop-ui-integration/desktop-native-mediator.test.ts
