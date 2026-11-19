@@ -1633,7 +1633,11 @@ function extractMcpResultText(result: unknown): string {
             }
           };
           if (targetToolName === "superagent_services_status") {
-            const safe = describeBoundedServicePermission(checkedArgs, filePolicyActive);
+            const safe = describeBoundedServicePermission(
+              checkedArgs,
+              filePolicyActive,
+              found ? { tool: "superagent_services_status", fields: Object.keys(found.inputSchema.properties ?? {}) } : undefined,
+            );
             return {
               ...safe,
               hostFilePolicy: {
@@ -1721,7 +1725,7 @@ function extractMcpResultText(result: unknown): string {
               filePolicyActive,
               hostBlock,
               supportedFields,
-            }),
+            }, found ? { tool: "superagent_desktop_ui", fields: Object.keys(found.inputSchema.properties ?? {}) } : undefined),
             note: "Read-only advisory snapshot. No approval is created; no window is opened. Runtime rechecks all policy layers, target identity and native consent.",
           };
         };

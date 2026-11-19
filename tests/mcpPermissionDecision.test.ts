@@ -126,4 +126,34 @@ describe("bounded MCP permission trace never grants an action", () => {
       supportedActions: ["list_targets", "transport_status"],
     });
   });
+
+  it("offers only explicit human request advice for missing connection Execute", () => {
+    const result = describeBoundedDesktopPermission({ ...allowed, connectionDecision:"approval_required" });
+    expect(result.remediationActions).toEqual([{
+      kind:"open_tab",page:"security",tab:"connections",route:"security:connections",
+      requiresUserAction:true,request:{tool:"superagent_request_project_access",
+        arguments:{projectId:"mcp-connection",capabilities:["execute"]},requiresUserSubmission:true},
+    }]);
+    expect(result.performedExecution).toBe(false);
+  });
+
+  it("never suggests a grant when an independent host or store gate blocks execution", () => {
+    for (const input of [{...allowed,connectionDecision:"approval_required" as const,hostBlock:"uncertified"},
+      {...allowed,connectionDecision:"unavailable" as const}]) {
+      const result=describeBoundedDesktopPermission(input);
+      expect(result.remediationActions).toEqual([expect.objectContaining({kind:"operator_repair",requiresUserAction:true})]);
+      expect(JSON.stringify(result.remediationActions)).not.toMatch(/request_project_access|capabilities/);
+    }
+    expect(describeBoundedDesktopPermission({...allowed,oauthAllowed:false}).remediationActions)
+      .toEqual([{kind:"reconnect",requiredScopes:["mcp:tools:write"],requiresUserAction:true}]);
+  });
+
+  it("keeps schema repair bounded to provided authorized schema field names", () => {
+    const result=describeBoundedServicePermission({action:"restart",path:"PRIVATE_VALUE"},true,
+      {tool:"superagent_services_status",fields:["action","service","port","limit"]});
+    expect(result.remediationActions).toEqual([{kind:"inspect_schema",tool:"superagent_services_status",
+      fields:["action","service","port","limit"],requiresUserAction:true}]);
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_VALUE");
+    expect(describeBoundedDesktopPermission(allowed).remediationActions).toEqual([{kind:"none",reasonCode:"RUNTIME_RECHECK_REQUIRED"}]);
+  });
 });

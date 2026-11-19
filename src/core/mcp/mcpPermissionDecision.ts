@@ -10,6 +10,7 @@ import {
   READ_ONLY_SERVICE_ACTIONS,
 } from "../tools/registeredFileToolGate.js";
 import { parseReadOnlyServiceArgs } from "../runtime/serviceReadPolicy.js";
+import { MCP_CONNECTION_PROJECT_ID } from "../project/projectSecurityResources.js";
 
 export const MCP_PERMISSION_DECISION_CODES = [
   "ALLOWED_TO_ATTEMPT", "SCHEMA_INVALID", "OAUTH_SCOPE_MISSING",
@@ -30,6 +31,44 @@ export type McpPermissionRemediationAction =
   | { kind: "host_policy_blocked"; retryableWithMcpGrant: false }
   | { kind: "repair_policy_store"; retryableWithMcpGrant: false }
   | { kind: "open_tray_section"; trayPage: "security"; trayTab: "connections" | "mcp"; projectId: string; requiredCapability: string; retryableAfterGrant: true };
+
+export type McpPermissionSchemaContext = Readonly<{
+  tool: "superagent_desktop_ui" | "superagent_services_status";
+  /** Field names from the authorized production inputSchema, never argument values. */
+  fields: readonly string[];
+}>;
+
+export type McpPermissionRemediationActionItem =
+  | { kind:"open_tab";page:"security";tab:"connections"|"mcp"|"rules"|"register";
+      route:"security:connections"|"security:mcp"|"security:rules"|"security:register";
+      requiresUserAction:true;
+      request?:{tool:"superagent_request_project_access";
+        arguments:{projectId:typeof MCP_CONNECTION_PROJECT_ID;capabilities:["execute"]};requiresUserSubmission:true} }
+  | { kind:"reconnect";requiredScopes:["mcp:tools:write"];requiresUserAction:true }
+  | { kind:"operator_repair";reasonCode:McpPermissionDecisionCode;requiresUserAction:true }
+  | { kind:"inspect_schema";tool:McpPermissionSchemaContext["tool"];fields:string[];requiresUserAction:true }
+  | { kind:"none";reasonCode:"RUNTIME_RECHECK_REQUIRED"|"TARGET_UNAVAILABLE" };
+
+/** Navigation/request descriptions only; consuming these values must not grant or submit anything. */
+export function getMcpPermissionRemediationActions(
+  code:McpPermissionDecisionCode,schema?:McpPermissionSchemaContext,
+):McpPermissionRemediationActionItem[] {
+  if(code==="MCP_CONNECTION_EXECUTE_REQUIRED")return [{kind:"open_tab",page:"security",
+    tab:"connections",route:"security:connections",requiresUserAction:true,
+    request:{tool:"superagent_request_project_access",arguments:{projectId:MCP_CONNECTION_PROJECT_ID,
+      capabilities:["execute"]},requiresUserSubmission:true}}];
+  if(code==="PROJECT_CAPABILITY_MISSING")return [{kind:"open_tab",page:"security",
+    tab:"mcp",route:"security:mcp",requiresUserAction:true}];
+  if(code==="NATIVE_CONSENT_REQUIRED")return [{kind:"open_tab",page:"security",
+    tab:"register",route:"security:register",requiresUserAction:true}];
+  if(code==="OAUTH_SCOPE_MISSING")return [{kind:"reconnect",requiredScopes:["mcp:tools:write"],requiresUserAction:true}];
+  if(code==="SCHEMA_INVALID"&&schema)return [{kind:"inspect_schema",tool:schema.tool,
+    fields:[...new Set(schema.fields.filter(field=>/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(field)))].slice(0,64),
+    requiresUserAction:true}];
+  if(code==="ALLOWED_TO_ATTEMPT")return [{kind:"none",reasonCode:"RUNTIME_RECHECK_REQUIRED"}];
+  if(code==="TARGET_UNAVAILABLE")return [{kind:"none",reasonCode:"TARGET_UNAVAILABLE"}];
+  return [{kind:"operator_repair",reasonCode:code,requiresUserAction:true}];
+}
 
 export interface BoundedDesktopPermissionInput {
   oauthAllowed: boolean;
@@ -73,7 +112,10 @@ function buildDesktopRemediationAction(
   }
 }
 
-export function describeBoundedDesktopPermission(input: BoundedDesktopPermissionInput) {
+export function describeBoundedDesktopPermission(
+  input: BoundedDesktopPermissionInput,
+  schema?: McpPermissionSchemaContext,
+) {
   const malformed = Boolean(input.hostBlock?.includes("unsupported arguments"));
   // Host certification takes priority over an approval prompt: approving
   // Execute cannot fix an independent denied file policy.
@@ -107,6 +149,7 @@ export function describeBoundedDesktopPermission(input: BoundedDesktopPermission
     } satisfies Record<string, McpPermissionLayerState>,
     remediation: remediation[decisionCode as keyof typeof remediation],
     remediationAction: buildDesktopRemediationAction(decisionCode, input),
+    remediationActions: getMcpPermissionRemediationActions(decisionCode, schema),
     performedExecution: false as const,
   };
 }
@@ -123,7 +166,11 @@ function isValidReadOnlyServiceArgs(args: unknown): { valid: boolean; action: st
   };
 }
 
-export function describeBoundedServicePermission(args: unknown, filePolicyActive: boolean) {
+export function describeBoundedServicePermission(
+  args: unknown,
+  filePolicyActive: boolean,
+  schema?: McpPermissionSchemaContext,
+) {
   const { valid, action } = isValidReadOnlyServiceArgs(args);
   return {
     decisionCode: valid ? "ALLOWED_TO_ATTEMPT" as const : "SCHEMA_INVALID" as const,
@@ -148,6 +195,7 @@ export function describeBoundedServicePermission(args: unknown, filePolicyActive
           supportedActions: [...READ_ONLY_SERVICE_ACTIONS],
           retryableWithMcpGrant: false,
         } satisfies McpPermissionRemediationAction),
+    remediationActions: getMcpPermissionRemediationActions(valid ? "ALLOWED_TO_ATTEMPT" : "SCHEMA_INVALID", schema),
     performedExecution: false as const,
   };
 }

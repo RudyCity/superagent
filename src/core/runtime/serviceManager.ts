@@ -49,7 +49,7 @@ import {planLegacyVisionRecycle,executeLegacyVisionRecycle} from "./visionLegacy
 import {planGlobalLifecycleRecycle,executeGlobalLifecycleRecycle,reconcileGlobalLifecycleRecycle} from "./globalLifecycleRecycle.js";
 
 import { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
-import { summarizeServiceOwnerAttestation } from "./serviceOwnerAttestation.js";
+import { summarizeServiceOwnerAttestation, observeVerifiedServiceProcessBirth } from "./serviceOwnerAttestation.js";
 import { readCheckoutRevision } from "./checkoutRevision.js";
 import { isReadOnlyServiceAction, parseReadOnlyServiceArgs, validateServicePort } from "./serviceReadPolicy.js";
 export { validateServicePort } from "./serviceReadPolicy.js";
@@ -319,6 +319,10 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
               : "Authenticated Core supervisor + kernel listener"
           : "Core supervisor identity/kernel listener mismatch",
         {workerPid:s.active.pid,retainedWorkers:s.retained.length,
+          activeWorkerPid:verified?s.active.pid:null,
+          activeWorkerSince:verified?s.active.since:null,
+          activeWorkerBuildMode:verified?s.active.buildMode:null,
+          supervisorLifecycleVersion:verified?s.ownerContract?.safeLifecycleVersion:null,
           sessionCount:s.affinitySessions,buildFresh,
           runtimeVersion,sourceVersion,versionDrift,
           // Supervisor content digests prove which worker generation is
@@ -552,7 +556,7 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
     return {action,readOnly:true,services:await inspectServices(service,port),
       note:"Owner-scoped status; no process/tunnel mutation."};
   if(action==="owner_status"){
-    const states=await inspectServices(service,port);
+    const states=await observeVerifiedServiceProcessBirth(await inspectServices(service,port));
     const tray=states.find(s=>s.service==="tray");
     if(tray?.ownershipVerified){
       try {

@@ -2,7 +2,7 @@ import {afterEach,describe,expect,it} from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {createSuperagentMcpServer} from "../src/core/mcp/superagentMcpServer.js";
+import {createSuperagentMcpServer,MCP_TOOL_DEFINITIONS} from "../src/core/mcp/superagentMcpServer.js";
 import {grantProjectAccess,revokeProjectAccess} from "../src/core/project/projectAccessPolicy.js";
 import {MCP_CONNECTION_PROJECT_ID,listProjectAccessRequests} from "../src/core/project/projectAccessRequestStore.js";
 import {onMcpActivity} from "../src/core/mcp/mcpActivityBus.js";
@@ -276,6 +276,9 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       });
       const badPreflight=JSON.parse(badService.content[0].text).permissionPreflight;
       expect(badPreflight.decisionCode).toBe("SCHEMA_INVALID");
+      const serviceSchema=MCP_TOOL_DEFINITIONS.find(tool=>tool.name==="superagent_services_status")!.inputSchema;
+      expect(badPreflight.remediationActions).toEqual([{kind:"inspect_schema",tool:"superagent_services_status",
+        fields:Object.keys(serviceSchema.properties??{}),requiresUserAction:true}]);
       expect(JSON.stringify(badService)).not.toContain("DO_NOT_ECHO");
       const invalid=await invoke(server,"superagent_tool_describe",{
         name:"superagent_desktop_ui",checkArguments:[],
