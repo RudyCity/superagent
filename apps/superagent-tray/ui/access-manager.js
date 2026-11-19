@@ -311,6 +311,12 @@
     if (tabAll) tabAll.textContent = "Semua (" + allRules.length + ")";
     if (tabDesktop) tabDesktop.textContent = "Desktop (" + desktopCount + ")";
     if (tabFile) tabFile.textContent = "File & Folder (" + fileCount + ")";
+    // Advisory inventory only: a matching host rule is never a project grant
+    // and project capabilities never bypass this independent host gate.
+    for (const id of ["access-host-file-rule-count", "access-project-host-file-rule-count"]) {
+      const summary = $(id);
+      if (summary) summary.textContent = fileCount + " aturan file/folder host tercatat (bukan izin proyek).";
+    }
 
     const query = (state.ruleSearch || "").trim().toLowerCase();
     const filtered = allRules.filter(r => {
@@ -864,12 +870,37 @@
     const bannerHead = make("div", "access-mcp-intro-head");
     const bannerCopy = make("div", "access-mcp-intro-copy");
     const bannerTitle = make("h3", "", "Akses Proyek");
-    const bannerDesc = make("p", "access-mcp-description", "Agen MCP hanya dapat mengajukan permintaan izin. Pemilik proyek menyetujui hak baca, tulis, eksekusi, atau Git secara terpisah dari mode YOLO Chat Agent.");
+    const bannerDesc = make("p", "access-mcp-description", "Atur kemampuan per identitas MCP dan proyek terdaftar: Read, Write, Execute, Git, Worktree, Planning, dan Workspace Chain. Otorisasi koneksi OAuth saja tidak memberi izin operasi; aturan aplikasi dan file di host tetap berlaku.");
     bannerCopy.append(bannerTitle, bannerDesc);
     const bannerRefresh = action("Muat ulang", "access-audit-refresh", () => void refreshMcpRequests());
     bannerRefresh.id = "access-mcp-projects-refresh";
     bannerHead.append(bannerCopy, bannerRefresh);
     banner.append(bannerHead);
+    const hostBoundary = make("div", "access-mcp-grant-form");
+    hostBoundary.id = "access-project-host-boundary";
+    hostBoundary.append(
+      make("strong", "", "Batas terpisah: Aplikasi & File"),
+      make("p", "access-hint",
+        "Izin proyek menentukan apa yang boleh dicoba agent pada proyek tersebut. Aturan file/folder Core dan izin desktop host membatasi apa yang benar-benar boleh diakses. Keduanya tidak saling menggantikan. Tool yang belum tersertifikasi tetap ditolak."),
+    );
+    const projectHostCount = make("p", "access-hint", "Memeriksa aturan host file/folder…");
+    projectHostCount.id = "access-project-host-file-rule-count";
+    const projectHostActions = make("div", "access-mcp-pending-controls");
+    const configureHostFiles = action("Atur Batas File Host", "access-audit-refresh", () => {
+      const kind = $("access-kind");
+      if (kind) kind.value = "file";
+      setActiveTab("register");
+      viewChanged();
+    });
+    configureHostFiles.id = "access-project-open-file-editor";
+    const inspectHostFiles = action("Lihat Aturan File Aktif", "access-audit-refresh", () => {
+      setRuleFilter("file");
+      setActiveTab("rules");
+    });
+    inspectHostFiles.id = "access-project-open-file-rules";
+    projectHostActions.append(configureHostFiles, inspectHostFiles);
+    hostBoundary.append(projectHostCount, projectHostActions);
+    banner.append(hostBoundary);
 
     const loadError = make("div", "access-mcp-load-error");
     loadError.id = "access-mcp-project-load-error";
@@ -1042,7 +1073,7 @@
     // Section 2: Direct Grant Form
     const grantSection = make("section", "access-editor access-mcp-card");
     const grantTitle = make("h3", "", "Berikan Izin Proyek ke Agent MCP");
-    const grantDesc = make("p", "access-hint", "Hanya proyek yang terdaftar dan aktif yang dapat dipilih. Untuk izin operasi non-proyek, buka tab Koneksi MCP.");
+    const grantDesc = make("p", "access-hint", "Pilih identitas dan proyek terdaftar yang aktif. Operasi host non-proyek memerlukan Execute pada proyek lokal aktif; tab Koneksi MCP hanya mengurus autentikasi/sesi. Semua operasi tetap tunduk pada kebijakan file host dan persetujuan native.");
 
     const grantForm = make("div", "access-mcp-grant-form");
     grantForm.id = "access-mcp-direct-grant-form";
@@ -1697,6 +1728,25 @@
     onboarding.id = "access-onboarding";
     onboarding.append(make("strong","","Mulai dengan aplikasi yang dipercaya"),
       make("p","","Default semua aplikasi diblokir. Pilih jendela aktif atau aplikasi terinstall, kemampuan yang boleh digunakan, lalu konfirmasi di dialog native."));
+    const hostOverview = make("section", "access-editor access-mcp-intro");
+    hostOverview.id = "access-host-boundary";
+    hostOverview.append(
+      make("h3", "", "Aplikasi & File — aturan host"),
+      make("p", "access-hint",
+        "Atur aplikasi/jendela dan file atau folder yang boleh digunakan lewat operasi Core SuperAgent. Ini bukan izin agent atas proyek. Untuk agent MCP, pilih proyek dan capability di Akses Proyek terlebih dahulu; akses file host dan sertifikasi tool tetap diperiksa secara terpisah."),
+    );
+    const hostRuleCount = make("p", "access-hint", "Memeriksa aturan file/folder host…");
+    hostRuleCount.id = "access-host-file-rule-count";
+    const hostOverviewActions = make("div", "access-mcp-pending-controls");
+    const openProjectPermissions = action("Kelola Akses Proyek", "access-audit-refresh", () => setActiveTab("mcp"));
+    openProjectPermissions.id = "access-host-open-project";
+    const openFileRules = action("Lihat Aturan File Aktif", "access-audit-refresh", () => {
+      setRuleFilter("file");
+      setActiveTab("rules");
+    });
+    openFileRules.id = "access-host-open-file-rules";
+    hostOverviewActions.append(openProjectPermissions, openFileRules);
+    hostOverview.append(hostRuleCount, hostOverviewActions);
     const topbar = make("div","access-toolbar");
     const search = make("input","access-search");
     search.id = "access-search"; search.placeholder = "Cari aplikasi / jendela..."; search.type = "search";
@@ -1978,14 +2028,17 @@
     paneRegister.id = "access-pane-register";
     paneRegister.setAttribute("role", "tabpanel");
     paneRegister.setAttribute("aria-labelledby", "access-nav-tab-register");
-    paneRegister.append(onboarding, split);
+    paneRegister.append(hostOverview, onboarding, split);
 
     const paneRules = make("div", "access-pane");
     paneRules.id = "access-pane-rules";
     paneRules.setAttribute("role", "tabpanel");
     paneRules.setAttribute("aria-labelledby", "access-nav-tab-rules");
     paneRules.hidden = true;
-    paneRules.append(stored);
+    paneRules.append(
+      make("p", "access-hint",
+        "Aturan Aktif adalah kebijakan host untuk aplikasi, jendela, dan file/folder Core. Bukan daftar grant MCP per proyek. Untuk mengubah kemampuan agent, gunakan Akses Proyek."),
+      stored);
 
     const paneAudit = make("div", "access-pane");
     paneAudit.id = "access-pane-audit";
