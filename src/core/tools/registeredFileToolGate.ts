@@ -33,6 +33,9 @@ const PATCH_TOOLS = new Set(["apply_patch","superagent_apply_patch"]);
  */
 const EXPLICIT_INPUT_READERS: Record<string,readonly string[]> = {
   superagent_read_document: ["filePath","workspace","projectId"],
+  superagent_muse_send_file: ["filePath","port","projectId"],
+  superagent_telegram_send_file: ["filePath","caption","projectId"],
+  superagent_unlock_file: ["filePath","workspace","projectId","action","force","reason","cwd","lineRange"],
   superagent_pdf_inspect: ["inputPath","workspace","projectId"],
   superagent_pdf_extract: ["inputPath","pages","maxChars","workspace","projectId"],
   superagent_pdf_ocr: ["inputPath","pages","engine","language","forceOcr","scale",
@@ -45,7 +48,9 @@ function certifiedInputReaderArguments(name:string,args:Args|undefined):boolean 
   const allowed=EXPLICIT_INPUT_READERS[name]!;
   if(!args || typeof args!=="object" || Array.isArray(args))return false;
   if(Object.keys(args).some(key=>!allowed.includes(key)))return false;
-  const selected=name==="superagent_read_document"?args.filePath:args.inputPath;
+  const selected=["superagent_read_document","superagent_muse_send_file",
+    "superagent_telegram_send_file","superagent_unlock_file"].includes(name)
+    ?args.filePath:args.inputPath;
   return typeof selected==="string" && selected.length>0;
 }
 /**
@@ -276,7 +281,7 @@ const CERTIFIED_NON_FILE_TOOLS = new Set([
   "superagent_device_file_offer", "superagent_device_file_put", "superagent_device_file_get",
   "superagent_device_file_finish", "superagent_device_file_abort",
   "superagent_device_capabilities", "superagent_muse_file_status",
-  "superagent_muse_file_cancel",
+  "superagent_muse_file_cancel", "superagent_switch_workspace",
 ]);
 /**
  * The Delegate history sync writes only its app-owned SQLite mirror. It is NOT
