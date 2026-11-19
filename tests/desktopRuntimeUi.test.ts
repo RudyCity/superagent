@@ -956,6 +956,7 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
         { projectId: "shop", status: "approved" },
       ],
       mcpIdentities: [{ subject: "Gemini", identityHandle: "idh_abcdef1234567890", scopes: [] }],
+      mcpClients: [{sessionHandle:"ses_aaaaaaaaaaaa",principalHandle:"idh_abcdef1234567890",authMode:"oauth",state:"idle"}],
     });
     await new Promise(resolve => setImmediate(resolve));
     const owner = ui.byId("runtime-remote").innerHTML;
