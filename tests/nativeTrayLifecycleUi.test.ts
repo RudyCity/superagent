@@ -33,10 +33,13 @@ function mount(options:{allow?:boolean;mutationError?:boolean;safeRestart?:boole
     expect(command).toBe("lifecycle_console_request");
     requests.push(args.request);
     const q=args.request;
-    if(q.action==="dashboard")return {summary:{ready:3,degraded:1,unavailable:9},
-      checks:[{service:"tray",state:"active",alive:true,ready:true,
+    if(q.action==="dashboard")return {summary:{
+      ready:3,degraded:1,unavailable:1,unverified:1,notConfigured:7,
+      inactive:0,blocked:0,failed:0,
+    },
+      checks:[{service:"tray",state:"active",category:"ready",alive:true,ready:true,
         ownerVerified:true,reason:"safe",dependsOn:[]},
-        ...(options.muse ? [{service:"muse",state:"inactive",alive:false,ready:false,
+        ...(options.muse ? [{service:"muse",state:"inactive",category:"not_configured",alive:false,ready:false,
           ownerVerified:false,reason:"No independent channel host",dependsOn:[]}] : [])],
       trayRelease:{activeDigest:"a".repeat(64)},
       safeLifecycle:{
@@ -106,6 +109,22 @@ describe("native lifecycle Runtime panel",()=>{
     expect(m.node("lifecycle-release").textContent).toBe("aaaaaaaaa");
     expect(m.node("lifecycle-services").children.length).toBe(1);
     expect(m.node("lifecycle-events").children.length).toBe(1);
+  });
+  it("separates unconfigured services from unverified or failed health",async()=>{
+    const m=mount({muse:true});
+    expect(html).toContain('id="lifecycle-status-breakdown"');
+    expect(html).toContain("<small>Needs attention</small>");
+    await m.window.__superagentLifecycleRefresh(true);
+    expect(m.node("lifecycle-unavailable").textContent).toBe("1");
+    expect(m.node("lifecycle-status-breakdown").textContent)
+      .toContain("Not configured: 7");
+    expect(m.node("lifecycle-status-breakdown").textContent)
+      .toContain("Unverified: 1");
+    const services=m.node("lifecycle-services").children;
+    const muse=services.find((x:any)=>
+      x.children[0]?.children?.[0]?.textContent==="muse");
+    expect(muse).toBeDefined();
+    expect(muse.children[0].children[1].textContent).toBe("Not configured");
   });
   it("requires a reviewed plan and second confirmation to execute",async()=>{
     const m=mount({allow:false});
