@@ -8,14 +8,22 @@
   const essential = new Set(["core", "mcp", "tray"]);
   const optional = new Set(["transport", "channel_host", "muse", "telegram", "vision", "guardian", "rest_tunnel", "muse_tunnel"]);
   const servicePorts = {core:7888, transport:7891, channel_host:7892, vision:8095, guardian:7888, daemon:7888};
-  const permitted = new Set(["core", "tray", "transport", "channel_host", "vision", "guardian", "daemon"]);
+  const serviceActions = Object.freeze({
+    core:["restart"],mcp:["reload"],tray:["restart","upgrade"],
+    transport:["start","restart","stop"],channel_host:["start","restart","stop"],
+    vision:["start","restart","stop"],guardian:["start","restart","stop"],
+    daemon:["start","restart","stop"],
+  });
+  const permitted = new Set(Object.keys(serviceActions));
   const planFields = ["service", "port", "operationId", "expectedBuildDigest", "expectedReleaseRevision",
-    "expectedCurrentDigest", "expectedOwnerPid", "expectedInstanceId", "expectedSupervisorPid",
+    "expectedCurrentDigest", "expectedOwnerPid", "expectedPublicUrl", "expectedInstanceId", "expectedSupervisorPid",
     "expectedProcessIdentity", "expectedLegacyCommandDigest", "clientMode", "expectedWorkerPid",
     "expectedRunning", "noActiveJobs", "noCoreShutdown", "noPublicIngress", "corePort", "channelMode", "wsPort"];
   const state = {loading:false, lastSeen:null, plan:null, dashboard:null, events:[], history:[],
     filter:"all", agentFilter:"all", agentRows:[], agentDetails:null,
-    metrics:null, errors:[], ready:false, operationBusy:false};
+    metrics:null, errors:[], ready:false, operationBusy:false,
+    trayOwner:null, trayVersion:null, published:null,
+    versionCheckedAt:0, versionChecking:false};
   const call = (name, args={}) => {
     const invoke = window.__TAURI__?.core?.invoke;
     if(typeof invoke !== "function") throw Error("Native Tray IPC is unavailable");
@@ -96,6 +104,132 @@
     }
     return ["Not ready","bad"];
   }
+  const shortDigest = value => typeof value==="string"&&/^[a-f0-9]{64}$/.test(value)
+    ? value.slice(0,9) : null;
+  function serviceVersion(item,inventory,data) {
+    const details=inventory?.details||{};
+    const core=data?.services?.find(row=>row.service==="core")?.details||{};
+    if(item.service==="core"){
+      const current=shortDigest(details.activeBuildDigest);
+      const available=shortDigest(details.sourceBuildDigest);
+      return {current:(details.runtimeVersion?"v"+details.runtimeVersion+" · ":"")+
+        (current||"Unverified build"),
+        next:available?(available===current?"Built version is running":"Built "+available+" ready"):
+          "No verified build metadata",
+        update:!!current&&!!available&&current!==available,
+        action:"restart"};
+    }
+    if(item.service==="tray"){
+      const build=state.trayOwner?.services?.[0]?.build;
+      const code=state.trayOwner?.services?.[0]?.code;
+      const installed=shortDigest(data?.trayRelease?.activeDigest);
+      return {current:(state.trayVersion?"v"+state.trayVersion+" · ":"")+
+        (shortDigest(build?.runtimeDigest)||"Running digest unknown"),
+        next:installed?"Installed "+installed+
+          (code==="SOURCE_CHANGED_NOT_LOADED"?" · restart required":""):
+          "Installed release unknown",
+        update:code==="SOURCE_CHANGED_NOT_LOADED",
+        action:"restart"};
+    }
+    if(item.service==="mcp"){
+      return {current:shortDigest(details.backendReleaseDigest)||
+        (Number.isSafeInteger(details.backendPid)?"Backend PID "+details.backendPid:"Backend unknown"),
+        next:details.backendReleaseDigest?"Staged release active":"No verified staged release",
+        update:false,action:null};
+    }
+    if(item.service==="daemon"&&item.state==="embedded"){
+      return {current:core.runtimeVersion?"Core v"+core.runtimeVersion:"Core build inherited",
+        next:"Managed with Core",update:false,action:null};
+    }
+    return {current:"Version not reported",next:"No verified update",
+      update:false,action:null};
+  }
+  function canServiceAction(item,inventory,action) {
+    const supported=serviceActions[item.service]||[];
+    if(!supported.includes(action))return "Unsupported lifecycle action";
+    if(action==="start"){
+      if(item.ready===true||inventory?.state==="active")return "Already running";
+      if(item.state==="unverified")return "Owner unverified — manual review required";
+      if(item.dependencyBlocked===true)return "Dependencies not ready";
+      return null; // Native service planner verifies startup prerequisites.
+    }
+    if(item.ownerVerified!==true||inventory?.ownershipVerified!==true)
+      return "Owner not verified";
+    if(item.service==="mcp"&&(
+      inventory?.details?.reloadable!==true||
+      typeof inventory?.details?.publicUrl!=="string"))
+      return "Stable-URL backend reload unavailable";
+    return null;
+  }
+  function serviceActionButton(host,item,inventory,action,label) {
+    const button=append(host,"button","button ghost op-service-action",label);
+    button.type="button";
+    const blocker=canServiceAction(item,inventory,action);
+    button.disabled=!!blocker||state.operationBusy;
+    button.title=blocker||"Prepare a verified owner-bound lifecycle plan";
+    button.setAttribute("aria-label",label+" "+item.service.replace(/_/g," "));
+    button.addEventListener("click",()=>void quickPrepare(item.service,action));
+    return button;
+  }
+  function serviceControlPanel(row,item,inventory,version) {
+    const controls=append(row,"div","op-service-controls");
+    for(const [action,label] of [["start","Start"],["restart","Restart"],["stop","Stop"]]){
+      if(item.service==="mcp"&&action==="restart"){
+        serviceActionButton(controls,item,inventory,"reload","Reload");
+        continue;
+      }
+      serviceActionButton(controls,item,inventory,action,label);
+    }
+    if(item.service==="tray"){
+      const update=serviceActionButton(controls,item,inventory,"upgrade","Update");
+      update.title="Requires an installed, verified candidate and owner-bound upgrade plan";
+    } else if(item.service==="core"){
+      const update=serviceActionButton(controls,item,inventory,"restart","Update");
+      update.disabled=update.disabled||!version.update;
+      update.title=version.update?"Apply the verified newer Core build through a supervised restart":
+        "No newer Core build has been verified";
+    } else if(item.service==="mcp"){
+      const update=append(controls,"button","button ghost op-service-action","Update");
+      update.type="button";
+      update.title="Review verified release packages; this does not activate an unstaged MCP backend";
+      update.addEventListener("click",()=>openUpdatesReview());
+    } else {
+      const update=append(controls,"button","button ghost op-service-action","Update");
+      update.type="button";update.disabled=true;
+      update.title="This service has no independently verified version/update pipeline";
+    }
+  }
+  function renderPublishedStatus(){
+    const latest=state.published;
+    text("op-version-summary",latest?
+      "Official published release: "+latest.tag+
+        " · download review only; local development builds may be newer":
+      state.versionChecking?"Checking official release metadata…":
+      "Official version not verified. Runtime and local build fingerprints are shown per service.");
+  }
+  async function checkPublishedVersions(force=false){
+    if(state.versionChecking||(!force&&Date.now()-state.versionCheckedAt<300000))return;
+    state.versionChecking=true;state.versionCheckedAt=Date.now();
+    renderPublishedStatus();
+    try{
+      const info=await readTelemetry("overview-release-check",()=>call("check_release_updates"));
+      if(!info||!/^v\\d+\\.\\d+\\.\\d+-rc\\.\\d+$/.test(info.tag||""))
+        throw Error("Official release metadata was not verified");
+      state.published={tag:info.tag,version:info.releaseVersion,
+        components:Array.isArray(info.componentItems)?info.componentItems:[]};
+    }catch{
+      state.published=null; // Fail closed; never advertise an unverified update.
+    }finally{
+      state.versionChecking=false;renderPublishedStatus();
+    }
+  }
+  function openUpdatesReview(){
+    const nav=$("nav-updates");
+    if(nav&&typeof nav.click==="function")nav.click();
+    else if(typeof window.__superagentOpenPage==="function")window.__superagentOpenPage("updates");
+    else notify("Open Updates to review verified release packages; installation is a separate action.");
+    window.__superagentUpdatesRefresh?.();
+  }
   function renderReadiness(data) {
     const root=$("op-service-list");
     if(!root)return;
@@ -120,8 +254,13 @@
         item.reason||item.state||"No status",
         dep?"Depends on "+dep:""
       ].filter(Boolean).join(" · "));
+      const version=serviceVersion(item,data?.services?.find(s=>s.service===item.service),data);
+      append(copy,"small","op-service-version","Running: "+version.current);
+      append(copy,"small","op-service-version","Available: "+version.next);
+      const inventory=data?.services?.find(s=>s.service===item.service);
       const [label,tone]=health(item);
       badge(row,label,tone);
+      serviceControlPanel(row,item,inventory,version);
     }
     const sync=Number(data.observedAt);
     state.lastSeen=Number.isFinite(sync)?sync:null;
@@ -346,7 +485,9 @@
       readTelemetry("mcp-access-requests",()=>call("mcp_project_access_action",{action:"requests",payload:{}})),
       readTelemetry("mcp-grant-identities",()=>call("mcp_project_access_action",{action:"identities",payload:{}})),
       readTelemetry("native-owner-metrics",()=>call("get_overview_owner_metrics")),
-      readTelemetry("mcp-connected-clients",()=>call("mcp_project_access_action",{action:"connected_clients",payload:{}}))
+      readTelemetry("mcp-connected-clients",()=>call("mcp_project_access_action",{action:"connected_clients",payload:{}})),
+      readTelemetry("tray-owner-version",()=>lifecycle({action:"owner_status",service:"tray"})),
+      readTelemetry("tray-running-version",()=>call("get_tray_version"))
     ];
     // Refresh the native process monitor as soon as its own sample arrives;
     // slow security/agent queries must not block CPU/RAM visualization.
@@ -360,8 +501,10 @@
     try {
     const calls=await Promise.allSettled(requests);
     const results=calls.map(x=>x.status==="fulfilled"?x.value:null);
-    const names=["lifecycle","events","chat yolo","access rules","desktop policy","mcp requests","mcp identities","resources","connected clients"];
+    const names=["lifecycle","events","chat yolo","access rules","desktop policy","mcp requests","mcp identities","resources","connected clients","tray owner version","tray version"];
     state.errors=names.filter((name,i)=>results[i]===null);
+    state.trayOwner=results[9]?.action==="owner_status"?results[9]:null;
+    state.trayVersion=typeof results[10]==="string"?results[10]:null;
     if(results[0] && Array.isArray(results[0].checks)){
       state.dashboard=results[0];
       renderReadiness(results[0]);
@@ -377,6 +520,7 @@
       renderEvents(results[0],results[1]);
       if(state.plan && !state.dashboard.services?.some(s=>s.service===state.plan.service &&
         s.ownerPid===state.plan.expectedOwnerPid)) {state.plan=null;setPlan(null);}
+      void checkPublishedVersions();
     } else resetReadiness("Lifecycle owner status unavailable; no cached green health is trusted.");
     renderSecurity(results.slice(2,7));
     text("op-refresh-state",state.errors.length?"Partial telemetry: "+state.errors.join(", "):
@@ -407,8 +551,16 @@
   }
   function currentAction(service){
     const action=$("op-lifecycle-action")?.value;
-    if(service==="core"||service==="tray")return action==="restart"?action:null;
-    return ["start","stop","restart"].includes(action)?action:null;
+    return serviceActions[service]?.includes(action)?action:null;
+  }
+  async function quickPrepare(service,action){
+    if(state.operationBusy||!serviceActions[service]?.includes(action))return;
+    const selector=$("op-lifecycle-service"),choice=$("op-lifecycle-action");
+    if(!selector||!choice)return;
+    selector.value=service;choice.value=action;
+    invalidatePlan();
+    await prepare();
+    $("op-lifecycle-plan")?.scrollIntoView?.({behavior:"smooth",block:"center"});
   }
   function invalidatePlan(){
     state.plan=null;setPlan(null);
@@ -422,7 +574,10 @@
     text("op-lifecycle-plan","Checking authenticated ownership and safety prerequisites…");
     try {
       const inventory=state.dashboard?.services?.find(x=>x.service===service);
-      const port=service==="tray"?undefined:inventory?.port||servicePorts[service];
+      const port=service==="tray"?undefined:
+        service==="mcp"?inventory?.port:inventory?.port||servicePorts[service];
+      if(service==="mcp"&&!Number.isSafeInteger(port))
+        throw Error("MCP owner port has not been verified");
       const request={action:"plan",service,targetAction:action};
       if(port)request.port=port;
       const plan=await lifecycle(request);
@@ -431,6 +586,11 @@
       if(service==="core" && (!Number.isSafeInteger(plan.expectedSupervisorPid) ||
         !Number.isSafeInteger(plan.expectedWorkerPid) ||
         typeof plan.expectedBuildDigest!=="string"))throw Error("Core restart requires owner-bound evidence");
+      if(service==="mcp" && (!Number.isSafeInteger(plan.expectedOwnerPid)||
+        typeof plan.expectedPublicUrl!=="string"||
+        !plan.expectedPublicUrl.startsWith("https://")||
+        !plan.expectedPublicUrl.endsWith("/mcp")))
+        throw Error("MCP reload requires a verified stable owner and public URL");
       state.plan=plan;setPlan(plan);
       notify("Plan prepared. Review owner evidence and confirm explicitly.");
     } catch(err){invalidatePlan();notify(String(err?.message||err),"error");}
@@ -449,6 +609,10 @@
       const owner=evidence?.services?.find(x=>x.service===plan.service);
       if(!owner || (plan.expectedOwnerPid && owner.ownerPid!==plan.expectedOwnerPid))
         throw Error("Owner changed since plan; prepare a fresh plan");
+      if(plan.service==="mcp"&&(
+        owner.details?.publicUrl!==plan.expectedPublicUrl||
+        owner.details?.reloadable!==true))
+        throw Error("MCP owner public URL or reload capability changed");
       const args={action:plan.action,service:plan.service,confirm:true};
       for(const key of planFields)if(Object.prototype.hasOwnProperty.call(plan,key))args[key]=plan[key];
       const result=await lifecycle(args);
@@ -460,6 +624,7 @@
   }
   function bind(){
     $("op-refresh")?.addEventListener("click",()=>{void refresh();});
+    $("op-check-versions")?.addEventListener("click",()=>{void checkPublishedVersions(true);});
     $("op-client-filter")?.addEventListener("change",e=>{
       state.agentFilter=String(e.target.value||"all");
       renderConnectedAgents(state.agentDetails);
@@ -470,7 +635,8 @@
     $("op-lifecycle-service")?.addEventListener("change",()=> {
       invalidatePlan();const val=currentService();
       const action=$("op-lifecycle-action");
-      if(action && (val==="core"||val==="tray"))action.value="restart";
+      if(action && !currentAction(val))action.value=
+        val==="mcp"?"reload":"restart";
     });
     $("op-lifecycle-action")?.addEventListener("change",invalidatePlan);
     $("op-lifecycle-prepare")?.addEventListener("click",()=>{void prepare();});
