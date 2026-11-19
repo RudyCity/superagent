@@ -206,6 +206,12 @@ const CERTIFIED_APP_STORAGE_TOOLS = new Set([
   "superagent_get_logs", "superagent_get_status", "superagent_search_journal",
   "superagent_list_workspace_chains", "superagent_muse_chat_status",
   "superagent_muse_tunnel_start", "superagent_muse_tunnel_restart",
+  "superagent_motion_list", "superagent_motion_status", "superagent_motion_inspect",
+  "superagent_motion_jobs", "superagent_motion_storage", "superagent_motion_recovery",
+  "superagent_motion_supervisor", "superagent_motion_queue_recovery",
+  "superagent_studio_list", "superagent_studio_status", "superagent_studio_inspect",
+  "superagent_studio_jobs", "superagent_studio_storage", "superagent_studio_recovery",
+  "superagent_studio_supervisor", "superagent_studio_queue_recovery",
 ]);
 
 /**
@@ -258,6 +264,10 @@ const CERTIFIED_NON_FILE_TOOLS = new Set([
   "superagent_device_android_shell", "superagent_device_android_ui_schema",
   "superagent_device_android_ui_click", "superagent_device_android_screen",
   "superagent_device_android_input",
+  "superagent_lan_file_offer", "superagent_lan_file_put", "superagent_lan_file_get",
+  "superagent_lan_file_finish", "superagent_lan_file_abort",
+  "superagent_device_file_offer", "superagent_device_file_put", "superagent_device_file_get",
+  "superagent_device_file_finish", "superagent_device_file_abort",
 ]);
 /**
  * The Delegate history sync writes only its app-owned SQLite mirror. It is NOT
