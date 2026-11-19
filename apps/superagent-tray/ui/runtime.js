@@ -361,8 +361,8 @@ function runtimeMcpSecurityControlMarkup() {
     '<div class="runtime-mcp-access-grid">',
     '<article class="runtime-mcp-access-card">',
     '<div class="runtime-mcp-access-card-title"><strong>Koneksi MCP</strong></div>',
-    '<p>Izin operasi non-proyek untuk identitas MCP yang telah diverifikasi.</p>',
-    '<div class="runtime-mcp-count-row"><span class="runtime-mcp-count" id="runtime-mcp-connection-pending">—</span><span>permintaan menunggu</span></div>',
+    '<p>Autentikasi OAuth dan sesi MCP; tidak memberikan izin operasi tools.</p>',
+    '<div class="runtime-mcp-count-row"><span class="runtime-mcp-count" id="runtime-mcp-connection-pending">—</span><span>sesi terhubung</span></div>',
     '<small id="runtime-mcp-identity-summary">Identitas: belum diperiksa</small>',
     '<button type="button" class="button ghost runtime-mcp-security-link" data-runtime-security-tab="connections">Kelola Koneksi MCP</button>',
     '</article>',
@@ -406,17 +406,18 @@ async function runtimeRefreshMcpSecurity() {
       Array.isArray(idResult.value.identities);
     const records = reqOk ? reqResult.value.requests : null;
     const identities = idOk ? idResult.value.identities : null;
-    const count = (connection, state) => records.filter(record =>
-      (record.projectId === "mcp-connection") === connection && record.status === state).length;
+    const count = (state) => records.filter(record =>
+      record.projectId !== "mcp-connection" && record.status === state).length;
     if (rt("runtime-mcp-connection-pending")) {
-      rt("runtime-mcp-connection-pending").textContent = reqOk ? String(count(true, "pending")) : "—";
+      rt("runtime-mcp-connection-pending").textContent = connected?.success === true && connected.state === "verified" && Array.isArray(connected.clients)
+        ? String(connected.clients.length) : "—";
     }
     if (rt("runtime-mcp-project-pending")) {
-      rt("runtime-mcp-project-pending").textContent = reqOk ? String(count(false, "pending")) : "—";
+      rt("runtime-mcp-project-pending").textContent = reqOk ? String(count("pending")) : "—";
     }
     if (rt("runtime-mcp-approved-summary")) {
       rt("runtime-mcp-approved-summary").textContent = reqOk
-        ? count(false, "approved") + " riwayat keputusan disetujui (bukan verifikasi grant aktif)"
+        ? count("approved") + " riwayat keputusan disetujui (bukan verifikasi grant aktif)"
         : "Riwayat: tidak tersedia";
     }
     if (rt("runtime-mcp-identity-summary")) {
