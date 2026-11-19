@@ -549,7 +549,7 @@ export function createWindowsDesktopUiAdapter(
   const runPowerShell = async (script: string, payload?: unknown) =>
     runner.run({
       executable: WINDOWS_POWERSHELL,
-      args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(script)],
+      args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell("[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n" + script)],
       env: payload === undefined ? undefined : { SUPERAGENT_DESKTOP_UI_PAYLOAD: JSON.stringify(payload) },
       timeoutMs: 15_000,
     });
