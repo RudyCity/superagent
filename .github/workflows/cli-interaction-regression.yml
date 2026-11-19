@@ -20,6 +20,7 @@ on:
       - "tests/cliInputDoctor.test.ts"
       - "scripts/cli-input-doctor.ts"
       - "package.json"
+      - "scripts/install-superagent-tray.ts"
       - ".github/workflows/cli-interaction-regression.yml"
   pull_request:
     paths:
@@ -39,6 +40,7 @@ on:
       - "tests/cliInputDoctor.test.ts"
       - "scripts/cli-input-doctor.ts"
       - "package.json"
+      - "scripts/install-superagent-tray.ts"
       - ".github/workflows/cli-interaction-regression.yml"
   workflow_dispatch:
 
