@@ -506,7 +506,9 @@ function certifiedMixedAction(name:string,args:Args|undefined):boolean {
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
   if(name==="superagent_git_action")
     return args.action==="log" &&
-      Object.keys(args).every(key=>["action","limit","workspace","projectId"].includes(key));
+      Object.keys(args).every(key=>["action","limit","workspace","projectId"].includes(key)) &&
+      (args.limit===undefined ||
+        (Number.isSafeInteger(args.limit) && Number(args.limit)>=1 && Number(args.limit)<=50));
   if(name==="superagent_chrome_vision")
     return args.command==="status" &&
       Object.keys(args).every(key=>["command"].includes(key));
@@ -750,6 +752,11 @@ export function registeredFileToolGate(
   if(call.name==="superagent_manage_worktrees"&&certifiedWorktreeMetadata(call.args))return null;
   if(call.name==="superagent_launch_chrome"&&certifiedManagedChromeLaunch(call.args))return null;
   if(MIXED_ACTION_TOOLS.has(call.name)&&certifiedMixedAction(call.name,call.args))return null;
+  // Workspace-wide status/diff can disclose protected file names and contents.
+  // A Git capability grant never bypasses the native permanent file registry.
+  if(call.name==="superagent_git_action" &&
+     ["status","diff"].includes(String(call.args?.action??"")))
+    return "Git status/diff is not certified under permanent file access restrictions because it can enumerate protected workspace files. Use an explicitly authorized file operation or inspect Git locally.";
   const officeEffects=call.name==="superagent_office_cli"?officeCliEffects(call.args):null;
   const planningEffects=FIXED_PLANNING_TOOLS.has(call.name)
     ?fixedPlanningEffects(call.name,call.args,workspace)
