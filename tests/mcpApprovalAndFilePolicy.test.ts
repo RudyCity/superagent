@@ -4,7 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import {createSuperagentMcpServer,MCP_TOOL_DEFINITIONS} from "../src/core/mcp/superagentMcpServer.js";
 import {grantProjectAccess,revokeProjectAccess} from "../src/core/project/projectAccessPolicy.js";
-import {MCP_CONNECTION_PROJECT_ID,listProjectAccessRequests} from "../src/core/project/projectAccessRequestStore.js";
+import {listProjectAccessRequests} from "../src/core/project/projectAccessRequestStore.js";
+import {registerProject} from "../src/core/project/projectRegistry.js";
+const TEST_PROJECT_ID="permission-test";
 import {onMcpActivity} from "../src/core/mcp/mcpActivityBus.js";
 
 const invoke=async(server:ReturnType<typeof createSuperagentMcpServer>,name:string,args:Record<string,unknown>)=>
@@ -26,23 +28,24 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     prior=process.env.SUPERAGENT_CONFIG_DIR;
     isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-v2-revoke-"));
     process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    registerProject({id:TEST_PROJECT_ID,name:"Permission test project",type:"local",root:isolated});
     fs.writeFileSync(path.join(isolated,"desktop-access-registry.json"),
       JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
     const identity={mode:"oauth" as const,subject:"file-policy-revoke-test",
       scopes:["mcp:tools","mcp:tools:write"]};
-    const server=createSuperagentMcpServer({
+    const server=createSuperagentMcpServer({workspace:isolated,
       toolExposure:"full",authMode:"oauth",getIdentity:()=>identity,
       allowDangerous:true,
     });
     try{
       await expect(invoke(server,"superagent_desktop_ui",{command:"probe"}))
-        .rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
-      grantProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,["execute"]);
+        .rejects.toThrow(/PROJECT_GRANT_MISSING/);
+      grantProjectAccess(identity,TEST_PROJECT_ID,["execute"]);
       const approved=await invoke(server,"superagent_desktop_ui",{command:"probe"});
-      expect(JSON.stringify(approved)).not.toMatch(/MCP_APPROVAL_REQUIRED|permanent file policy/i);
-      expect(revokeProjectAccess(identity,MCP_CONNECTION_PROJECT_ID)).toBe(true);
+      expect(JSON.stringify(approved)).not.toMatch(/PROJECT_GRANT_MISSING|permanent file policy/i);
+      expect(revokeProjectAccess(identity,TEST_PROJECT_ID)).toBe(true);
       await expect(invoke(server,"superagent_desktop_ui",{command:"probe"}))
-        .rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
+        .rejects.toThrow(/PROJECT_GRANT_MISSING/);
     }finally{await server.close();}
   });
 
@@ -50,6 +53,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     prior=process.env.SUPERAGENT_CONFIG_DIR;
     isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-host-first-"));
     process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    registerProject({id:TEST_PROJECT_ID,name:"Permission test project",type:"local",root:isolated});
     fs.writeFileSync(path.join(isolated,"desktop-access-registry.json"),
       JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
     const identity={mode:"oauth" as const,subject:"host-before-connection",
@@ -78,8 +82,8 @@ describe("MCP Connection Controls independent from host file-policy certificatio
         catch(error){denied={isError:true,content:[{text:error instanceof Error?error.message:String(error)}]};}
         expect(denied.isError).toBe(true);
         expect(JSON.stringify(denied)).toContain(preflight.decisionCode);
-        expect(JSON.stringify(denied)).not.toContain("MCP_APPROVAL_REQUIRED");
-        expect(listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID})).toHaveLength(0);
+        expect(JSON.stringify(denied)).not.toContain("PROJECT_GRANT_MISSING");
+        expect(listProjectAccessRequests({status:"pending",projectId:TEST_PROJECT_ID})).toHaveLength(0);
         for(const output of [JSON.stringify(denied),JSON.stringify(audits.slice(auditStart)),JSON.stringify(activity.slice(activityStart))]){
           expect(output).not.toContain(sentinel);
           expect(output).not.toContain(isolated);
@@ -92,11 +96,12 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     prior=process.env.SUPERAGENT_CONFIG_DIR;
     isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-hidden-host-"));
     process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    registerProject({id:TEST_PROJECT_ID,name:"Permission test project",type:"local",root:isolated});
     fs.writeFileSync(path.join(isolated,"desktop-access-registry.json"),
       JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
     const identity={mode:"oauth" as const,subject:"hidden-host-client",
       scopes:mode==="readonly"?["mcp:tools"]:["mcp:tools","mcp:tools:write"]};
-    const server=createSuperagentMcpServer({toolExposure:"gateway",authMode:"oauth",getIdentity:()=>identity,
+    const server=createSuperagentMcpServer({workspace:isolated,toolExposure:"gateway",authMode:"oauth",getIdentity:()=>identity,
       ...(mode==="safe_owner"?{lockSafeTools:true,allowDangerous:false,
         allowedTools:["superagent_tool_describe","superagent_tool_execute","superagent_services_status"]}:{allowDangerous:true})});
     try{
@@ -106,9 +111,9 @@ describe("MCP Connection Controls independent from host file-policy certificatio
           gateway?{name:"superagent_desktop_ui",arguments:{command:"inspect_window"}}:{command:"inspect_window"});}
         catch(error){response={isError:true,content:[{text:error instanceof Error?error.message:String(error)}]};}
         expect(response.isError).toBe(true);
-        expect(JSON.stringify(response)).not.toMatch(/HOST_FILE_POLICY_UNCERTIFIED|SCHEMA_INVALID|permanent file policy|mcpConnectionExecute/);
+        expect(JSON.stringify(response)).not.toMatch(/HOST_FILE_POLICY_UNCERTIFIED|SCHEMA_INVALID|permanent file policy|mcpProjectExecute/);
       }
-      expect(listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID})).toHaveLength(0);
+      expect(listProjectAccessRequests({status:"pending",projectId:TEST_PROJECT_ID})).toHaveLength(0);
     }finally{await server.close();}
   });
 
@@ -119,6 +124,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     prior=process.env.SUPERAGENT_CONFIG_DIR;
     isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-denial-private-"));
     process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    registerProject({id:TEST_PROJECT_ID,name:"Permission test project",type:"local",root:isolated});
     const sentinel="PRIVATE_TITLE_PAYLOAD_AND_PROJECT_DO_NOT_ECHO";
     const privatePath=path.join(isolated,sentinel);
     const identity={mode:"oauth" as const,subject:"private-denial-client",
@@ -148,7 +154,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       expect(audits[0].principalHash).toMatch(/^[a-f0-9]{16}$/);
       expect(activity[0].args).toEqual({});
       expect(activity[0].workspace).toBe("mcp://authorization");
-      expect(listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID})).toHaveLength(0);
+      expect(listProjectAccessRequests({status:"pending",projectId:TEST_PROJECT_ID})).toHaveLength(0);
     }finally{unsubscribe();await server.close();}
   });
 
@@ -156,6 +162,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     prior=process.env.SUPERAGENT_CONFIG_DIR;
     isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-recursive-private-"));
     process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    registerProject({id:TEST_PROJECT_ID,name:"Permission test project",type:"local",root:isolated});
     const registry=path.join(isolated,"desktop-access-registry.json");
     const sentinel="PRIVATE_RECURSIVE_TITLE_AND_PAYLOAD";
     const privatePath=path.join(isolated,sentinel);
@@ -179,7 +186,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
         expect(denied.isError).toBe(true);
         const output=JSON.stringify(denied);
         outputs.push(output);
-        expect(output).not.toMatch(/HOST_FILE_POLICY_UNCERTIFIED|SCHEMA_INVALID|permanent file policy|mcpConnectionExecute/);
+        expect(output).not.toMatch(/HOST_FILE_POLICY_UNCERTIFIED|SCHEMA_INVALID|permanent file policy|mcpProjectExecute/);
         const newAudits=audits.slice(auditStart),newActivity=activity.slice(activityStart);
         expect(newAudits).toHaveLength(1);
         expect(newActivity).toHaveLength(1);
@@ -190,7 +197,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
         expect(newAudits[0]).toMatchObject({args:{},projectId:null,providerKind:null,
           authorizationDecision:"denied",errorCode:"gateway_target_unavailable"});
         expect(newActivity[0].workspace).toBe("mcp://authorization");
-        expect(listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID})).toHaveLength(0);
+        expect(listProjectAccessRequests({status:"pending",projectId:TEST_PROJECT_ID})).toHaveLength(0);
       }
       expect(outputs[0]).toBe(outputs[1]);
     }finally{unsubscribe();await server.close();}
@@ -200,6 +207,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     prior=process.env.SUPERAGENT_CONFIG_DIR;
     isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-v2-preflight-"));
     process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    registerProject({id:TEST_PROJECT_ID,name:"Permission test project",type:"local",root:isolated});
     fs.writeFileSync(path.join(isolated,"desktop-access-registry.json"),
       JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
     const identity={mode:"oauth" as const,subject:"mcp-preflight-writer",
@@ -209,7 +217,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     const unsubscribe=onMcpActivity((event)=>{
       if(event.tool==="superagent_tool_describe")activityRecords.push(JSON.stringify(event));
     });
-    const server=createSuperagentMcpServer({toolExposure:"gateway",authMode:"oauth",
+    const server=createSuperagentMcpServer({workspace:isolated,toolExposure:"gateway",authMode:"oauth",
       getIdentity:()=>identity,allowDangerous:true,
       onToolCall:(event)=>{if(event.tool==="superagent_tool_describe")auditRecords.push(JSON.stringify(event));}});
     const describe=async(checkArguments:Record<string,unknown>)=>{
@@ -222,11 +230,11 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     try {
       const metadata=await describe({command:"probe"});
       expect(metadata.hostFilePolicy).toMatchObject({active:true,decision:"eligible",reasonCode:null});
-      expect(metadata.mcpConnectionExecute.decision).toBe("approval_required");
+      expect(metadata.mcpProjectExecute.decision).toBe("approval_required");
       expect(metadata.performedExecution).toBe(false);
-      expect(metadata.decisionCode).toBe("MCP_CONNECTION_EXECUTE_REQUIRED");
+      expect(metadata.decisionCode).toBe("PROJECT_CAPABILITY_MISSING");
       expect(metadata.layers).toMatchObject({
-        oauthScope:"granted",connectionExecute:"blocked",hostFilePolicy:"granted",
+        oauthScope:"granted",projectCapability:"blocked",hostFilePolicy:"granted",
         nativeConsent:"not_checked",targetIdentity:"not_checked",
       });
       const protectedUi=await describe({command:"inspect_window",pid:5344,nativeId:"123",
@@ -245,19 +253,19 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       expect(badShape.decisionCode).toBe("SCHEMA_INVALID");
       const validPrompts=await describe({command:"inspect_security_prompts"});
       expect(validPrompts.hostFilePolicy.decision).toBe("eligible");
-      const approvedRequests=listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID});
+      const approvedRequests=listProjectAccessRequests({status:"pending",projectId:TEST_PROJECT_ID});
       expect(approvedRequests).toHaveLength(0);
-      grantProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,["execute"]);
-      expect((await describe({command:"probe"})).mcpConnectionExecute.decision).toBe("granted");
+      grantProjectAccess(identity,TEST_PROJECT_ID,["execute"]);
+      expect((await describe({command:"probe"})).mcpProjectExecute.decision).toBe("granted");
       expect((await describe({command:"probe"})).decisionCode).toBe("ALLOWED_TO_ATTEMPT");
       expect((await describe({command:"open",pid:5344,nativeId:"123",allowInput:false}))
         .hostFilePolicy.decision).toBe("blocked");
-      expect(revokeProjectAccess(identity,MCP_CONNECTION_PROJECT_ID)).toBe(true);
-      expect((await describe({command:"probe"})).mcpConnectionExecute.decision).toBe("approval_required");
-      expect(listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID})).toHaveLength(0);
+      expect(revokeProjectAccess(identity,TEST_PROJECT_ID)).toBe(true);
+      expect((await describe({command:"probe"})).mcpProjectExecute.decision).toBe("approval_required");
+      expect(listProjectAccessRequests({status:"pending",projectId:TEST_PROJECT_ID})).toHaveLength(0);
       fs.writeFileSync(path.join(isolated,"project-access.json"),"{invalid_private_policy_path");
       const unavailable=await describe({command:"probe"});
-      expect(unavailable.mcpConnectionExecute.decision).toBe("unavailable");
+      expect(unavailable.mcpProjectExecute.decision).toBe("unavailable");
       expect(unavailable.decisionCode).toBe("POLICY_STORE_UNAVAILABLE");
       expect(JSON.stringify(unavailable)).not.toContain(isolated);
       // The read-only service probe is schema-only and never uses project
@@ -268,7 +276,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       });
       const servicePreflight=JSON.parse(service.content[0].text).permissionPreflight;
       expect(servicePreflight.decisionCode).toBe("ALLOWED_TO_ATTEMPT");
-      expect(servicePreflight.mcpConnectionExecute.decision).toBe("not_required");
+      expect(servicePreflight.mcpProjectExecute.decision).toBe("not_required");
       expect(servicePreflight.performedExecution).toBe(false);
       const badService=await invoke(server,"superagent_tool_describe",{
         name:"superagent_services_status",
@@ -295,11 +303,12 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     prior=process.env.SUPERAGENT_CONFIG_DIR;
     isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-v2-readonly-"));
     process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    registerProject({id:TEST_PROJECT_ID,name:"Permission test project",type:"local",root:isolated});
     fs.writeFileSync(path.join(isolated,"desktop-access-registry.json"),
       JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
     const identity={mode:"oauth" as const,subject:"readonly-metadata-test",scopes:["mcp:tools"]};
-    grantProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,["execute"]);
-    const server=createSuperagentMcpServer({toolExposure:"full",
+    grantProjectAccess(identity,TEST_PROJECT_ID,["execute"]);
+    const server=createSuperagentMcpServer({workspace:isolated,toolExposure:"full",
       authMode:"oauth",getIdentity:()=>identity,allowDangerous:true});
     try {
       await expect(invoke(server,"superagent_desktop_ui",{command:"probe"}))
@@ -310,7 +319,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
         name:"superagent_desktop_ui",checkArguments:{command:"probe"},
       });
       expect(hidden.isError).toBe(true);
-      expect(JSON.stringify(hidden)).not.toContain("mcpConnectionExecute");
+      expect(JSON.stringify(hidden)).not.toContain("mcpProjectExecute");
 
       // Nor can a read-only principal probe dangerous tools via superagent_tool_execute
       // or superagent_tool_describe on superagent_tool_execute.
@@ -319,7 +328,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
         checkArguments:{name:"superagent_desktop_ui",arguments:{command:"inspect_window"}},
       });
       expect(hiddenGatewayDescribe.isError).toBe(true);
-      expect(JSON.stringify(hiddenGatewayDescribe)).not.toMatch(/permanent file|mcpConnectionExecute/i);
+      expect(JSON.stringify(hiddenGatewayDescribe)).not.toMatch(/permanent file|mcpProjectExecute/i);
 
       const oracleProbe=await invoke(server,"superagent_tool_execute",{
         name:"superagent_desktop_ui",
@@ -343,6 +352,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     prior=process.env.SUPERAGENT_CONFIG_DIR;
     isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-v2-parity-"));
     process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    registerProject({id:TEST_PROJECT_ID,name:"Permission test project",type:"local",root:isolated});
     fs.writeFileSync(path.join(isolated,"desktop-access-registry.json"),
       JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
     const clientA={mode:"oauth" as const,subject:"client-alpha",scopes:["mcp:tools","mcp:tools:write"]};
@@ -351,7 +361,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     const audits:any[]=[];
     const activities:any[]=[];
     const unsubscribe=onMcpActivity((event)=>activities.push(event));
-    const server=createSuperagentMcpServer({
+    const server=createSuperagentMcpServer({workspace:isolated,
       toolExposure:"gateway",authMode:"oauth",
       getIdentity:()=>activeIdentity,
       allowDangerous:true,
@@ -385,7 +395,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
         checkArguments:{action:"owner_status",service:"tray"},
       });
       expect(JSON.parse(manageNeedsGrant.content[0].text).permissionPreflight.decisionCode)
-        .toBe("MCP_CONNECTION_EXECUTE_REQUIRED");
+        .toBe("PROJECT_CAPABILITY_MISSING");
       const manageUncertified=await invoke(server,"superagent_tool_describe",{
         name:"superagent_manage_services",
         checkArguments:{action:"restart",service:"tray",confirm:true},
@@ -394,7 +404,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
         .toBe("HOST_FILE_POLICY_UNCERTIFIED");
 
       // Grant clientA only; clientB remains unapproved and isolated.
-      grantProjectAccess(clientA,MCP_CONNECTION_PROJECT_ID,["execute"]);
+      grantProjectAccess(clientA,TEST_PROJECT_ID,["execute"]);
       const gwOk=await invoke(server,"superagent_tool_execute",{
         name:"superagent_desktop_ui",arguments:{command:"probe"},
       });
@@ -414,17 +424,17 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       activeIdentity=clientB;
       await expect(invoke(server,"superagent_tool_execute",{
         name:"superagent_desktop_ui",arguments:{command:"probe"},
-      })).rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
+      })).rejects.toThrow(/PROJECT_GRANT_MISSING/);
 
       // ClientA loses grant between preflight and execute -> fails closed.
       activeIdentity=clientA;
-      expect(revokeProjectAccess(clientA,MCP_CONNECTION_PROJECT_ID)).toBe(true);
+      expect(revokeProjectAccess(clientA,TEST_PROJECT_ID)).toBe(true);
       await expect(invoke(server,"superagent_tool_execute",{
         name:"superagent_desktop_ui",arguments:{command:"probe"},
-      })).rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
+      })).rejects.toThrow(/PROJECT_GRANT_MISSING/);
 
       // Host file policy denial via gateway must not echo nested path in audit/activity.
-      grantProjectAccess(clientA,MCP_CONNECTION_PROJECT_ID,["execute"]);
+      grantProjectAccess(clientA,TEST_PROJECT_ID,["execute"]);
       const deniedWrite=await invoke(server,"superagent_tool_execute",{
         name:"superagent_write_files",
         arguments:{files:[{filePath:secretPath,content:secretTitle}]},
@@ -441,13 +451,14 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     prior=process.env.SUPERAGENT_CONFIG_DIR;
     isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-private-store-"));
     process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    registerProject({id:TEST_PROJECT_ID,name:"Permission test project",type:"local",root:isolated});
     fs.writeFileSync(path.join(isolated,"desktop-access-registry.json"),
       JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
     const identity={mode:"oauth" as const,subject:"store-recheck-writer",
       scopes:["mcp:tools","mcp:tools:write"]};
-    grantProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,["execute"]);
+    grantProjectAccess(identity,TEST_PROJECT_ID,["execute"]);
     const records:string[]=[];
-    const server=createSuperagentMcpServer({toolExposure:"gateway",authMode:"oauth",
+    const server=createSuperagentMcpServer({workspace:isolated,toolExposure:"gateway",authMode:"oauth",
       getIdentity:()=>identity,allowDangerous:true,
       onToolCall:(event)=>records.push(JSON.stringify(event))});
     const sentinel="PRIVATE_TOKEN_JSON_MUST_NOT_ESCAPE";
@@ -469,10 +480,10 @@ describe("MCP Connection Controls independent from host file-policy certificatio
           expect(failure).toContain("POLICY_STORE_UNAVAILABLE");
           expect(failure).not.toContain(isolated);
           expect(failure).not.toContain(sentinel);
-          expect(failure).not.toContain("MCP_APPROVAL_REQUIRED");
+          expect(failure).not.toContain("PROJECT_GRANT_MISSING");
         }
         expect(fs.readFileSync(policy,"utf8")).toBe(invalid);
-        expect(listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID})).toHaveLength(0);
+        expect(listProjectAccessRequests({status:"pending",projectId:TEST_PROJECT_ID})).toHaveLength(0);
       }
       expect(JSON.stringify(records)).not.toContain(sentinel);
       expect(JSON.stringify(records)).not.toContain(isolated);
