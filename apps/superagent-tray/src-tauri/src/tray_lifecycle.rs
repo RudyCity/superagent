@@ -440,4 +440,59 @@ mod tests{
         assert!(write_owner(&temp, &new_owner).is_ok());
         let _ = fs::remove_dir_all(&temp);
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn second_launch_refuses_corrupt_or_unverified_owner_without_killing_processes(){
+        let temp=std::env::temp_dir().join(format!(
+            "tray-second-launch-{}",uuid::Uuid::new_v4().simple()));
+        fs::create_dir_all(&temp).unwrap();
+        assert!(read_launch_owner(&temp).unwrap().is_none());
+        // A background autostart is always a no-op, even with a broken
+        // existing owner record: it must not display a blocking native dialog.
+        fs::write(owner_path(&temp),b"{}").unwrap();
+        assert!(read_launch_owner(&temp).is_err());
+        assert!(replace_existing_on_manual_launch(&temp,true).unwrap());
+        assert!(replace_existing_on_manual_launch(&temp,false).is_err());
+        // A self-referential owner is not eligible for replacement.
+        let own=TrayOwner{version:1,pid:std::process::id(),
+            instance_id:uuid::Uuid::new_v4().simple().to_string(),
+            token:private_random_hex(),control_port:58999,
+            executable_path:std::env::current_exe().unwrap().to_string_lossy().into_owned()};
+        fs::write(owner_path(&temp),serde_json::to_vec(&own).unwrap()).unwrap();
+        assert!(verify_launch_owner(&own).is_err());
+        assert!(replace_existing_on_manual_launch(&temp,false).is_err());
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn replacement_uses_private_authenticated_health_and_tray_only_stop(){
+        // An isolated fake native owner; never attaches to or stops a real
+        // installed SuperAgent Tray, Core, MCP, or Cloudflare process.
+        let listener=TcpListener::bind(("127.0.0.1",0)).unwrap();
+        let port=listener.local_addr().unwrap().port();
+        let owner=TrayOwner{version:1,pid:std::process::id(),
+            instance_id:uuid::Uuid::new_v4().simple().to_string(),
+            token:private_random_hex(),control_port:port,
+            executable_path:"isolated-test".into()};
+        let server_owner=owner.clone();
+        let server=thread::spawn(move||{
+            let mut stopped=false;
+            for _ in 0..3{
+                let (stream,_)=listener.accept().unwrap();
+                stopped=handle(stream,&server_owner);
+            }
+            stopped
+        });
+        let health=tray_private_request(&owner,"GET",None).unwrap();
+        assert_eq!(health["service"],"superagent-tray");
+        assert_eq!(health["pid"],owner.pid);
+        assert_eq!(health["instanceId"],owner.instance_id);
+        let mut wrong_token=owner.clone();
+        wrong_token.token=private_random_hex();
+        assert!(tray_private_request(&wrong_token,"GET",None).is_err());
+        assert!(request_graceful_replacement(&owner).is_ok());
+        assert!(server.join().unwrap());
+    }
 }
