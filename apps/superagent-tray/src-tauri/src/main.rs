@@ -4078,6 +4078,20 @@ fn main() {
         }
         return;
     }
+    // A manual second launch offers replacement BEFORE Tauri's
+    // single-instance plugin redirects it to the running process. Only a
+    // private authenticated Tray owner can be closed; automatic background
+    // launches never prompt or replace an existing instance.
+    #[cfg(windows)]
+    match config_dir().and_then(|dir|
+        tray_lifecycle::replace_existing_on_manual_launch(&dir,is_background_launch())) {
+        Ok(true)=>{},
+        Ok(false)=>return,
+        Err(message)=>{
+            tray_lifecycle::launch_error_dialog(&message);
+            return;
+        }
+    }
     tauri::Builder::default()
         // The plugin is first: concurrent SuperAgent CLI/API launches must
         // never create multiple tray owners or reminder notification pollers.
