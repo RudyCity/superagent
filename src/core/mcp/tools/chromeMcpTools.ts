@@ -230,7 +230,10 @@ export async function handleLaunchChromeProfile(args: any): Promise<McpToolResul
 
 export async function handleListChromeProfiles(args: any): Promise<McpToolResult> {
   try {
-    const res = await listChromeProfilesTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
+    if (!args || typeof args.customUserDataPath !== "string" || !args.customUserDataPath.trim()) {
+      return { content: [{ type: "text", text: "MCP Chrome profile listing requires an explicit customUserDataPath authorized by permanent file policy." }], isError: true };
+    }
+    const res = await listChromeProfilesTool.execute({ ...args, strictLocalState: true }, resolveMcpWorkspace(args?.workspace).path);
     return toResult(res);
   } catch (err: any) {
     return {
