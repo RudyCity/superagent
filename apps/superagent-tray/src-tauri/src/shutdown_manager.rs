@@ -363,6 +363,12 @@ async fn inspect() -> Result<Preview, String> {
             let mut state=s["state"].as_str().unwrap_or("unknown");
             let port=port_of(&s["port"]);
             let pid=pid_of(&s["ownerPid"]);
+            let daemon_active_jobs=if *name=="daemon" {
+                s["details"]["activeJobs"].as_u64().unwrap_or(0)
+            } else {0};
+            // A stopped scheduler can still have in-flight daemon jobs. Keep it
+            // active in Shutdown Manager until those jobs settle or are forced.
+            if *name=="daemon" && daemon_active_jobs>0 {state="active";}
             // An owner PID paired with an "inactive" service is ambiguous,
             // not proof that the process exited. Never silently ignore it.
             if state=="inactive" && pid.is_some() {state="unverified";}
@@ -370,9 +376,9 @@ async fn inspect() -> Result<Preview, String> {
             let mut blocker = if eligible {None} else {
                 Some("No verified idle owner or stop capability".into())
             };
-            if *name=="daemon" && s["details"]["activeJobs"].as_u64().unwrap_or(1)>0 {
+            if *name=="daemon" && daemon_active_jobs>0 {
                 eligible=false;
-                blocker=Some("Scheduled job running; wait for completion".into());
+                blocker=Some("Scheduled job running; Force Stop All can cancel it".into());
             }
             if *name=="vision" && s["details"]["activeRequests"].as_u64().unwrap_or(1)>0 {
                 eligible=false;
@@ -477,16 +483,21 @@ async fn inspect() -> Result<Preview, String> {
             pid_of(&s["pid"])==core.pid && s["activeJobsCount"].as_u64().is_some());
         if let Some(item)=items.iter_mut().find(|item|item.id=="managed:daemon") {
             let running_daemon=status.as_ref().is_some_and(|s|s["running"]==true);
-            let idle=matched && status.as_ref().is_some_and(|s|
-                s["activeJobsCount"].as_u64()==Some(0));
-            item.state=if !matched {"unverified"} else if running_daemon {"active"} else {"inactive"}.into();
+            let active_jobs=status.as_ref()
+                .and_then(|s|s["activeJobsCount"].as_u64()).unwrap_or(0);
+            let idle=matched && active_jobs==0;
+            item.state=if !matched {"unverified"}
+                else if running_daemon || active_jobs>0 {"active"}
+                else {"inactive"}.into();
             item.kind="daemon-direct".into();
             item.owner_verified=matched;
             item.selectable=running_daemon&&idle;
             item.pid=core.pid;item.port=Some(core.port);
             item.active_sessions=status.as_ref().and_then(|s|s["activeJobsCount"].as_u64());
-            item.blocker=if !running_daemon&&matched {None} else if idle {None}
-                else {Some("Scheduler job active or Core worker changed".into())};
+            item.blocker=if active_jobs>0 {
+                Some("Scheduler job active; Force Stop All can cancel it".into())
+            } else if !running_daemon&&matched {None} else if idle {None}
+                else {Some("Core worker changed".into())};
             item.detail="Authenticated direct Core scheduler; stops without deleting jobs".into();
         }
     }
@@ -742,12 +753,18 @@ async fn force_stop_daemon(item:&Item)->Result<(),String> {
         return Err("SHUTDOWN_FORCE_DAEMON_IDENTITY_CHANGED".into());
     }
     let status=core_request(Method::GET,"/api/daemon/status",None).await?;
-    if pid_of(&status["pid"])!=item.pid || status["running"]!=true {
+    if pid_of(&status["pid"])!=item.pid {
         return Err("SHUTDOWN_FORCE_DAEMON_OWNER_CHANGED".into());
+    }
+    let active=status["activeJobsCount"].as_u64()
+        .ok_or("SHUTDOWN_FORCE_DAEMON_STATUS_INVALID")?;
+    if status["running"]==false && active==0 {
+        return Ok(());
     }
 
     // First request cooperative cancellation of every active daemon run and
-    // stop future scheduling. This preserves daemon job definitions.
+    // stop future scheduling. This also works when the tick scheduler was
+    // already stopped but one or more daemon jobs are still executing.
     core_request(Method::POST,"/api/daemon/stop",Some(json!({"force":true}))).await?;
     let began=Instant::now();
     loop {
