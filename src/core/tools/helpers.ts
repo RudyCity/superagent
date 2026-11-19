@@ -168,19 +168,61 @@ export function resolveWindowsPythonDirs(): string[] {
  * Augments process environment on Windows so that installed Python is included in PATH if missing,
  * and sets MSYS_NO_PATHCONV to prevent Git Bash / MSYS2 from mangling Windows command slash flags (e.g. /F, /IM).
  */
+/** Resolve an installed per-user Bun binary without relying on a stale daemon PATH. */
+export function resolveWindowsBunExecutable(
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (file: string) => boolean = (file) => Boolean(tryStatSync(file)?.isFile()),
+): string | null {
+  if (process.platform !== "win32") return null;
+  const home = env.BUN_INSTALL && path.isAbsolute(env.BUN_INSTALL)
+    ? env.BUN_INSTALL
+    : env.USERPROFILE ? path.join(env.USERPROFILE, ".bun") : undefined;
+  if (!home) return null;
+  const executable = path.join(home, "bin", "bun.exe");
+  return exists(executable) ? executable : null;
+}
+
+/** Use only an observed Git installation; never infer Git from a web input. */
+export function resolveWindowsGitExecutable(
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (file: string) => boolean = (file) => Boolean(tryStatSync(file)?.isFile()),
+): string {
+  if (process.platform !== "win32") return "git";
+  const roots = [
+    env.ProgramFiles ? path.win32.join(env.ProgramFiles, "Git") : "C:\\Program Files\\Git",
+    env["ProgramFiles(x86)"] ? path.win32.join(env["ProgramFiles(x86)"]!, "Git") : "C:\\Program Files (x86)\\Git",
+    env.LOCALAPPDATA ? path.win32.join(env.LOCALAPPDATA, "Programs", "Git") : null,
+  ];
+  for (const root of roots) {
+    if (!root) continue;
+    for (const location of ["cmd", "bin"]) {
+      const executable = path.win32.join(root, location, "git.exe");
+      if (exists(executable)) return executable;
+    }
+  }
+  return "git";
+}
+
+/** Augment long-lived Windows Core/MCP children with verified toolchain folders.
+ * Only known installed executables are added; on other platforms env is unchanged.
+ */
 export function augmentWindowsEnvPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (process.platform !== "win32") return env;
-  const pyDirs = resolveWindowsPythonDirs();
   const currentPath = env.PATH || env.Path || "";
-  // Bun's per-user installer does not always update the PATH inherited by a
-  // long-lived Windows Tray/Core process. Include it only when bun.exe exists.
-  const bunHome = env.BUN_INSTALL && path.isAbsolute(env.BUN_INSTALL)
-    ? env.BUN_INSTALL : env.USERPROFILE ? path.join(env.USERPROFILE, ".bun") : undefined;
-  const bunDir = bunHome ? path.join(bunHome, "bin") : undefined;
-  const candidates = bunDir && fsSync.existsSync(path.join(bunDir, "bun.exe"))
-    ? [...pyDirs, bunDir] : pyDirs;
-  const existing = new Set(currentPath.split(";").filter(Boolean).map(d => path.normalize(d).toLowerCase()));
-  const dirsToAdd = candidates.filter(d => !existing.has(path.normalize(d).toLowerCase()));
+  const bunExecutable = resolveWindowsBunExecutable(env);
+  const gitExecutable = resolveWindowsGitExecutable(env);
+  const toolDirs = [
+    ...resolveWindowsPythonDirs(),
+    ...(bunExecutable ? [path.dirname(bunExecutable)] : []),
+    ...(gitExecutable !== "git" ? [path.win32.dirname(gitExecutable)] : []),
+  ];
+  const existing = new Set(currentPath.split(";").filter(Boolean).map(d => path.win32.normalize(d).toLowerCase()));
+  const dirsToAdd = toolDirs.filter(d => {
+    const normalized = path.win32.normalize(d).toLowerCase();
+    if (existing.has(normalized)) return false;
+    existing.add(normalized);
+    return true;
+  });
   const newPath = dirsToAdd.length > 0 ? `${dirsToAdd.join(";")};${currentPath}` : currentPath;
 
   return {
