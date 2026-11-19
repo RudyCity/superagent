@@ -1335,6 +1335,27 @@ export async function handleServerRoute(
   }
   // This endpoint is intentionally inside the local-operator-only
   // /api/desktop/access/* boundary, not the general MCP service status.
+  // Read-only full MCP tool inventory for the authenticated local native Tray.
+  // Never expose it over the public MCP listener or infer approval from a grant.
+  if (pathname === "/api/desktop/access/tools" && req.method === "GET") {
+    res.setHeader("Cache-Control", "no-store");
+    const keys = [...parsedUrl.searchParams.keys()];
+    const identityHandle = parsedUrl.searchParams.get("identityHandle") || undefined;
+    const projectId = parsedUrl.searchParams.get("projectId") || undefined;
+    if (keys.some(key => !["identityHandle","projectId"].includes(key)) ||
+        keys.length > 2 || (identityHandle && !/^idh_[a-f0-9]{16}$/.test(identityHandle)) ||
+        (projectId && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(projectId))) {
+      sendJSON(res, 400, { success: false, code: "INVALID_TOOL_INVENTORY_SELECTION" });
+      return true;
+    }
+    try {
+      const { buildTrayToolInventory } = await import("./core/mcp/mcpTrayToolInventory.js");
+      sendJSON(res, 200, buildTrayToolInventory({ identityHandle, projectId }));
+    } catch {
+      sendJSON(res, 503, { success: false, code: "TOOL_INVENTORY_UNAVAILABLE" });
+    }
+    return true;
+  }
   if (pathname === "/api/desktop/access/connected-clients" && req.method === "GET") {
     res.setHeader("Cache-Control", "no-store");
     const { reconcileVerifiedMcpConnections, listLastObservedMcpConnections } =
