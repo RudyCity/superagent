@@ -67,8 +67,9 @@ function boot(nativeEnabled=true, mcpData?: {
       const ruleApp = args.executablePath
         ? {platform:"win32",executablePath:args.executablePath,sha256:"e".repeat(64)}
         : app;
+      const ruleId = policy.rules.length === 0 ? "abc" : ("abc-" + (policy.rules.length + 1));
       const rule={
-        id:"abc",kind:args.kind,effect:args.effect,app:ruleApp,operations:args.operations,
+        id:ruleId,kind:args.kind,effect:args.effect,app:ruleApp,operations:args.operations,
         scope:args.kind==="file"
           ?{path:args.filePath,recursive:args.recursive}
           :args.exactWindow?{windowTitle:discovered.title}:{},
@@ -83,7 +84,7 @@ function boot(nativeEnabled=true, mcpData?: {
         operation:args.operations.join(", "),
         target:args.kind==="file"?args.filePath:(args.exactWindow?discovered.title:"All windows"),
         effect:args.effect,
-        ruleId:"abc",
+        ruleId:ruleId,
       });
       return policy;
     }
@@ -862,5 +863,97 @@ describe("independent MCP Connections and Project Access UI", () => {
     expect(outcome).toEqual({targetFound:true,tab:"connections"});
     const list=ui.document.getElementById("access-mcp-connection-pending-list")!;
     expect(list.children.some(c=>c.dataset.requestId==="req_late")).toBe(true);
+  });
+});
+
+describe("bulk permanent access rule operations", () => {
+  it("hides bulk toolbar when no rules are registered, and displays it when rules exist", async () => {
+    const ui = boot(); await flush();
+    const bulkBar = ui.document.getElementById("access-rule-bulk-bar")!;
+    expect(bulkBar.hidden).toBe(true);
+
+    // Register a rule
+    ui.document.getElementById("access-app-list")!.firstChild!.click();
+    ui.document.getElementById("access-submit")!.click(); await flush();
+
+    expect(bulkBar.hidden).toBe(false);
+    expect(ui.document.getElementById("access-rule-selected-count")?.textContent).toBe("0 dipilih");
+    expect(ui.document.getElementById("access-rule-bulk-revoke")?.disabled).toBe(true);
+  });
+
+  it("selects rules individually, updates counter and enables bulk revoke button", async () => {
+    const ui = boot(); await flush();
+    // Register 2 rules
+    ui.document.getElementById("access-app-list")!.firstChild!.click();
+    ui.document.getElementById("access-submit")!.click(); await flush();
+
+    const select = ui.document.getElementById("access-kind")!;
+    select.value = "file"; select.change();
+    ui.document.getElementById("access-pick-folder")!.click(); await flush();
+    ui.document.getElementById("access-submit")!.click(); await flush();
+
+    const rows = ui.document.getElementById("access-rule-list")!.children;
+    expect(rows).toHaveLength(2);
+
+    // Select first rule
+    const checkbox1 = rows[0].children[0].children[0];
+    checkbox1.checked = true;
+    checkbox1.change();
+
+    expect(ui.document.getElementById("access-rule-selected-count")?.textContent).toBe("1 dipilih");
+    const bulkRevoke = ui.document.getElementById("access-rule-bulk-revoke")!;
+    expect(bulkRevoke.disabled).toBe(false);
+    expect(bulkRevoke.textContent).toContain("Cabut (1) Terpilih");
+
+    // Select second rule
+    const checkbox2 = rows[1].children[0].children[0];
+    checkbox2.checked = true;
+    checkbox2.change();
+
+    expect(ui.document.getElementById("access-rule-selected-count")?.textContent).toBe("2 dipilih");
+    expect(bulkRevoke.textContent).toContain("Cabut (2) Terpilih");
+
+    // Click Batal
+    const clearBtn = ui.document.getElementById("access-rule-bulk-clear")!;
+    expect(clearBtn.hidden).toBe(false);
+    clearBtn.click();
+
+    expect(ui.document.getElementById("access-rule-selected-count")?.textContent).toBe("0 dipilih");
+    expect(bulkRevoke.disabled).toBe(true);
+  });
+
+  it("selects all filtered rules via select-all checkbox and revokes them in bulk", async () => {
+    const ui = boot(); await flush();
+    // Register desktop rule
+    ui.document.getElementById("access-app-list")!.firstChild!.click();
+    ui.document.getElementById("access-submit")!.click(); await flush();
+
+    // Register file rule
+    const select = ui.document.getElementById("access-kind")!;
+    select.value = "file"; select.change();
+    ui.document.getElementById("access-pick-folder")!.click(); await flush();
+    ui.document.getElementById("access-submit")!.click(); await flush();
+
+    expect(ui.getPolicy().rules).toHaveLength(2);
+
+    // Select all via bulk toolbar checkbox
+    const selectAll = ui.document.getElementById("access-rule-select-all")!;
+    selectAll.checked = true;
+    selectAll.change();
+
+    expect(ui.document.getElementById("access-rule-selected-count")?.textContent).toBe("2 dipilih");
+    const bulkRevoke = ui.document.getElementById("access-rule-bulk-revoke")!;
+    expect(bulkRevoke.disabled).toBe(false);
+
+    // Execute bulk revoke
+    bulkRevoke.click();
+    await flush();
+
+    // Both rules revoked
+    expect(ui.getPolicy().rules).toHaveLength(0);
+    const revokeCalls = ui.calls.filter(c => c.name === "revoke_permanent_access_rule");
+    expect(revokeCalls).toHaveLength(2);
+    expect(revokeCalls.map(c => c.args.id)).toEqual(["abc", "abc-2"]);
+    expect(ui.document.getElementById("access-rule-list")!.children[0].textContent).toContain("Belum ada aplikasi tepercaya");
   });
 });

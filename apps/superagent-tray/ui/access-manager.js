@@ -3,7 +3,7 @@
   // Native Tray Access Manager: no WebView-side policy writes or localStorage.
   // All grants are performed by the native host after OS verification + dialog.
   const $ = (id) => document.getElementById(id);
-  const state = { registry: null, windows: [], installedApps: [], appSource: "active", selected: "", busy: false, view: "desktop", ruleFilter: "all", ruleSearch: "", auditLogs: [], activeTab: "register" };
+  const state = { registry: null, windows: [], installedApps: [], appSource: "active", selected: "", busy: false, view: "desktop", ruleFilter: "all", ruleSearch: "", auditLogs: [], activeTab: "register", selectedRuleIds: new Set() };
   const invoke = (name, args) => {
     const native = window.__TAURI__?.core?.invoke;
     if (typeof native !== "function") throw Error("Installed native Tray required");
@@ -62,7 +62,8 @@
       "access-effect","access-kind","access-exact","access-view","access-input","access-element-role","access-element-label",
       "access-file-path","access-file-recursive","access-file-read","access-file-write","access-file-delete",
       "access-pick-file","access-pick-folder","access-audit-clear","access-audit-refresh",
-      "access-src-active","access-src-installed","access-pick-exe"]) {
+      "access-src-active","access-src-installed","access-pick-exe",
+      "access-rule-bulk-revoke","access-rule-bulk-clear","access-rule-select-all"]) {
       const el = $(id);
       if (el) el.disabled = value;
     }
@@ -70,6 +71,19 @@
     if (submit && !value) submit.disabled = state.view === "file"
       ? !$("access-file-path")?.value.trim()
       : !selectedTarget();
+    if (!value) {
+      const allRules = state.registry?.rules || [];
+      const query = (state.ruleSearch || "").trim().toLowerCase();
+      const filtered = allRules.filter(r => {
+        if (state.ruleFilter !== "all" && r.kind !== state.ruleFilter) return false;
+        if (!query) return true;
+        const app = appName(r.app?.executablePath).toLowerCase();
+        const path = (r.kind === "desktop" ? (r.scope?.windowTitle || "") : (r.scope?.path || "")).toLowerCase();
+        const ops = (r.operations || []).join(" ").toLowerCase();
+        return app.includes(query) || path.includes(query) || ops.includes(query);
+      });
+      updateBulkBar(filtered);
+    }
   }
   function appName(path) {
     return String(path || "Unknown executable").split(/[\\/]/).pop() || "Unknown executable";
@@ -234,6 +248,49 @@
     }
     renderRules();
   }
+  function updateBulkBar(filteredRules) {
+    const bulkBar = $("access-rule-bulk-bar");
+    if (!bulkBar) return;
+    const allRules = state.registry?.rules || [];
+    if (!allRules.length) {
+      bulkBar.hidden = true;
+      return;
+    }
+    bulkBar.hidden = false;
+
+    const filtered = Array.isArray(filteredRules) ? filteredRules : [];
+    const selectAllCheck = $("access-rule-select-all");
+    const selectAllLabel = $("access-rule-select-all-label");
+    const selectedCount = $("access-rule-selected-count");
+    const bulkRevokeBtn = $("access-rule-bulk-revoke");
+    const bulkClearBtn = $("access-rule-bulk-clear");
+
+    let countInFiltered = 0;
+    for (const r of filtered) {
+      if (state.selectedRuleIds.has(r.id)) countInFiltered++;
+    }
+
+    if (selectAllCheck) {
+      selectAllCheck.disabled = state.busy || filtered.length === 0;
+      selectAllCheck.checked = filtered.length > 0 && countInFiltered === filtered.length;
+      selectAllCheck.indeterminate = countInFiltered > 0 && countInFiltered < filtered.length;
+    }
+    if (selectAllLabel) {
+      selectAllLabel.textContent = filtered.length ? "Pilih semua (" + filtered.length + ")" : "Pilih semua";
+    }
+    const totalSelected = state.selectedRuleIds.size;
+    if (selectedCount) {
+      selectedCount.textContent = totalSelected === 0 ? "0 dipilih" : totalSelected + " dipilih";
+    }
+    if (bulkRevokeBtn) {
+      bulkRevokeBtn.disabled = state.busy || totalSelected === 0;
+      bulkRevokeBtn.textContent = totalSelected > 0 ? "Cabut (" + totalSelected + ") Terpilih" : "Cabut Terpilih";
+    }
+    if (bulkClearBtn) {
+      bulkClearBtn.hidden = totalSelected === 0;
+      bulkClearBtn.disabled = state.busy;
+    }
+  }
   function renderRules() {
     const list = $("access-rule-list");
     const count = $("access-rule-count");
@@ -265,6 +322,13 @@
       return app.includes(query) || path.includes(query) || ops.includes(query);
     });
 
+    // Prune stale selected rule IDs
+    const validRuleIdSet = new Set(allRules.map(r => r.id));
+    for (const id of state.selectedRuleIds) {
+      if (!validRuleIdSet.has(id)) state.selectedRuleIds.delete(id);
+    }
+    updateBulkBar(filtered);
+
     if (!allRules.length) {
       list.append(make("p", "access-empty",
         "Belum ada aplikasi tepercaya. Registrasikan aplikasi dan pilih operasi yang diperbolehkan."));
@@ -275,9 +339,29 @@
       return;
     }
     for (const rule of filtered) {
-      const row = make("div", "access-rule-row");
-      const symbol = make("span", "access-rule-effect " + rule.effect,
-        rule.effect === "deny" ? "Blokir" : "Izinkan");
+      const isSelected = state.selectedRuleIds.has(rule.id);
+      const row = make("div", "access-rule-row" + (isSelected ? " is-selected" : ""));
+      row.dataset.ruleId = rule.id;
+
+      const symbol = make("label", "access-rule-effect " + rule.effect + " access-rule-select-cell");
+      const check = make("input", "access-rule-checkbox");
+      check.type = "checkbox";
+      check.checked = isSelected;
+      check.setAttribute("aria-label", "Pilih aturan " + rule.id);
+      const onToggle = () => {
+        if (check.checked) {
+          state.selectedRuleIds.add(rule.id);
+          row.classList.add("is-selected");
+        } else {
+          state.selectedRuleIds.delete(rule.id);
+          row.classList.remove("is-selected");
+        }
+        updateBulkBar(filtered);
+      };
+      check.addEventListener("change", onToggle);
+      check.addEventListener("click", onToggle);
+      symbol.append(check, make("span", "", rule.effect === "deny" ? "Blokir" : "Izinkan"));
+
       const detail = make("div", "access-rule-detail");
 
       const headerLine = make("div", "access-rule-header");
@@ -452,6 +536,7 @@
       const registry = await invoke("revoke_permanent_access_rule", {id});
       if (!registryValid(registry)) throw Error("Respons pencabutan tidak valid");
       state.registry = registry;
+      state.selectedRuleIds.delete(id);
       renderRegistry();
       void refreshAuditLog();
       status("Aturan dicabut. Sesi input berikutnya akan ditolak.", "success");
@@ -459,6 +544,39 @@
       status("Gagal mencabut aturan: " + String(error), "error");
     } finally {
       setBusy(false);
+    }
+  }
+  async function revokeRulesBulk(ids) {
+    if (state.busy || !Array.isArray(ids) || !ids.length) return;
+    const validIds = ids.filter(id => typeof id === "string" && id.length > 0);
+    if (!validIds.length) return;
+    if (typeof window.confirm === "function" && !window.confirm(
+      "Cabut " + validIds.length + " aturan permanen terpilih? Tindakan ini tidak dapat dibatalkan.")) return;
+    setBusy(true);
+    status("Mencabut " + validIds.length + " aturan terpilih...", "info");
+    let successCount = 0;
+    let lastError = null;
+    for (const id of validIds) {
+      try {
+        const registry = await invoke("revoke_permanent_access_rule", { id });
+        if (registryValid(registry)) {
+          state.registry = registry;
+          state.selectedRuleIds.delete(id);
+          successCount++;
+        }
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    renderRegistry();
+    void refreshAuditLog();
+    setBusy(false);
+    if (lastError && successCount === 0) {
+      status("Gagal mencabut aturan terpilih: " + String(lastError?.message || lastError), "error");
+    } else if (lastError) {
+      status("Dicabut " + successCount + " dari " + validIds.length + " aturan. Beberapa gagal: " + String(lastError?.message || lastError), "warning");
+    } else {
+      status("Berhasil mencabut " + successCount + " aturan permanen.", "success");
     }
   }
   function formatTime(ts) {
@@ -1748,9 +1866,63 @@
     });
     filterBar.append(tabs, ruleSearch);
 
+    const bulkBar = make("div", "access-bulk-bar");
+    bulkBar.id = "access-rule-bulk-bar";
+    bulkBar.hidden = true;
+
+    const bulkSelectWrap = make("label", "access-bulk-select-wrap");
+    const selectAllCheck = make("input", "access-bulk-check");
+    selectAllCheck.id = "access-rule-select-all";
+    selectAllCheck.type = "checkbox";
+    selectAllCheck.setAttribute("aria-label", "Pilih semua aturan yang sedang ditampilkan");
+    const selectAllLabel = make("span", "", "Pilih semua");
+    selectAllLabel.id = "access-rule-select-all-label";
+    bulkSelectWrap.append(selectAllCheck, selectAllLabel);
+
+    const onSelectAllToggle = () => {
+      const allRules = state.registry?.rules || [];
+      const query = (state.ruleSearch || "").trim().toLowerCase();
+      const filtered = allRules.filter(r => {
+        if (state.ruleFilter !== "all" && r.kind !== state.ruleFilter) return false;
+        if (!query) return true;
+        const app = appName(r.app?.executablePath).toLowerCase();
+        const path = (r.kind === "desktop" ? (r.scope?.windowTitle || "") : (r.scope?.path || "")).toLowerCase();
+        const ops = (r.operations || []).join(" ").toLowerCase();
+        return app.includes(query) || path.includes(query) || ops.includes(query);
+      });
+      if (selectAllCheck.checked) {
+        for (const r of filtered) state.selectedRuleIds.add(r.id);
+      } else {
+        for (const r of filtered) state.selectedRuleIds.delete(r.id);
+      }
+      renderRules();
+    };
+    selectAllCheck.addEventListener("change", onSelectAllToggle);
+    selectAllCheck.addEventListener("click", onSelectAllToggle);
+
+    const bulkRight = make("div", "access-bulk-actions");
+    const selectedCount = make("span", "access-bulk-count", "0 dipilih");
+    selectedCount.id = "access-rule-selected-count";
+
+    const bulkRevokeBtn = action("Cabut Terpilih", "access-bulk-revoke", () => {
+      void revokeRulesBulk(Array.from(state.selectedRuleIds));
+    });
+    bulkRevokeBtn.id = "access-rule-bulk-revoke";
+    bulkRevokeBtn.disabled = true;
+
+    const bulkClearBtn = action("Batal", "access-bulk-clear", () => {
+      state.selectedRuleIds.clear();
+      renderRules();
+    });
+    bulkClearBtn.id = "access-rule-bulk-clear";
+    bulkClearBtn.hidden = true;
+
+    bulkRight.append(selectedCount, bulkRevokeBtn, bulkClearBtn);
+    bulkBar.append(bulkSelectWrap, bulkRight);
+
     const rules = make("div","access-rule-list");
     rules.id = "access-rule-list";
-    stored.append(h, summary, filterBar, rules);
+    stored.append(h, summary, filterBar, bulkBar, rules);
 
     const auditPanel = make("div", "access-audit-panel");
     auditPanel.id = "access-audit-panel";
