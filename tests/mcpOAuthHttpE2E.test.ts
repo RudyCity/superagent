@@ -185,7 +185,9 @@ describe("Hermes Phase 5 OAuth over loopback HTTP/MCP", () => {
       name: "superagent_brain", arguments: { action: "create", sessionId: "sess_http_owner" },
     }), aliceSession);
     expect(created.status).toBe(200);
-    expect(created.body).toContain("MCP_APPROVAL_REQUIRED");
+    // MCP Connections establishes the connection only. Operational authority is
+    // Project Access, so a missing Execute grant must fail before any Brain mutation.
+    expect(created.body).toContain("PROJECT_GRANT_MISSING");
     expect(created.body).not.toContain('"sessionId":"sess_http_owner"');
     const bobDenied = await post(bob, rpc(69, "tools/call", {
       name: "superagent_brain", arguments: {
