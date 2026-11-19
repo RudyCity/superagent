@@ -1547,6 +1547,32 @@ mod tests {
         assert_eq!(names,vec!["mcp","cloudflare","core"]);
     }
     #[test]
+    fn force_candidates_prioritize_restart_sources_and_keep_daemon_core_shared_pid() {
+        let mut guardian=item("managed:guardian",false);
+        guardian.kind="managed".into();guardian.pid=Some(101);
+        guardian.force_selectable=true;guardian.process_started_at=Some(1700000000);
+
+        let mut supervisor=item("supervisor:7888:202",false);
+        supervisor.kind="core-supervisor".into();supervisor.pid=Some(202);
+        supervisor.force_selectable=true;supervisor.process_started_at=Some(1700000001);
+
+        let mut daemon=item("managed:daemon",false);
+        daemon.kind="managed".into();daemon.pid=Some(303);daemon.port=Some(7888);
+        daemon.force_selectable=true;daemon.process_started_at=Some(1700000002);
+
+        let mut core=item("core:7888:303",false);
+        core.kind="core".into();core.pid=Some(303);core.port=Some(7888);
+        core.force_selectable=true;core.process_started_at=Some(1700000002);
+
+        let p=preview(vec![core.clone(),daemon.clone(),supervisor.clone(),guardian.clone()],false);
+        let ids:Vec<String>=force_candidates(&p).unwrap().iter()
+            .map(|item|item.id.clone()).collect();
+        assert_eq!(ids,vec![
+            guardian.id,supervisor.id,daemon.id,core.id,
+        ]);
+    }
+
+    #[test]
     fn guardian_os_lease_fallback_rejects_pid_reuse_and_stale_owner_records() {
         let valid=json!({"version":1,"port":7888,"pid":25204,
             "startedAt":1_800_000_003_000u64,"instanceId":"owner"});
