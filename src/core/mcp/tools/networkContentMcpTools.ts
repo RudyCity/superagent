@@ -200,7 +200,7 @@ export const NETWORK_CONTENT_MCP_TOOL_DEFS = [
   {
     name: "superagent_git_action",
     description:
-      "Perform structured Git repository actions: 'status', 'diff', 'commit', 'log', 'add', 'restore', 'clean'.",
+      "Perform scoped Git actions: status, diff, log, add, commit, restore, clean. Native host file grants are required for workspace-wide or file-mutating actions. add/restore/clean require exact files; commit uses only staged changes.",
     inputSchema: {
       type: "object",
       properties: {
@@ -209,9 +209,9 @@ export const NETWORK_CONTENT_MCP_TOOL_DEFS = [
           enum: ["status", "diff", "commit", "log", "add", "restore", "clean"],
           description: "Git action to perform.",
         },
-        message: { type: "string", description: "Commit message (required for commit)." },
-        limit: { type: "number", description: "Max commit log entries (default: 5)." },
-        files: { type: "array", items: { type: "string" }, description: "Files to stage or restore, restricted to the selected project." },
+        message: { type: "string", minLength: 1, maxLength: 500, description: "Commit message; commits only already-staged files." },
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Max commit log entries (default: 5, maximum 50)." },
+        files: { type: "array", minItems: 1, maxItems: 50, items: { type: "string" }, description: "Required exact project-relative file paths for add, restore and clean (no broad pathspecs)." },
         workspace: { type: "string", description: "Optional registered project workspace." },
         projectId: { type: "string", description: "Stable ID of a registered project." },
       },
