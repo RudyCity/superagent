@@ -736,6 +736,13 @@
       if (tabName === "mcp") void refreshMcpRequests();
     }
   }
+  // Explicit navigation supersedes a notification's one-shot focus target.
+  // Otherwise every Core refresh can reopen Project Access over MCP Connections.
+  function selectTabFromNavigation(tabName) {
+    mcpNotificationFocus.id = null;
+    mcpNotificationFocus.didFocus = false;
+    setActiveTab(tabName);
+  }
   function updateTabFromHash() {
     const hash = typeof location !== "undefined" ? location.hash || "" : "";
     if (hash.includes(":audit")) {
@@ -1436,7 +1443,9 @@
     // Route them to the explicit legacy denial panel in Project Access, never
     // to OAuth connection sessions or a non-existent approval list.
     const legacyConnectionRequest = target.projectId === "mcp-connection";
-    if (state.activeTab !== "mcp") setActiveTab("mcp");
+    // A notification may initially select Project Access, but an already
+    // fulfilled focus cannot override the user's subsequent navigation.
+    if (!mcpNotificationFocus.didFocus && state.activeTab !== "mcp") setActiveTab("mcp");
     if (legacyConnectionRequest) {
       status("Permintaan izin koneksi lama tidak berlaku. Buka penolakan permintaan lama di Akses Proyek; buat grant baru pada proyek terdaftar jika diperlukan.", "warning");
     }
@@ -2235,7 +2244,7 @@
     tabRegister.append(
       make("span", "access-nav-tab-label", "Aplikasi & File")
     );
-    tabRegister.addEventListener("click", () => setActiveTab("register"));
+    tabRegister.addEventListener("click", () => selectTabFromNavigation("register"));
 
     const tabRules = make("button", "access-nav-tab");
     tabRules.id = "access-nav-tab-rules";
@@ -2250,7 +2259,7 @@
       make("span", "access-nav-tab-label", "Aturan Aktif"),
       ruleBadge
     );
-    tabRules.addEventListener("click", () => setActiveTab("rules"));
+    tabRules.addEventListener("click", () => selectTabFromNavigation("rules"));
 
     const tabAudit = make("button", "access-nav-tab");
     tabAudit.id = "access-nav-tab-audit";
@@ -2267,7 +2276,7 @@
       auditPulseDot,
       auditBadge
     );
-    tabAudit.addEventListener("click", () => setActiveTab("audit"));
+    tabAudit.addEventListener("click", () => selectTabFromNavigation("audit"));
 
     const tabMcp = make("button", "access-nav-tab");
     tabMcp.id = "access-nav-tab-mcp";
@@ -2282,7 +2291,7 @@
       make("span", "access-nav-tab-label", "Akses Proyek"),
       mcpBadge
     );
-    tabMcp.addEventListener("click", () => setActiveTab("mcp"));
+    tabMcp.addEventListener("click", () => selectTabFromNavigation("mcp"));
 
     const tabConnections = make("button", "access-nav-tab");
     tabConnections.id = "access-nav-tab-connections";
@@ -2294,7 +2303,7 @@
     const connectionBadge = make("span", "access-nav-tab-badge zero", "0");
     connectionBadge.id = "access-tab-badge-connections";
     tabConnections.append(make("span", "access-nav-tab-label", "Koneksi MCP"), connectionBadge);
-    tabConnections.addEventListener("click", () => setActiveTab("connections"));
+    tabConnections.addEventListener("click", () => selectTabFromNavigation("connections"));
 
     navTabs.append(tabRegister, tabRules, tabConnections, tabMcp, tabAudit);
     const tabOrder = [tabRegister, tabRules, tabConnections, tabMcp, tabAudit];
@@ -2378,7 +2387,7 @@
       // Navigation only. Runtime Detection cannot issue or modify grants.
       window.__superagentAccessManagerOpenTab = (tabName) => {
         if (tabName !== "connections" && tabName !== "mcp") return;
-        setActiveTab(tabName);
+        selectTabFromNavigation(tabName);
         void refreshMcpRequests();
       };
       // Navigation-only notification affordance. The actual approval/deny
@@ -2414,7 +2423,8 @@
         void refreshWindows().catch(() => {});
         void refreshInstalledApps().catch(() => {});
         void refreshAuditLog().catch(() => {});
-        updateTabFromHash();
+        // Passive refreshes must preserve the tab the user explicitly selected.
+        // Hash routing happens on initial build, explicit open and hashchange.
       };
       const pendingNotificationId = window.__superagentPendingAccessNotificationId;
       const pendingNotificationTab = window.__superagentPendingAccessNotificationTab;
