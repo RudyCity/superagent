@@ -504,10 +504,23 @@ function officeCliEffects(args:Args|undefined):ExplicitFileEffect[]|null {
   return effects;
 }
 const MIXED_ACTION_TOOLS = new Set([
-  "superagent_brain","superagent_cli_bridge","superagent_git_action","superagent_office_cli",
+  "superagent_brain","superagent_cli_bridge","superagent_git_action","superagent_exec_command",
   "superagent_chrome_vision","superagent_manage_workspace_chain",
   "superagent_cross_workspace_exec",
 ]);
+
+function certifiedDiagnosticCommand(args:Args|undefined):boolean {
+  if(!args||typeof args!=="object"||Array.isArray(args)||
+     Object.keys(args).some(key=>!["command","cwd","workspace","projectId","timeoutMs"].includes(key))||
+     typeof args.command!=="string")return false;
+  const parts=splitQuotedCommand(args.command);
+  if(!parts||parts.length!==2)return false;
+  const binary=parts[0]!.toLowerCase();
+  const flag=parts[1]!.toLowerCase();
+  if(!["--version","-v","-version"].includes(flag))return false;
+  return new Set(["bun","node","npm","pnpm","yarn","deno","git","python","python3",
+    "rustc","cargo","go","java","javac"]).has(binary);
+}
 function certifiedMixedAction(name:string,args:Args|undefined):boolean {
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
   if(name==="superagent_git_action")
@@ -531,7 +544,7 @@ function certifiedMixedAction(name:string,args:Args|undefined):boolean {
     return ["list","profile.list","role.list","delegate.jobs","delegate.agents",
       "delegate.slots","delegate.health","session.list"].includes(action);
   }
-  if(name==="superagent_office_cli")return officeCliEffects(args)!==null;
+  if(name==="superagent_exec_command")return certifiedDiagnosticCommand(args);
   if(name==="superagent_brain"){
     const action=String(args.action??"");
     const executionActions=new Set(["delegate.start","task.delegate.start","task.autostart","task.retry"]);
@@ -613,6 +626,10 @@ export function describePermanentFileToolReadiness(name:string):string {
     return "List is certified metadata; recursive worktree removal remains blocked until every child file is mediated.";
   if(name==="superagent_launch_chrome")
     return "Only Managed CDP launches using SuperAgent-owned isolated profile storage and HTTP(S) URLs are certified.";
+  if(name==="superagent_exec_command")
+    return "Only strict toolchain version diagnostics are non-file certified; arbitrary shell commands remain blocked pending native filesystem sandboxing.";
+  if(name==="superagent_office_cli")
+    return "Recognized Office CLI document commands are parsed into explicit read/write file effects; unknown commands remain blocked.";
   if(MIXED_ACTION_TOOLS.has(name))
     return "Only non-file sub-actions are certified; shell/file/content-capable actions remain independently blocked.";
   if(FIXED_PLANNING_TOOLS.has(name))
@@ -650,7 +667,8 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
       name==="superagent_use_skill" || name==="superagent_manage_worktrees" ||
       FIXED_PLANNING_TOOLS.has(name) || MIXED_ACTION_TOOLS.has(name) ||
       name==="superagent_check_project_health" || name==="superagent_launch_chrome" ||
-      name==="superagent_list_files" || name==="superagent_find_files")
+      name==="superagent_list_files" || name==="superagent_find_files" ||
+      name==="superagent_office_cli")
     return "action_dependent";
   return "uncertified";
 }
