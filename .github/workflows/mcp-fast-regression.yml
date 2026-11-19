@@ -5,6 +5,7 @@ on:
     paths:
       - "src/core/mcp/**"
       - "package.json"
+      - "scripts/install-superagent-tray.ts"
       - "bun.lock"
       - "src/core/tools/mcpTools.ts"
       - "src/app.tsx" # CLI StatusBar uses the same Core build entrypoint
@@ -79,6 +80,7 @@ on:
     paths:
       - "src/core/mcp/**"
       - "package.json"
+      - "scripts/install-superagent-tray.ts"
       - "bun.lock"
       - "src/core/tools/mcpTools.ts"
       - "src/app.tsx" # CLI StatusBar uses the same Core build entrypoint
