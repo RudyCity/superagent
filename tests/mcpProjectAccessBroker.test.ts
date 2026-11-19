@@ -55,26 +55,27 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
   const geminiIdentity = { mode: "oauth" as const, subject: "gemini-client-session-1" };
   const claudeIdentity = { mode: "oauth" as const, subject: "claude-client-session-2" };
 
-  it("uses the human OAuth name on Tray requests without granting execute", () => {
+  it("uses the human OAuth name on PROJECT requests without implicit Execute", () => {
+    registerProject({id:"owner-label-project",name:"Owner label project",type:"local",root:projectRoot});
     const identity={mode:"oauth" as const,subject:"client-for-owner-label",
       credentialHash:"a".repeat(64),ownerConnectionName:"Gemini - PC Kantor"};
     const outcome=createProjectAccessRequest(identity,{
-      projectId:MCP_CONNECTION_PROJECT_ID,capabilities:["execute"],
-      reason:"Operator review for connected MCP tools",
+      projectId:"owner-label-project",capabilities:["execute"],
+      reason:"Operator review for project-scoped MCP tools",
     });
     expect(outcome.code).toBe("APPROVAL_PENDING");
     const record=listProjectAccessRequests({status:"pending"})[0];
     expect(record.ownerConnectionName).toBe("Gemini - PC Kantor");
     expect(record.subject).toBe(identity.subject);
-    expect(hasProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,"execute")).toBe(false);
+    expect(hasProjectAccess(identity,"owner-label-project","execute")).toBe(false);
     const attempt=createProjectAccessRequest({...identity,ownerConnectionName:"Renamed instance"},{
-      projectId:MCP_CONNECTION_PROJECT_ID,capabilities:["execute"],
+      projectId:"owner-label-project",capabilities:["execute"],
       reason:"Same client requested permission again",
     });
     expect(attempt.requestId).toBe(outcome.requestId);
     expect(listProjectAccessRequests({status:"pending"})[0].ownerConnectionName)
       .toBe("Renamed instance");
-    expect(hasProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,"execute")).toBe(false);
+    expect(hasProjectAccess(identity,"owner-label-project","execute")).toBe(false);
   });
 
   it("1. Fresh agent identity has zero grants (grants: [])", () => {
@@ -354,28 +355,26 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
     expect(list).toEqual([]);
   });
 
-  it("14b. MCP connection approval is independent of chat YOLO and grants no project files", () => {
+  it("14b. MCP connection OAuth cannot grant operations; only registered projects can", () => {
     setFullYoloMode(true);
-    const pending = createProjectAccessRequest(geminiIdentity, {
-      projectId: MCP_CONNECTION_PROJECT_ID,
-      capabilities: ["execute"],
-      reason: "Operate an explicitly approved MCP connection",
-    });
-    expect(pending.code).toBe("APPROVAL_PENDING");
-    expect(hasProjectAccess(geminiIdentity, MCP_CONNECTION_PROJECT_ID, "execute")).toBe(false);
     expect(() => createProjectAccessRequest(geminiIdentity, {
       projectId: MCP_CONNECTION_PROJECT_ID,
-      capabilities: ["read"],
-      reason: "Illegal connection capability",
-    })).toThrow(/execute capability/);
-    const approved = approveProjectAccessRequest(pending.requestId);
+      capabilities: ["execute"],
+      reason: "Legacy connection-scoped permission",
+    })).toThrow(/OAuth|registered project/);
+    expect(() => grantProjectAccessToIdentity(geminiIdentity, MCP_CONNECTION_PROJECT_ID, ["execute"]))
+      .toThrow(/OAuth|operation capabilities/);
+    registerProject({id:"safe-project",name:"Safe project",type:"local",root:projectRoot});
+    const pending = createProjectAccessRequest(geminiIdentity, {
+      projectId:"safe-project",capabilities:["execute"],
+      reason:"Operate this registered project",
+    });
+    expect(pending.code).toBe("APPROVAL_PENDING");
+    const approved=approveProjectAccessRequest(pending.requestId);
     expect(approved.grant.capabilities).toEqual(["execute"]);
-    expect(hasProjectAccess(geminiIdentity, MCP_CONNECTION_PROJECT_ID, "execute")).toBe(true);
-    expect(hasProjectAccess(geminiIdentity, "unapproved-project", "read")).toBe(false);
+    expect(hasProjectAccess(geminiIdentity,"safe-project","execute")).toBe(true);
+    expect(hasProjectAccess(geminiIdentity,MCP_CONNECTION_PROJECT_ID,"execute")).toBe(false);
     setFullYoloMode(false);
-    expect(hasProjectAccess(geminiIdentity, MCP_CONNECTION_PROJECT_ID, "execute")).toBe(true);
-    revokeProjectAccessRequest(pending.requestId);
-    expect(hasProjectAccess(geminiIdentity, MCP_CONNECTION_PROJECT_ID, "execute")).toBe(false);
   });
 
   it("15. Direct grant via Broker API creates valid grant immediately", () => {
