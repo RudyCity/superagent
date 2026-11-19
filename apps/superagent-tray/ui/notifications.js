@@ -24,7 +24,7 @@
   const state = {
     items: [], history: [], digest: null, prefs: null, sourceLevels: {},
     unreadCount: 0, filter: "all", source: "all", device: "all", period: "all",
-    grouped: false, search: "", open: false, busy: false, error: "", securitySync: "unknown", prefsDirty: false, evictedCount: 0,
+    grouped: false, search: "", open: false, popoverCategory: "action", busy: false, error: "", securitySync: "unknown", prefsDirty: false, evictedCount: 0,
   };
   // A click must not lose its read receipt just because a refresh or native
   // action is currently running. Read receipts wait for the existing request.
@@ -491,12 +491,6 @@
     const count = state.unreadCount;
     const counts = countsSnapshot();
     const visibleItems = selected();
-    const actionBadge = $("tray-notification-action-count");
-    if (actionBadge) {
-      actionBadge.hidden = counts.action === 0;
-      actionBadge.textContent = String(counts.action > 99 ? "99+" : counts.action);
-      actionBadge.setAttribute("aria-label", counts.action + " actions required");
-    }
     for (const el of [$("tray-notification-count"), $("nav-notifications-count")]) {
       if (!el) continue;
       el.hidden = count === 0;
@@ -510,9 +504,16 @@
     }
     const popup = $("tray-notification-popover");
     if (popup) popup.hidden = !state.open;
-    const popoverSummary = $("tray-notification-category-summary");
-    if (popoverSummary) popoverSummary.textContent =
-      counts.action + " need action · " + counts.information + " information";
+    for (const category of ["action", "information"]) {
+      const total = $("tray-notification-" + category + "-total");
+      if (total) total.textContent = String(counts[category]);
+    }
+    document.querySelectorAll("[data-popover-category]").forEach((tab) => {
+      const selected = tab.dataset.popoverCategory === state.popoverCategory;
+      tab.classList.toggle("active", selected);
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    });
     const recent = $("tray-notification-recent");
     if (recent) {
       recent.replaceChildren();
@@ -786,6 +787,12 @@
     });
     $("tray-notification-view-all")?.addEventListener("click", () => {
       close(); window.navigateToPage?.("notifications");
+    });
+    document.querySelectorAll("[data-popover-category]").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        state.popoverCategory = tab.dataset.popoverCategory;
+        render();
+      });
     });
     $("tray-notification-read-all")?.addEventListener("click", () => mutate("read-all"));
     $("notification-read-all")?.addEventListener("click", () => mutate("read-all"));
