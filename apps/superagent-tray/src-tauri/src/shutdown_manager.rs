@@ -297,12 +297,25 @@ async fn inspect() -> Result<Preview, String> {
                 items.push(item);
             }
             "core-supervisor" => {
-                items.push(Item::new(
+                let verified=remote_owner.source=="registry" && remote_owner.can_restart &&
+                    remote_owner.pid.is_some() &&
+                    matches!(remote_owner.state,"online"|"observed");
+                let mut item=Item::new(
                     format!("supervisor:{}:{}",remote_owner.port.unwrap_or(0),remote_owner.pid.unwrap_or(0)),
                     "Core Supervisor","core-supervisor",remote_owner.state,
-                    "Supervisor process observed; manual PID kill may interrupt all Core generations",
-                    false,false,Some("No verified full-stop protocol; manual kill requires separate approval".into()),
-                    remote_owner.port,remote_owner.pid));
+                    if verified {
+                        "Authenticated supervisor owner; Force Stop All may terminate the exact supervisor PID"
+                    } else {
+                        "Supervisor process observed; manual PID kill may interrupt all Core generations"
+                    },
+                    verified,false,Some(if verified {
+                        "No graceful full-stop contract; Force Stop All requires typed + native approval".into()
+                    } else {
+                        "No verified full-stop protocol; manual kill requires separate approval".into()
+                    }),
+                    remote_owner.port,remote_owner.pid);
+                item.force_selectable=verified;
+                items.push(item);
             }
             "cloudflare" | "muse-watch" => {
                 let mut item=Item::new(
@@ -315,12 +328,23 @@ async fn inspect() -> Result<Preview, String> {
                 // An OS-observed Cloudflare process is NEVER adopted. Only a
                 // private registry-backed birth-verified cloudflared can be
                 // force-stopped after typed + native human approval.
-                item.force_selectable = remote_owner.kind=="cloudflare" &&
+                item.force_selectable = if remote_owner.kind=="cloudflare" {
                     remote_owner.source=="registry" &&
-                    matches!(remote_owner.state,"online"|"observed") &&
-                    remote_owner.pid.is_some();
+                        matches!(remote_owner.state,"online"|"observed") &&
+                        remote_owner.pid.is_some()
+                } else {
+                    remote_owner.source=="registry" &&
+                        (remote_owner.can_stop || remote_owner.can_restart) &&
+                        matches!(remote_owner.state,"online"|"observed"|"idle") &&
+                        remote_owner.pid.is_some()
+                };
+                item.owner_verified = item.force_selectable;
                 if item.force_selectable {
-                    item.detail="Registered Cloudflare owner; force stop disconnects the public tunnel and may change its URL".into();
+                    item.detail=if remote_owner.kind=="cloudflare" {
+                        "Registered Cloudflare owner; force stop disconnects the public tunnel and may change its URL".into()
+                    } else {
+                        "Authenticated Muse Watch owner; Force Stop All may terminate the exact watcher PID".into()
+                    };
                 }
                 items.push(item);
             }
@@ -430,7 +454,7 @@ async fn inspect() -> Result<Preview, String> {
             if selected {"Selected Core API"} else {"Other Core API"},"core",state,
             if supervised {"A supervised Core has no supported full-stop contract"}
             else {"Authenticated direct Core; stopped last after dependent services"},
-            eligible,eligible,
+            verified,eligible,
             if !running(state) {None} else if eligible {None}
             else if verified {Some("Active Core sessions, agent tasks or scheduler work prevent graceful exit".into())}
             else {Some("Core is supervised, foreign, or identity is unverified".into())},
@@ -495,14 +519,17 @@ async fn inspect() -> Result<Preview, String> {
     // owner is unverified. Pin both process birth and name; no UI-supplied PID
     // is accepted by the backend and no process tree is traversed.
     for item in &mut items {
-        // Force Stop All is intentionally broader than graceful selection for
-        // the daemon scheduler: an authenticated daemon owner remains force-
-        // eligible even while scheduled jobs are active. Other managed
-        // services keep their existing graceful-owner requirement.
-        item.force_selectable |= (item.selectable &&
-            matches!(item.kind.as_str(),"managed"|"daemon-direct"|"core")) ||
-            ((item.id=="managed:daemon" || item.kind=="daemon-direct") &&
-                item.owner_verified && running(&item.state));
+        // Force Stop All is intentionally broader than graceful selection.
+        // Once a local SuperAgent owner is independently verified, active work
+        // may block graceful stop but not the operator's typed + native force
+        // approval. OS-only/foreign entries remain excluded.
+        let verified_local=item.owner_verified &&
+            matches!(item.kind.as_str(),"managed"|"daemon-direct"|"core"|
+                "core-supervisor"|"muse-watch");
+        let verified_guardian_lease=item.id.starts_with("guardian-os:");
+        item.force_selectable |= verified_local || verified_guardian_lease ||
+            (item.selectable &&
+                matches!(item.kind.as_str(),"managed"|"daemon-direct"|"core"));
         if let Some(pid)=item.pid {
             if let Some(process)=force_system.process(Pid::from_u32(pid)) {
                 let name=process.name().to_string();
@@ -516,7 +543,9 @@ async fn inspect() -> Result<Preview, String> {
                 item.process_started_at=Some(process.start_time());
             }
         }
-        if (item.id=="managed:daemon" || item.kind=="daemon-direct") &&
+        if item.force_selectable &&
+            matches!(item.kind.as_str(),"managed"|"daemon-direct"|"core"|
+                "core-supervisor"|"muse-watch") &&
             !item.manual_kill_selectable {
             item.force_selectable=false;
         }
