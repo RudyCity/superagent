@@ -172,7 +172,15 @@ export function augmentWindowsEnvPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   if (process.platform !== "win32") return env;
   const pyDirs = resolveWindowsPythonDirs();
   const currentPath = env.PATH || env.Path || "";
-  const dirsToAdd = pyDirs.filter((d) => !currentPath.toLowerCase().includes(d.toLowerCase()));
+  // Bun's per-user installer does not always update the PATH inherited by a
+  // long-lived Windows Tray/Core process. Include it only when bun.exe exists.
+  const bunHome = env.BUN_INSTALL && path.isAbsolute(env.BUN_INSTALL)
+    ? env.BUN_INSTALL : env.USERPROFILE ? path.join(env.USERPROFILE, ".bun") : undefined;
+  const bunDir = bunHome ? path.join(bunHome, "bin") : undefined;
+  const candidates = bunDir && fsSync.existsSync(path.join(bunDir, "bun.exe"))
+    ? [...pyDirs, bunDir] : pyDirs;
+  const existing = new Set(currentPath.split(";").filter(Boolean).map(d => path.normalize(d).toLowerCase()));
+  const dirsToAdd = candidates.filter(d => !existing.has(path.normalize(d).toLowerCase()));
   const newPath = dirsToAdd.length > 0 ? `${dirsToAdd.join(";")};${currentPath}` : currentPath;
 
   return {
