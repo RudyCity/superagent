@@ -4107,7 +4107,12 @@
         </div>
         <div class="shutdown-panel-heading">
           <h3>Service inventory</h3>
-          <button id="shutdown-refresh" type="button" class="button ghost">Refresh preview</button>
+          <div class="shutdown-bulk-actions" role="group" aria-label="Bulk service selection">
+            <button id="shutdown-bulk-graceful" type="button" class="button ghost" disabled>Select all stoppable</button>
+            <button id="shutdown-bulk-manual" type="button" class="button ghost" disabled>Select all Kill PIDs</button>
+            <button id="shutdown-bulk-clear" type="button" class="button ghost" disabled>Clear selection</button>
+            <button id="shutdown-refresh" type="button" class="button ghost">Refresh preview</button>
+          </div>
         </div>
         <div id="shutdown-feedback" class="shutdown-feedback" role="status" aria-live="polite">
           Open this manager to inspect authenticated runtime owners.
