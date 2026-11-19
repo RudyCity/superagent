@@ -13,6 +13,7 @@ import {readListenerOwners} from "./coreMcpOwnershipAudit.js";
 import {ManagedSidecarLedger,sidecarOperationFingerprint} from "./managedSidecarLedger.js";
 import {validateCoreOperationId} from "./coreLifecycleLedger.js";
 import {listActiveTunnels} from "../remoteAgent/cloudflareTunnel.js";
+import {resolveVisionPython} from "./visionPythonRuntime.js";
 
 type VisionOwner={version:1;port:number;pid:number;instanceId:string;token:string};
 type VisionAction="start"|"stop"|"restart";
@@ -83,32 +84,22 @@ async function vacant(port:number){
     server.listen(port,"127.0.0.1",()=>server.close(e=>e?reject(e):resolve()));
   });
 }
-let resolvedPython:string|undefined;
 function pythonBin(){
-  if(resolvedPython)return resolvedPython;
-  const configured=process.env.SUPERAGENT_VISION_PYTHON||"python";
-  // pyenv-win shims may spawn a second interpreter. Recording the shim PID
-  // instead of the actual bound HTTP listener fails ownership validation.
-  const probe=spawnSync(configured,["-c","import sys; print(sys.executable)"],{
-    windowsHide:true,timeout:6000,encoding:"utf8",stdio:["ignore","pipe","ignore"],
-  });
-  const binary=probe.status===0?probe.stdout.trim():"";
-  if(!path.isAbsolute(binary))throw new Error("VISION_PYTHON_BINARY_UNRESOLVED");
-  // Validate the real executable, but preserve sys.executable as the launch
-  // path: a Python virtual environment can use a symlink to the system ELF.
-  // Invoking the realpath rather than the venv path loses sys.prefix and all
-  // site-packages installed by setup-python/venv, causing a silent startup
-  // failure despite a successful dependency probe.
-  const real=fs.realpathSync(binary);
-  const stat=fs.lstatSync(real);
-  if(!stat.isFile()||stat.isSymbolicLink())
-    throw new Error("VISION_PYTHON_BINARY_UNSAFE");
-  resolvedPython=binary;
-  return binary;
+  const resolved=resolveVisionPython();
+  if(!resolved)
+    throw new Error("VISION_PYTHON_BINARY_UNRESOLVED: configure SUPERAGENT_VISION_PYTHON or install Python for the service account");
+  return resolved.executable;
 }
 function preflightPython(){
   const script=path.join(getPackageRootDir(),"scripts","vision_server.py");
-  const stat=fs.lstatSync(script);
+  // A missing script is a setup issue, not an opaque filesystem ENOENT.
+  let stat:fs.Stats;
+  try{stat=fs.lstatSync(script);}
+  catch(e){
+    if((e as NodeJS.ErrnoException).code==="ENOENT")
+      throw new Error("VISION_TRUSTED_SCRIPT_MISSING: scripts/vision_server.py is absent from the installed package");
+    throw e;
+  }
   if(!stat.isFile()||stat.isSymbolicLink())
     throw new Error("VISION_TRUSTED_SCRIPT_MISSING");
   // Probe the exact interpreter and every eager import used by vision_server.py.
