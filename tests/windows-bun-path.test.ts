@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { augmentWindowsEnvPath } from "../src/core/tools/helpers.js";
+import { augmentWindowsEnvPath, resolveWindowsBunExecutable, resolveWindowsGitExecutable } from "../src/core/tools/helpers.js";
 
 describe("Windows MCP toolchain PATH", () => {
   const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform")!;
@@ -35,4 +35,33 @@ describe("Windows MCP toolchain PATH", () => {
     const env = augmentWindowsEnvPath({ USERPROFILE: user, PATH: "C:\\Windows\\System32" });
     expect(env.PATH).not.toContain(path.join(user, ".bun", "bin"));
   });
+  it("resolves an installed Bun directly without requiring the shell PATH", () => {
+    const user = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-direct-bun-"));
+    roots.push(user);
+    const bunDir = path.join(user, ".bun", "bin");
+    fs.mkdirSync(bunDir, { recursive: true });
+    const exe = path.join(bunDir, "bun.exe");
+    fs.writeFileSync(exe, "");
+    Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
+    expect(resolveWindowsBunExecutable({ USERPROFILE: user, PATH: "" })).toBe(exe);
+    expect(resolveWindowsBunExecutable({ USERPROFILE: user, BUN_INSTALL: path.join(user, "missing") })).toBeNull();
+  });
+
+  it("prefers a verified native Git executable and never guesses missing binaries", () => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
+    const actual = "D:\\Tools\\Git\\cmd\\git.exe";
+    const existing = (candidate: string) => candidate === actual;
+    expect(resolveWindowsGitExecutable({ ProgramFiles: "D:\\Tools", PATH: "" }, existing)).toBe(actual);
+    expect(resolveWindowsGitExecutable({ ProgramFiles: "D:\\Tools", PATH: "" }, () => false)).toBe("git");
+  });
+
+  it("adds a verified Git command directory to a stale Windows PATH", () => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
+    const user = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-git-path-"));
+    roots.push(user);
+    // PATH augmentation should keep an existing path intact even if Git is not installed.
+    const env = augmentWindowsEnvPath({ USERPROFILE: user, PATH: "C:\\Windows\\System32" });
+    expect(env.PATH).toContain("C:\\Windows\\System32");
+  });
+
 });
