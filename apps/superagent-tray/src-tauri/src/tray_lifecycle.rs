@@ -317,9 +317,13 @@ fn request_graceful_replacement(owner:&TrayOwner)->Result<(),String>{
 #[cfg(windows)]
 fn wait_for_tray_exit(owner:&TrayOwner,birth:u64)->bool{
     for _ in 0..40{
-        if matches!(same_tray_process(owner),Ok(None)){return true;}
-        // If this PID is recycled, it is NOT our old Tray.
-        if matches!(same_tray_process(owner),Ok(Some(now)) if now!=birth){return true;}
+        // Observe one consistent PID/birth snapshot per iteration.
+        match same_tray_process(owner){
+            Ok(None)=>return true,
+            Ok(Some(now)) if now!=birth=>return true,
+            Ok(Some(_))=>{},
+            Err(_)=>return false,
+        }
         thread::sleep(Duration::from_millis(200));
     }
     false
@@ -335,8 +339,9 @@ fn native_launch_question(title:&str,message:&str)->bool{
     let title:Vec<u16>=title.encode_utf16().chain(std::iter::once(0)).collect();
     let message:Vec<u16>=message.encode_utf16().chain(std::iter::once(0)).collect();
     // YES/NO + question icon + foreground/topmost. No webview or shell required.
-    unsafe {MessageBoxW(std::ptr::null_mut(),message.as_ptr(),title.as_ptr(),
-        0x0000_0004|0x0000_0020|0x0001_0000|0x0004_0000)}==6
+    let choice=unsafe {MessageBoxW(std::ptr::null_mut(),message.as_ptr(),title.as_ptr(),
+        0x0000_0004|0x0000_0020|0x0001_0000|0x0004_0000)};
+    choice==6
 }
 
 #[cfg(windows)]
@@ -369,13 +374,15 @@ pub fn replace_existing_on_manual_launch(dir:&Path,background:bool)->Result<bool
         verify_launch_owner(&owner)?!=Some(birth){
         return Err("The running Tray owner changed after approval".into());
     }
-    request_graceful_replacement(&owner)?;
-    if wait_for_tray_exit(&owner,birth){return Ok(true);}
+    let graceful=request_graceful_replacement(&owner);
+    if graceful.is_ok()&&wait_for_tray_exit(&owner,birth){return Ok(true);}
+    // An unreachable private stop endpoint or a timed-out graceful shutdown
+    // is NOT permission to kill a PID. Ask AGAIN and verify from scratch.
     // The ordinary shutdown timed out. Ask AGAIN before any OS process kill.
     // A PID, owner record, authenticated health AND OS creation time must all
     // still agree. Never kill an unverified or reused PID.
     if !native_launch_question("SuperAgent Tray is not responding",
-        &format!("The verified Tray (PID {}) did not exit gracefully.\n\nForce close ONLY this Tray and continue startup?\n\nNo other SuperAgent service will be stopped.",owner.pid)){
+        &format!("The verified Tray (PID {}) did not finish its private shutdown request.\n\nForce close ONLY this Tray and continue startup?\n\nNo other SuperAgent service will be stopped.",owner.pid)){
         return Ok(false);
     }
     if read_launch_owner(dir)?!=Some(owner.clone())||
