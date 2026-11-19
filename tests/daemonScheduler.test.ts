@@ -1169,6 +1169,22 @@ describe("DaemonScheduler", () => {
     expect((scheduler as any).cancelledRunIds).toEqual(new Set(["run-a", "run-b"]));
   });
 
+  it("force-stops active runs even when the scheduler timer was already stopped", () => {
+    const controller = new AbortController();
+    const aborted = vi.fn();
+    controller.signal.addEventListener("abort", aborted);
+    (scheduler as any).activeRunAbortControllers.set("run-still-active", controller);
+    (scheduler as any).runningJobIds.add("job-still-active");
+    expect(scheduler.isRunning()).toBe(false);
+
+    const result = scheduler.forceStopDaemon();
+
+    expect(result).toEqual({ cancelledRuns: 1, activeJobsCount: 1 });
+    expect(scheduler.isRunning()).toBe(false);
+    expect(controller.signal.aborted).toBe(true);
+    expect(aborted).toHaveBeenCalledTimes(1);
+  });
+
   it("starts and stops daemon timer cleanly", () => {
     expect(scheduler.isRunning()).toBe(false);
     scheduler.startDaemon(500);
