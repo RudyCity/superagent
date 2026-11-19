@@ -178,15 +178,14 @@ export class LocalProjectProvider implements ProjectProvider {
 
     const gitCheckAt = Date.now();
     try {
-      execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
-        cwd: root,
-        encoding: "utf8",
-        timeout: Math.max(250, Math.min(5000, options.timeoutMs ?? 2000)),
-        stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
-      });
-      addCheck("git_repository", "passed", "Git repository detected.", gitCheckAt);
+      const gitMarker = path.join(root, ".git");
+      const isGit = fs.existsSync(gitMarker) &&
+        (fs.statSync(gitMarker).isDirectory() || fs.statSync(gitMarker).isFile());
+      addCheck("git_repository", isGit ? "passed" : "skipped",
+        isGit ? "Git repository metadata marker detected." : "No Git repository metadata marker detected.",
+        gitCheckAt);
     } catch {
-      addCheck("git_repository", "skipped", "No Git repository detected, or Git metadata could not be read within the probe timeout.", gitCheckAt);
+      addCheck("git_repository", "skipped", "Git repository metadata could not be inspected.", gitCheckAt);
     }
 
     const manifestCheckAt = Date.now();
