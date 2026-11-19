@@ -495,8 +495,14 @@ async fn inspect() -> Result<Preview, String> {
     // owner is unverified. Pin both process birth and name; no UI-supplied PID
     // is accepted by the backend and no process tree is traversed.
     for item in &mut items {
-        item.force_selectable |= item.selectable &&
-            matches!(item.kind.as_str(),"managed"|"daemon-direct"|"core");
+        // Force Stop All is intentionally broader than graceful selection for
+        // the daemon scheduler: an authenticated daemon owner remains force-
+        // eligible even while scheduled jobs are active. Other managed
+        // services keep their existing graceful-owner requirement.
+        item.force_selectable |= (item.selectable &&
+            matches!(item.kind.as_str(),"managed"|"daemon-direct"|"core")) ||
+            ((item.id=="managed:daemon" || item.kind=="daemon-direct") &&
+                item.owner_verified && running(&item.state));
         if let Some(pid)=item.pid {
             if let Some(process)=force_system.process(Pid::from_u32(pid)) {
                 let name=process.name().to_string();
@@ -509,6 +515,10 @@ async fn inspect() -> Result<Preview, String> {
                 }
                 item.process_started_at=Some(process.start_time());
             }
+        }
+        if (item.id=="managed:daemon" || item.kind=="daemon-direct") &&
+            !item.manual_kill_selectable {
+            item.force_selectable=false;
         }
         item.force_selectable &= item.process_started_at.is_some();
     }
@@ -686,6 +696,37 @@ fn os_birth_matches(item:&Item)->bool {
     system.refresh_processes();
     system.process(Pid::from_u32(pid)).is_some_and(|p|p.start_time()==birth)
 }
+async fn force_stop_daemon(item:&Item)->Result<(),String> {
+    if !item.force_selectable || !manual_os_identity_matches(item) {
+        return Err("SHUTDOWN_FORCE_DAEMON_IDENTITY_CHANGED".into());
+    }
+    let status=core_request(Method::GET,"/api/daemon/status",None).await?;
+    if pid_of(&status["pid"])!=item.pid || status["running"]!=true {
+        return Err("SHUTDOWN_FORCE_DAEMON_OWNER_CHANGED".into());
+    }
+
+    // First request cooperative cancellation of every active daemon run and
+    // stop future scheduling. This preserves daemon job definitions.
+    core_request(Method::POST,"/api/daemon/stop",Some(json!({"force":true}))).await?;
+    let began=Instant::now();
+    loop {
+        let after=core_request(Method::GET,"/api/daemon/status",None).await?;
+        if pid_of(&after["pid"])!=item.pid {
+            return Err("SHUTDOWN_FORCE_DAEMON_OWNER_CHANGED".into());
+        }
+        if after["running"]==false && after["activeJobsCount"].as_u64()==Some(0) {
+            return Ok(());
+        }
+        if began.elapsed()>Duration::from_secs(3) {break;}
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+
+    // A runner that ignores AbortSignal must not make Force Stop All a no-op.
+    // The user already supplied typed + native destructive approval, so kill
+    // only the exact verified Core worker PID/birth captured in the preview.
+    manual_kill_one(item).await
+}
+
 async fn force_stop_one(item:&Item)->Result<(),String> {
     // Confirm fresh native identity, not a stale cached preview or WebView PID.
     let fresh=inspect().await?;
@@ -743,9 +784,14 @@ async fn force_stop_one(item:&Item)->Result<(),String> {
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
         }
+        // Daemon force-stop is deliberately stronger than graceful stop:
+        // abort active runs, stop scheduling, then exact-PID terminate the
+        // verified Core worker only if cooperative cancellation does not settle.
+        "managed" if item.id=="managed:daemon"=>force_stop_daemon(item).await,
+        "daemon-direct"=>force_stop_daemon(item).await,
         // Existing owner-bound stop plans remain mandatory for every other
         // supported service. No generic process-tree or Core-supervisor kill.
-        "managed"|"daemon-direct"|"core" if item.selectable=>stop_one(item).await,
+        "managed"|"core" if item.selectable=>stop_one(item).await,
         _=>Err("SHUTDOWN_FORCE_NO_OWNER_PROTOCOL".into()),
     }
 }
