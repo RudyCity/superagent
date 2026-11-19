@@ -106,35 +106,56 @@
   }
   const shortDigest = value => typeof value==="string"&&/^[a-f0-9]{64}$/.test(value)
     ? value.slice(0,9) : null;
+  function publishedPackage(id) {
+    const item=state.published?.components?.find(part=>part?.id===id);
+    return item?.available===true&&/^[a-f0-9]{64}$/i.test(item.sha256||"")&&
+      /^\\d+\\.\\d+\\.\\d+$/.test(item.version||"")?item:null;
+  }
+  function publishedNewer(current,candidate) {
+    if(!/^\\d+\\.\\d+\\.\\d+$/.test(current||"")||!candidate)return false;
+    const left=current.split(".").map(Number),right=candidate.version.split(".").map(Number);
+    return right.some((part,index)=>part!==left[index]&&
+      right.slice(0,index).every((x,i)=>x===left[i])&&part>left[index]);
+  }
   function serviceVersion(item,inventory,data) {
     const details=inventory?.details||{};
     const core=data?.services?.find(row=>row.service==="core")?.details||{};
     if(item.service==="core"){
       const current=shortDigest(details.activeBuildDigest);
       const available=shortDigest(details.sourceBuildDigest);
+      const published=publishedPackage("superagent");
+      const newer=publishedNewer(details.runtimeVersion,published);
       return {current:(details.runtimeVersion?"v"+details.runtimeVersion+" · ":"")+
         (current||"Unverified build"),
-        next:available?(available===current?"Built version is running":"Built "+available+" ready"):
-          "No verified build metadata",
+        next:available&&available!==current?(details.buildFresh===true?
+          "Built "+available+" ready":"Built "+available+" (not fresh)"):
+          newer?"Published v"+published.version+" (review download)":
+          available?"Built version is running":"No verified build metadata",
         update:details.buildFresh===true&&!!current&&!!available&&current!==available,
-        action:"restart"};
+        releaseReview:newer,action:"restart"};
     }
     if(item.service==="tray"){
       const build=state.trayOwner?.services?.[0]?.build;
       const code=state.trayOwner?.services?.[0]?.code;
       const installed=shortDigest(data?.trayRelease?.activeDigest);
+      const published=publishedPackage("superagent");
+      const newer=publishedNewer(state.trayVersion,published);
       return {current:(state.trayVersion?"v"+state.trayVersion+" · ":"")+
         (shortDigest(build?.runtimeDigest)||"Running digest unknown"),
-        next:installed?"Installed "+installed+
-          (code==="SOURCE_CHANGED_NOT_LOADED"?" · restart required":""):
-          "Installed release unknown",
+        next:code==="SOURCE_CHANGED_NOT_LOADED"?
+          "Installed "+(installed||"newer build")+" · restart required":
+          newer?"Published v"+published.version+" (review download)":
+          installed?"Installed "+installed:"Installed release unknown",
         update:code==="SOURCE_CHANGED_NOT_LOADED",
-        action:"restart"};
+        releaseReview:newer,action:"restart"};
     }
     if(item.service==="mcp"){
+      const published=publishedPackage("mcp-backend");
       return {current:shortDigest(details.backendReleaseDigest)||
         (Number.isSafeInteger(details.backendPid)?"Backend PID "+details.backendPid:"Backend unknown"),
-        next:details.backendReleaseDigest?"Staged release active":"No verified staged release",
+        next:published?"Published backend v"+published.version+
+          (details.backendReleaseDigest?" · verify digest before activation":" · not staged"):
+          details.backendReleaseDigest?"Staged release active":"No verified staged release",
         update:false,action:null};
     }
     if(item.service==="daemon"&&item.state==="embedded"){
@@ -181,13 +202,31 @@
       serviceActionButton(controls,item,inventory,action,label);
     }
     if(item.service==="tray"){
-      const update=serviceActionButton(controls,item,inventory,"upgrade","Update");
-      update.title="Requires an installed, verified candidate and owner-bound upgrade plan";
+      const update=version.update?
+        serviceActionButton(controls,item,inventory,"restart","Update"):
+        version.releaseReview?append(controls,"button","button ghost op-service-action","Update"):
+        serviceActionButton(controls,item,inventory,"upgrade","Update");
+      update.type="button";
+      if(version.releaseReview&&!version.update){
+        update.title="Review the published release; this does not install it";
+        update.addEventListener("click",()=>openUpdatesReview());
+      } else {
+        update.title=version.update?"Restart the verified Tray instance to load the installed build":
+          "Only a pre-staged, owner-verified Tray release can be upgraded";
+      }
     } else if(item.service==="core"){
-      const update=serviceActionButton(controls,item,inventory,"restart","Update");
-      update.disabled=update.disabled||!version.update;
-      update.title=version.update?"Apply the verified newer Core build through a supervised restart":
-        "No newer Core build has been verified";
+      const update=version.update?
+        serviceActionButton(controls,item,inventory,"restart","Update"):
+        append(controls,"button","button ghost op-service-action","Update");
+      update.type="button";
+      if(!version.update&&version.releaseReview){
+        update.title="Review the newer published release; no binary is installed by this action";
+        update.addEventListener("click",()=>openUpdatesReview());
+      }else{
+        update.disabled=update.disabled||!version.update;
+        update.title=version.update?"Apply the verified newer Core build through a supervised restart":
+          "No newer Core build has been verified";
+      }
     } else if(item.service==="mcp"){
       const update=append(controls,"button","button ghost op-service-action","Update");
       update.type="button";
@@ -221,6 +260,7 @@
       state.published=null; // Fail closed; never advertise an unverified update.
     }finally{
       state.versionChecking=false;renderPublishedStatus();
+      if(state.dashboard)renderReadiness(state.dashboard);
     }
   }
   function openUpdatesReview(){
