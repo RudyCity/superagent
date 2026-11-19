@@ -9,6 +9,8 @@ on:
       - "bun.lock"
       - "src/core/tools/mcpTools.ts"
       - "src/core/tools/helpers.ts"
+      - "src/core/tools/otherTools.ts"
+      - "tests/windows-git-action.test.ts"
       - "src/core/desktopApp/windows.ts"
       - "src/core/desktopUi/adapters/windows.ts"
       - "tests/delegateForwardedHostDispatch.test.ts"
@@ -91,6 +93,8 @@ on:
       - "bun.lock"
       - "src/core/tools/mcpTools.ts"
       - "src/core/tools/helpers.ts"
+      - "src/core/tools/otherTools.ts"
+      - "tests/windows-git-action.test.ts"
       - "src/core/desktopApp/windows.ts"
       - "src/core/desktopUi/adapters/windows.ts"
       - "tests/delegateForwardedHostDispatch.test.ts"
@@ -205,6 +209,7 @@ jobs:
             tests/mcpDelegateWebCertification.test.ts \
             tests/delegateForwardedHostDispatch.test.ts \
             tests/windows-bun-path.test.ts \
+            tests/windows-git-action.test.ts \
             tests/desktop-app-independent-audit/windows-registry-inventory.test.ts \
             tests/desktop-ui-discovery/providers.test.ts \
             tests/mcpPolicyReadinessReport.test.ts \
@@ -296,6 +301,7 @@ jobs:
           tests/mcpDelegateWebCertification.test.ts
           tests/delegateForwardedHostDispatch.test.ts
           tests/windows-bun-path.test.ts
+          tests/windows-git-action.test.ts
           tests/desktop-app-independent-audit/windows-registry-inventory.test.ts
           tests/desktop-ui-discovery/providers.test.ts
           tests/mcpPolicyReadinessReport.test.ts
