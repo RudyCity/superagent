@@ -177,7 +177,7 @@ async fn verify_direct_core_idle(expected_pid:u32, expected_port:u16) -> Result<
 /// Only OS-observed service entries can be manually killed. An unknown
 /// runtime executable is allowed after human approval, but critical OS
 /// processes and this Tray cannot be selected. No free-form PID control.
-fn manual_process_allowed(kind:&str,pid:u32,name:&str)->bool {
+fn manual_process_allowed(_kind:&str,pid:u32,name:&str)->bool {
     if pid<=4 || pid==std::process::id() {return false;}
     let executable=name.to_ascii_lowercase();
     if executable.trim().is_empty()||executable.len()>128 ||
@@ -185,15 +185,12 @@ fn manual_process_allowed(kind:&str,pid:u32,name:&str)->bool {
         return false;
     }
     let base=executable.strip_suffix(".exe").unwrap_or(&executable);
-    if matches!(base,"superagent-tray"|"system"|"registry"|"smss"|"csrss"|
+    // Owner provenance intentionally does not gate Force Selected. Keep only a
+    // minimal platform safety floor plus the Tray process executing the action.
+    !matches!(base,"superagent-tray"|"system"|"registry"|"smss"|"csrss"|
         "wininit"|"winlogon"|"lsass"|"services"|"svchost"|"dwm"|
         "explorer"|"systemd"|"launchd"|"kernel_task"|"windowserver"|
-        "loginwindow"|"finder") {
-        return false;
-    }
-    if kind=="cloudflare" {return base=="cloudflared";}
-    matches!(kind,"managed"|"core"|"core-supervisor"|"mcp"|
-        "muse-watch"|"daemon-direct"|"external")
+        "loginwindow"|"finder")
 }
 
 /// Local Guardian fallback works while the Core HTTP lifecycle inventory is
@@ -501,13 +498,22 @@ async fn inspect() -> Result<Preview, String> {
             item.detail="Authenticated direct Core scheduler; stops without deleting jobs".into();
         }
     }
-    let agent_count=runtime["processes"].as_array()
-        .map(|v|v.iter().filter(|p|p["state"]=="active").count()).unwrap_or(0);
-    if agent_count>0 {
-        items.push(Item::new("active-agents".into(),"Active CLI / Agent sessions","agents",
-            "active",&format!("{agent_count} active processes; no blanket agent kill is permitted"),
-            false,false,Some("Finish or stop agents from their own session controls".into()),
-            None,None));
+    if let Some(processes)=runtime["processes"].as_array() {
+        for process in processes.iter().take(128) {
+            let Some(pid)=pid_of(&process["pid"]) else {continue};
+            if items.iter().any(|item|item.pid==Some(pid)) {continue}
+            let role=process["role"].as_str().unwrap_or("SuperAgent process");
+            let workspace=process["workspace"].as_str().unwrap_or("unknown");
+            let state=if force_system.process(Pid::from_u32(pid)).is_some() {
+                "observed"
+            } else {
+                process["state"].as_str().unwrap_or("stale")
+            };
+            items.push(Item::new(
+                format!("process:{pid}"),role,"process",state,
+                &format!("Workspace: {workspace}"),
+                false,false,None,None,Some(pid)));
+        }
     }
     if let Some(hosts)=runtime["independentHosts"].as_array() {
         for host in hosts {
@@ -544,12 +550,13 @@ async fn inspect() -> Result<Preview, String> {
         if let Some(pid)=item.pid {
             if let Some(process)=force_system.process(Pid::from_u32(pid)) {
                 let name=process.name().to_string();
-                if manual_process_allowed(&item.kind,pid,&name) && running(&item.state) &&
+                if manual_process_allowed(&item.kind,pid,&name) &&
                     !matches!(process.status(),ProcessStatus::Zombie|ProcessStatus::Dead) {
                     item.manual_kill_selectable=true;
                     item.process_name=Some(name);
                     item.process_path=process.exe()
                         .map(|path|path.to_string_lossy().into_owned());
+                    if !running(&item.state) {item.state="observed".into();}
                 }
                 item.process_started_at=Some(process.start_time());
             }
@@ -656,7 +663,7 @@ fn manual_candidates(preview:&Preview,ids:&[String])->Result<Vec<Item>,String> {
         if !unique.insert(id){return Err("SHUTDOWN_MANUAL_DUPLICATE_SELECTION".into());}
         let item=preview.services.iter().find(|item|item.id==*id)
             .ok_or("SHUTDOWN_MANUAL_UNKNOWN_SERVICE")?;
-        if !item.manual_kill_selectable || !running(&item.state) ||
+        if !item.manual_kill_selectable ||
             item.process_started_at.is_none() || item.process_name.is_none() {
             return Err("SHUTDOWN_MANUAL_PID_UNAVAILABLE".into());
         }
@@ -1199,12 +1206,13 @@ pub async fn shutdown_manager_action(
             locked()?.preview=Some(preview.clone());
             Ok(json!({"preview":preview}))
         }
-        "manual_kill" => {
+        "manual_kill" | "force_selected" => {
             if !window.is_focused().unwrap_or(false) {
                 return Err("SHUTDOWN_FOCUSED_NATIVE_WINDOW_REQUIRED".into());
             }
+            let required_phrase=if action=="force_selected" {"FORCE SELECTED"} else {"KILL SELECTED"};
             if exit_after.is_some() ||
-                force_confirmation.as_deref()!=Some("KILL SELECTED") {
+                force_confirmation.as_deref()!=Some(required_phrase) {
                 return Err("SHUTDOWN_MANUAL_TYPED_APPROVAL_REQUIRED".into());
             }
             let token=preview_id.ok_or("SHUTDOWN_PREVIEW_REQUIRED")?;
@@ -1220,10 +1228,10 @@ pub async fn shutdown_manager_action(
             }
             let chosen=manual_candidates(&original,&ids)?;
             let mut summary=format!(
-                "MANUALLY KILL {} DISTINCT OS PROCESS(ES)?\n\n\
-                This is an irreversible owner-authorized emergency override.\n\
-                Active agent jobs, MCP sessions, Core generations and Cloudflare tunnels\n\
-                may be interrupted. Their supervisors may start replacement processes.\n\n",
+                "FORCE KILL {} SELECTED OS PROCESS(ES)?\n\n\
+                Ownership status is intentionally ignored. Each target is revalidated\n\
+                by exact PID, executable and process start time immediately before kill.\n\
+                Active jobs, sessions and tunnels may be interrupted.\n\n",
                 chosen.len());
             for item in chosen.iter().take(16) {
                 summary.push_str(&format!("PID {} · {} · {}\n",
@@ -1250,7 +1258,7 @@ pub async fn shutdown_manager_action(
                     .parent(&dialog_parent)
                     .buttons(
                     MessageDialogButtons::OkCancelCustom(
-                        "Kill selected OS processes".into(),"Cancel".into()
+                        "Force selected processes".into(),"Cancel".into()
                     )).blocking_show()
             }).await.map_err(|_|"SHUTDOWN_NATIVE_APPROVAL_FAILED")?;
             if !approved{return Err("SHUTDOWN_OPERATOR_CANCELLED".into());}
@@ -1267,7 +1275,7 @@ pub async fn shutdown_manager_action(
                     id:item.id.clone(),label:format!(
                         "{} · PID {}",item.label,item.pid.unwrap_or(0)),
                     status:"queued".into(),
-                    message:"Manual kill approved; awaiting exact OS process verification".into(),
+                    message:"Force selected approved; awaiting exact OS process verification".into(),
                 }).collect(),error:None};
             {
                 let mut state=locked()?;
