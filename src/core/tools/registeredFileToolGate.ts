@@ -574,6 +574,13 @@ function certifiedGitWorkspaceAction(
   }else if(args.files!==undefined)return false;
   const root=absoluteCanonical(".",workspace);
   if(!root)return false;
+  // A linked worktree's .git file may redirect index writes outside the
+  // authorized workspace. Certify only repositories whose .git metadata
+  // directory is located inside the exact registered root.
+  try {
+    const metadata=fs.lstatSync(path.join(root,".git"));
+    if(!metadata.isDirectory()||metadata.isSymbolicLink())return false;
+  }catch{return false;}
   // Git commands can traverse the entire working tree, so a per-file grant
   // alone is never sufficient for workspace-wide status/diff/index actions.
   const allowed=operations.every(operation=>policy.rules.some(rule=>
