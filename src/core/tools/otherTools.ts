@@ -190,10 +190,14 @@ export const gitActionTool: Tool = {
     const files = Array.isArray(args.files) ? args.files as string[] : [];
     // No implicit whole-tree staging, restoring or cleaning.
     const targeted = ["add", "restore", "clean"].includes(action);
+    if (action === "log" && args.limit !== undefined &&
+      (!Number.isSafeInteger(args.limit) || (args.limit as number) < 1 || (args.limit as number) > 50)) {
+      return "Git action error: log limit must be an integer between 1 and 50.";
+    }
     if (targeted && (files.length < 1 || files.length > 50 ||
       files.some(file => typeof file !== "string" || !file.trim() ||
         path.isAbsolute(file) || /[*?\[\]!:]/.test(file) ||
-        file.split(/[\\\\/]/).some(part => [".", "..", ".git"].includes(part))))) {
+        file.split(/[\\\\/]/).some(part => [".", "..", ".git"].includes(part.toLowerCase()))))) {
       return "Git action error: explicit file paths are required for add/restore/clean.";
     }
 
