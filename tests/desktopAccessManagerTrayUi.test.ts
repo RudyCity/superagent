@@ -471,7 +471,8 @@ describe("independent MCP Connections and Project Access UI", () => {
     expect(connection.hidden).toBe(true);
     expect(project.hidden).toBe(false);
     expect(ui.document.getElementById("access-mcp-pending-list")!.children).toHaveLength(1);
-    expect(ui.document.getElementById("access-mcp-connection-pending-list")!.children).toHaveLength(1);
+    expect(ui.document.getElementById("access-mcp-connection-pending-list")).toBeNull();
+    expect(connection.textContent).toContain("alur OAuth MCP owner");
   });
 
   it("loads both pending approval lists from their own Load buttons without granting access", async () => {
@@ -497,7 +498,7 @@ describe("independent MCP Connections and Project Access UI", () => {
     await flush();
     expect(requestCallCount()).toBe(initialCalls + 2);
     expect(ui.document.getElementById("access-mcp-pending-count")!.textContent).toBe("1 permintaan");
-    expect(ui.document.getElementById("access-mcp-connection-count")!.textContent).toBe("1 permintaan");
+    expect(ui.document.getElementById("access-tab-badge-connections")!.textContent).toBe("0");
     expect(ui.calls.some(c => c.name === "mcp_project_access_action" &&
       ["approve", "deny", "direct_grant"].includes(c.args.action))).toBe(false);
   });
@@ -511,9 +512,8 @@ describe("independent MCP Connections and Project Access UI", () => {
     await flush();
     expect(load.disabled).toBe(false);
     expect(load.textContent).toBe("Load");
-    expect(ui.document.getElementById("access-mcp-connection-pending-list")!.textContent)
-      .toContain("belum dapat dimuat");
-    expect(ui.document.getElementById("access-mcp-connection-load-error")!.hidden).toBe(false);
+    expect(ui.document.getElementById("access-mcp-connection-load-error")!.hidden).toBe(true);
+    expect(ui.document.getElementById("access-mcp-project-load-error")!.hidden).toBe(false);
   });
 
   it("shows live MCP sessions even when there is no Core-approved identity", async () => {
@@ -536,9 +536,9 @@ describe("independent MCP Connections and Project Access UI", () => {
     expect(rows[0].textContent).toContain("ChatGPT (nama dari klien)");
     expect(rows[0].textContent).toContain("OAuth");
     expect(rows[1].textContent).toContain("ses_bbbbbbbbbbbb");
-    expect(ui.document.getElementById("access-mcp-connection-identity")!.children)
-      .toHaveLength(1);
-    expect(ui.document.getElementById("access-mcp-connection-grant")!.disabled).toBe(true);
+    expect(ui.document.getElementById("access-mcp-connection-identity")).toBeNull();
+    expect(ui.document.getElementById("access-mcp-connection-grant")).toBeNull();
+    expect(ui.document.getElementById("access-tab-badge-connections")!.textContent).toBe("2");
     expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
       c.args.action==="direct_grant")).toBe(false);
     expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
@@ -584,7 +584,7 @@ describe("independent MCP Connections and Project Access UI", () => {
     expect(cards[1].textContent).toContain("Gemini");
     expect(cards[1].textContent).toContain("1 sesi");
     // A session sighting MUST NOT authorize a new MCP identity or direct grant.
-    expect(ui.document.getElementById("access-mcp-connection-grant")!.disabled).toBe(true);
+    expect(ui.document.getElementById("access-mcp-connection-grant")).toBeNull();
     expect(ui.calls.some(c => c.name === "mcp_project_access_action" &&
       c.args?.action === "direct_grant")).toBe(false);
   });
@@ -606,9 +606,8 @@ describe("independent MCP Connections and Project Access UI", () => {
           firstObservedAt:now-1000,lastObservedAt:now,sessionCount:1,status:"connected"}],
       },
     });await flush();
-    const request=ui.document.getElementById("access-mcp-connection-pending-list")!;
-    expect(request.textContent).toContain(label);
-    expect(request.textContent).toContain("identitas: Gemini client");
+    // Legacy virtual Execute requests must not appear as new OAuth connection approvals.
+    expect(ui.document.getElementById("access-mcp-connection-pending-list")).toBeNull();
     const online=ui.document.getElementById("access-mcp-live-list")!;
     expect(online.textContent).toContain(label);
     expect(online.textContent).toContain("Aplikasi melaporkan: A different client name");
@@ -663,8 +662,7 @@ describe("independent MCP Connections and Project Access UI", () => {
     expect(alert.textContent).toContain("live");
     expect(ui.document.getElementById("access-mcp-live-summary")!.textContent)
       .toBe("Tidak tersedia");
-    expect(ui.document.getElementById("access-mcp-connection-grant")!.disabled)
-      .toBe(false);
+    expect(ui.document.getElementById("access-mcp-connection-grant")).toBeNull();
   });
 
   it("adds a local project via native folder selection without granting MCP privileges", async () => {
@@ -805,14 +803,18 @@ describe("independent MCP Connections and Project Access UI", () => {
     expect(grant?.args.payload).toEqual({identityHandle:handle,projectId:"superagent",capabilities:["read"]});
   });
 
-  it("uses only connection execute for independent MCP Connections approval", async () => {
+  it("grants Execute only from Akses Proyek, not Koneksi MCP", async () => {
     const ui=boot(true,fixtures);await flush();
-    ui.document.getElementById("access-mcp-connection-identity")!.value=handle;
-    ui.document.getElementById("access-mcp-connection-grant")!.click();await flush();
+    expect(ui.document.getElementById("access-mcp-connection-grant")).toBeNull();
+    ui.document.getElementById("access-mcp-ident-select")!.value=handle;
+    ui.document.getElementById("access-mcp-proj-select")!.value="superagent";
+    ui.document.getElementById("access-cap-read")!.checked=false;
+    ui.document.getElementById("access-cap-execute")!.checked=true;
+    ui.document.getElementById("access-mcp-project-grant")!.click();await flush();
     const grant=ui.calls.find(c=>c.name==="mcp_project_access_action" &&
       c.args.action==="direct_grant");
     expect(grant?.args.payload).toEqual({
-      identityHandle:handle,projectId:"mcp-connection",capabilities:["execute"],
+      identityHandle:handle,projectId:"superagent",capabilities:["execute"],
     });
   });
 
@@ -851,7 +853,7 @@ describe("independent MCP Connections and Project Access UI", () => {
     ui.window.__superagentAccessManagerRefresh();
     ui.mcpRequests.push({
       requestId:"req_late",
-      projectId:"mcp-connection",
+      projectId:"superagent",
       identityHandle:handle,
       ownerConnectionName:"Late Client",
       clientLabel:"Late Client",
@@ -859,9 +861,9 @@ describe("independent MCP Connections and Project Access UI", () => {
       status:"pending",
       requestedAt:Date.now(),
     });
-    const outcome=await ui.window.__superagentAccessManagerFocusRequest("req_late","connections");
-    expect(outcome).toEqual({targetFound:true,tab:"connections"});
-    const list=ui.document.getElementById("access-mcp-connection-pending-list")!;
+    const outcome=await ui.window.__superagentAccessManagerFocusRequest("req_late","mcp");
+    expect(outcome).toEqual({targetFound:true,tab:"mcp"});
+    const list=ui.document.getElementById("access-mcp-pending-list")!;
     expect(list.children.some(c=>c.dataset.requestId==="req_late")).toBe(true);
   });
 });
