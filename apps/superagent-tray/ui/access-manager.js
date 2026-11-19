@@ -1282,8 +1282,8 @@
           .some(value => String(value || "").toLowerCase().includes(query))) return false;
       switch (toolState.filter) {
         case "host_uncertified": return tool.hostBlocked;
-        case "missing": return tool.grantState === "missing";
-        case "granted": return tool.grantState === "granted";
+        case "missing": return tool.grantState === "missing" || Object.values(tool.actionGrantStates || {}).includes("missing");
+        case "granted": return tool.grantState === "granted" || Object.values(tool.actionGrantStates || {}).includes("granted");
         case "action_dependent": return tool.operationStatus === "check_action_arguments" || Boolean(tool.capabilitiesByAction);
         case "file_rules_required": return tool.operationStatus === "file_rules_required";
         case "dangerous": return tool.risk === "dangerous";
@@ -1297,7 +1297,7 @@
       data.counts.missingProjectGrant + " memerlukan grant terpilih. Pemeriksaan bersifat informatif, bukan izin eksekusi.";
     if (more) {
       more.hidden = filtered.length <= toolState.shown;
-      more.textContent = "Tampilkan " + Math.min(25, filtered.length-toolState.shown) + " berikutnya";
+      more.textContent = "Tampilkan " + Math.min(25, Math.max(0, filtered.length-toolState.shown)) + " berikutnya";
     }
     if (!filtered.length) {
       list.append(make("p", "access-empty", "Tidak ada tools yang cocok dengan pencarian dan filter."));
@@ -1335,7 +1335,18 @@
           ]);
           actionSelect.id = "access-mcp-tool-git-action-" + tool.name;
           actionSelect.setAttribute("aria-label", "Pilih operasi untuk " + tool.name);
+          const showAction = () => {
+            const action = actionSelect.value;
+            const cap = tool.capabilitiesByAction[action];
+            const state = tool.actionGrantStates?.[action] || tool.grantState;
+            grant.textContent = "Git " + action + " memerlukan " + cap + ". " +
+              (state === "granted" ? "Grant proyek tercatat, namun tetap perlu pemeriksaan host dan native." :
+                state === "missing" ? "Grant proyek untuk tindakan ini belum diberikan." :
+                  toolGrantMessage(tool));
+          };
+          actionSelect.addEventListener("change", showAction);
           buttons.append(actionSelect);
+          showAction();
         }
         const review = action("Tinjau Izin Proyek", "access-audit-refresh", () => {
           const capability = tool.capabilitiesByAction
