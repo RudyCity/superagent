@@ -44,7 +44,7 @@ describe("isolated MCP HTTP runtime policy smoke (NOT an installed host)",()=>{
       const status=await client.callTool({name:MCP_GATEWAY_TOOL_NAMES.status,arguments:{}});
       const readiness=JSON.parse((status.content as any[])[0].text);
       expect(readiness.filePolicy.active).toBe(true);
-      expect(readiness.filePolicy.readinessCounts.uncertified).toBeGreaterThan(0);
+      expect(readiness.filePolicy.readinessCounts.uncertified).toBe(0);
       expect(JSON.stringify(readiness)).not.toContain(token);
     }finally{
       await client.close().catch(()=>undefined);
