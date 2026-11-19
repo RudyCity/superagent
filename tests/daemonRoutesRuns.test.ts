@@ -5,13 +5,19 @@ const mocked = vi.hoisted(() => ({
   listDaemonRuns: vi.fn(),
   getDaemonRun: vi.fn(),
   cancelRun: vi.fn(),
+  stopDaemon: vi.fn(),
+  forceStopDaemon: vi.fn(),
 }));
 vi.mock("../src/core/storage/daemonRunLedger.js", () => ({
   listDaemonRuns: mocked.listDaemonRuns,
   getDaemonRun: mocked.getDaemonRun,
 }));
 vi.mock("../src/core/daemon/daemonScheduler.js", () => ({
-  daemonScheduler: { cancelRun: mocked.cancelRun },
+  daemonScheduler: {
+    cancelRun: mocked.cancelRun,
+    stopDaemon: mocked.stopDaemon,
+    forceStopDaemon: mocked.forceStopDaemon,
+  },
 }));
 import { handleDaemonRoutes } from "../src/core/daemon/daemonRoutes.js";
 
@@ -26,6 +32,10 @@ describe("daemon run REST endpoints", () => {
     mocked.listDaemonRuns.mockReset();
     mocked.getDaemonRun.mockReset();
     mocked.cancelRun.mockReset();
+    mocked.stopDaemon.mockReset();
+    mocked.forceStopDaemon.mockReset();
+    readBody.mockReset();
+    readBody.mockResolvedValue("");
   });
 
   async function call(method: string, url: string) {
@@ -88,6 +98,24 @@ describe("daemon run REST endpoints", () => {
     });
     expect(await call("POST", "/api/daemon/runs/run-a/cancel")).toBe(true);
     expect(response.mock.calls.at(-1)?.[0]).toBe(409);
+  });
+
+  it("force-stops the scheduler and requests cancellation of every active daemon run", async () => {
+    mocked.forceStopDaemon.mockReturnValue({ cancelledRuns: 3, activeJobsCount: 3 });
+    readBody.mockResolvedValueOnce(JSON.stringify({ force: true }));
+    expect(await call("POST", "/api/daemon/stop")).toBe(true);
+    expect(mocked.forceStopDaemon).toHaveBeenCalledTimes(1);
+    expect(mocked.stopDaemon).not.toHaveBeenCalled();
+    expect(response).toHaveBeenLastCalledWith(200, expect.objectContaining({
+      success: true, running: false, force: true, cancelledRuns: 3, activeJobsCount: 3,
+    }));
+  });
+
+  it("keeps ordinary daemon stop non-destructive", async () => {
+    readBody.mockResolvedValueOnce("{}");
+    expect(await call("POST", "/api/daemon/stop")).toBe(true);
+    expect(mocked.stopDaemon).toHaveBeenCalledTimes(1);
+    expect(mocked.forceStopDaemon).not.toHaveBeenCalled();
   });
 
   it("rejects malformed run identifiers, wrong methods, and already terminated runs", async () => {
