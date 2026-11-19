@@ -22,7 +22,7 @@
   const state = {loading:false, lastSeen:null, plan:null, dashboard:null, events:[], history:[],
     filter:"all", agentFilter:"all", agentRows:[], agentDetails:null,
     metrics:null, errors:[], ready:false, operationBusy:false,
-    trayOwner:null, trayVersion:null, published:null,
+    trayOwner:null, trayOwnerCheckedAt:0, trayVersion:null, published:null,
     versionCheckedAt:0, versionChecking:false};
   const call = (name, args={}) => {
     const invoke = window.__TAURI__?.core?.invoke;
@@ -535,7 +535,9 @@
       readTelemetry("mcp-grant-identities",()=>call("mcp_project_access_action",{action:"identities",payload:{}})),
       readTelemetry("native-owner-metrics",()=>call("get_overview_owner_metrics")),
       readTelemetry("mcp-connected-clients",()=>call("mcp_project_access_action",{action:"connected_clients",payload:{}})),
-      readTelemetry("tray-owner-version",()=>lifecycle({action:"owner_status",service:"tray"})),
+      Date.now()-state.trayOwnerCheckedAt>45000||state.trayOwner===null
+        ?readTelemetry("tray-owner-version",()=>lifecycle({action:"owner_status",service:"tray"}))
+        :Promise.resolve(state.trayOwner),
       readTelemetry("tray-running-version",()=>call("get_tray_version"))
     ];
     // Refresh the native process monitor as soon as its own sample arrives;
@@ -553,6 +555,7 @@
     const names=["lifecycle","events","chat yolo","access rules","desktop policy","mcp requests","mcp identities","resources","connected clients","tray owner version","tray version"];
     state.errors=names.filter((name,i)=>results[i]===null);
     state.trayOwner=results[9]?.action==="owner_status"?results[9]:null;
+    if(state.trayOwner)state.trayOwnerCheckedAt=Date.now();
     state.trayVersion=typeof results[10]==="string"?results[10]:null;
     if(results[0] && Array.isArray(results[0].checks)){
       state.dashboard=results[0];
