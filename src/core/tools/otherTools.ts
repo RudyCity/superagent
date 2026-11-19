@@ -187,7 +187,15 @@ export const gitActionTool: Tool = {
   },
   async execute(args, cwd, signal) {
     const action = args.action as string;
-    const files = args.files as string[] || [];
+    const files = Array.isArray(args.files) ? args.files as string[] : [];
+    // No implicit whole-tree staging, restoring or cleaning.
+    const targeted = ["add", "restore", "clean"].includes(action);
+    if (targeted && (files.length < 1 || files.length > 50 ||
+      files.some(file => typeof file !== "string" || !file.trim() ||
+        path.isAbsolute(file) || /[*?\\[\\]!:]/.test(file) ||
+        file.split(/[\\\\/]/).some(part => [".", "..", ".git"].includes(part))))) {
+      return "Git action error: explicit file paths are required for add/restore/clean.";
+    }
 
     // SSH routing: run git commands on remote host via sshProxy.
     if (workspaceMode.isSsh()) {
@@ -213,7 +221,7 @@ export const gitActionTool: Tool = {
         if (action === "commit") {
           const message = args.message as string;
           if (!message) return "Error: Commit message is required.";
-          await runRemote("git add -A");
+          // Commit only already staged files, never all local changes.
           return await runRemote(`git commit -m ${esc(message)}`);
         }
         if (action === "log") {
@@ -221,9 +229,9 @@ export const gitActionTool: Tool = {
           return await runRemote(`git log -${limit} --oneline`);
         }
         if (action === "add") {
-          const targets = files.length > 0 ? files : ["-A"];
-          const cmd = targets.map((t) => (t === "-A" ? "-A" : esc(t))).join(" ");
-          await runRemote(`git add ${cmd}`);
+          const targets = files;
+          const cmd = targets.map(esc).join(" ");
+          await runRemote(`git add -- ${cmd}`);
           return `Successfully staged files: ${targets.join(", ")}`;
         }
         if (action === "restore") {
@@ -231,11 +239,11 @@ export const gitActionTool: Tool = {
             return "Error: The 'files' parameter is required for the restore action.";
           }
           const cmd = files.map(esc).join(" ");
-          await runRemote(`git restore ${cmd}`);
+          await runRemote(`git restore -- ${cmd}`);
           return `Successfully restored files: ${files.join(", ")}`;
         }
         if (action === "clean") {
-          return (await runRemote("git clean -fd")) || "Cleaned untracked files/directories successfully.";
+          return (await runRemote(`git clean -f -- ${files.map(esc).join(" ")}`)) || "No selected untracked files to remove.";
         }
         return "Unknown git action.";
       } catch (err: unknown) {
@@ -249,7 +257,11 @@ export const gitActionTool: Tool = {
     const gitExecutable = resolveWindowsGitExecutable();
     const gitOpts = (caller: string) => headlessOpts({
       cwd, cancelSignal: signal,
-      env: augmentWindowsEnvPath({ ...process.env }),
+      // Discard Git environment overrides that could redirect operations to
+      // an unrelated repository outside the approved project scope.
+      env: augmentWindowsEnvPath(Object.fromEntries(
+        Object.entries(process.env).filter(([key]) => !/^GIT_/i.test(key)),
+      ) as NodeJS.ProcessEnv),
     }, caller);
     try {
       if (action === "status") {
@@ -264,7 +276,7 @@ export const gitActionTool: Tool = {
       if (action === "commit") {
         const message = args.message as string;
         if (!message) return "Error: Commit message is required.";
-        await execa(gitExecutable, ["add", "-A"], gitOpts("otherTools.git.add"));
+        // Commit only already staged files, never all local changes.
         const { stdout } = await execa(gitExecutable, ["commit", "-m", message], gitOpts("otherTools.git.commit"));
         return stdout;
       }
@@ -274,20 +286,20 @@ export const gitActionTool: Tool = {
         return stdout;
       }
       if (action === "add") {
-        const targets = files.length > 0 ? files : ["-A"];
-        await execa(gitExecutable, ["add", ...targets], gitOpts("otherTools.git.addTargets"));
+        const targets = files;
+        await execa(gitExecutable, ["add", "--", ...targets], gitOpts("otherTools.git.addTargets"));
         return `Successfully staged files: ${targets.join(", ")}`;
       }
       if (action === "restore") {
         if (files.length === 0) {
           return "Error: The 'files' parameter is required for the restore action.";
         }
-        await execa(gitExecutable, ["restore", ...files], gitOpts("otherTools.git.restore"));
+        await execa(gitExecutable, ["restore", "--", ...files], gitOpts("otherTools.git.restore"));
         return `Successfully restored files: ${files.join(", ")}`;
       }
       if (action === "clean") {
-        const { stdout } = await execa(gitExecutable, ["clean", "-fd"], gitOpts("otherTools.git.clean"));
-        return stdout || "Cleaned untracked files/directories successfully.";
+        const { stdout } = await execa(gitExecutable, ["clean", "-f", "--", ...files], gitOpts("otherTools.git.clean"));
+        return stdout || "No selected untracked files to remove.";
       }
       return "Unknown git action.";
     } catch (err: unknown) {
