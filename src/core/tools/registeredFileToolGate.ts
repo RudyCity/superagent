@@ -23,8 +23,9 @@ export type RegistryGuardOptions = {
 };
 const READ_TOOLS = new Set(["read","read_file","view_file","view","superagent_read_files","superagent_read_file"]);
 const WRITE_TOOLS = new Set(["write","write_to_file","write_file","superagent_write_files",
-  "superagent_write_file","edit","replace_file_content","multi_replace_file_content"]);
-const PATCH_TOOLS = new Set(["apply_patch"]);
+  "superagent_write_file","edit","replace_file_content","multi_replace_file_content",
+  "superagent_replace_file_content"]);
+const PATCH_TOOLS = new Set(["apply_patch","superagent_apply_patch"]);
 /**
  * Explicit-source document/media readers: only named input files are inspected.
  * Do not include render, edit, sign, media_plan or outputs that can touch
