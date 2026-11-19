@@ -109,10 +109,10 @@
   function publishedPackage(id) {
     const item=state.published?.components?.find(part=>part?.id===id);
     return item?.available===true&&/^[a-f0-9]{64}$/i.test(item.sha256||"")&&
-      /^\\d+\\.\\d+\\.\\d+$/.test(item.version||"")?item:null;
+      /^\d+\.\d+\.\d+$/.test(item.version||"")?item:null;
   }
   function publishedNewer(current,candidate) {
-    if(!/^\\d+\\.\\d+\\.\\d+$/.test(current||"")||!candidate)return false;
+    if(!/^\d+\.\d+\.\d+$/.test(current||"")||!candidate)return false;
     const left=current.split(".").map(Number),right=candidate.version.split(".").map(Number);
     return right.some((part,index)=>part!==left[index]&&
       right.slice(0,index).every((x,i)=>x===left[i])&&part>left[index]);
