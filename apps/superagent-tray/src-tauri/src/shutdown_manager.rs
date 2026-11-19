@@ -1438,6 +1438,27 @@ mod tests {
         assert!(force_candidates(&preview(vec![item("unverified",false)],false)).is_err());
     }
     #[test]
+    fn force_candidates_include_busy_verified_daemon_even_when_graceful_stop_is_blocked() {
+        let mut daemon=item("managed:daemon",false);
+        daemon.kind="managed".into();
+        daemon.owner_verified=true;
+        daemon.selectable=false;
+        daemon.force_selectable=true;
+        daemon.pid=Some(4242);
+        daemon.port=Some(7888);
+        daemon.process_name=Some("bun.exe".into());
+        daemon.process_started_at=Some(1_800_000_010);
+        daemon.manual_kill_selectable=true;
+        daemon.active_sessions=Some(2);
+        let chosen=force_candidates(&preview(vec![daemon.clone()],false)).unwrap();
+        assert_eq!(chosen.len(),1);
+        assert_eq!(chosen[0].id,"managed:daemon");
+        assert!(!chosen[0].selectable);
+        assert!(chosen[0].force_selectable);
+        assert_eq!(chosen[0].active_sessions,Some(2));
+    }
+
+    #[test]
     fn force_authorization_fails_closed_on_pid_birth_or_owner_changes() {
         let mut trusted=item("observed:cloudflare:18140",false);
         trusted.kind="cloudflare".into();
