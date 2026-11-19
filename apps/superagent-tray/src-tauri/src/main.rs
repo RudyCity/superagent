@@ -3281,18 +3281,14 @@ async fn mcp_project_access_action(
                 entry.get("identityHandle").and_then(Value::as_str) == Some(identity_handle.as_str())
             ).ok_or("Selected MCP identity is no longer verified")?;
             let subject = clean(identity.get("subject").and_then(Value::as_str).unwrap_or("Unknown agent"));
-            let target = if project_id == "mcp-connection" {
-                "MCP Connection Controls (non-project operations; NO file access)".to_string()
-            } else {
-                let registry = core_request(Method::GET, "/api/desktop/access/projects", None).await?;
-                let projects = registry.get("projects").and_then(Value::as_array)
-                    .ok_or("Unable to verify registered project targets")?;
-                let project = projects.iter().find(|entry|
-                    entry.get("projectId").and_then(Value::as_str) == Some(project_id.as_str())
-                ).ok_or("Project is not an enabled registered target")?;
-                format!("{} ({})", clean(project.get("name").and_then(Value::as_str).unwrap_or(&project_id)),
-                    clean(project.get("target").and_then(Value::as_str).unwrap_or("")))
-            };
+            let registry = core_request(Method::GET, "/api/desktop/access/projects", None).await?;
+            let projects = registry.get("projects").and_then(Value::as_array)
+                .ok_or("Unable to verify registered project targets")?;
+            let project = projects.iter().find(|entry|
+                entry.get("projectId").and_then(Value::as_str) == Some(project_id.as_str())
+            ).ok_or("Project is not an enabled registered target")?;
+            let target = format!("{} ({})", clean(project.get("name").and_then(Value::as_str).unwrap_or(&project_id)),
+                clean(project.get("target").and_then(Value::as_str).unwrap_or("")));
             format!("APPROVE MCP ACCESS?\n\nAgent: {}\nIdentity: {}\nTarget: {}\nCapabilities: {}\n\nExecute/Git may run commands with OS-user privileges. This is independent from Chat Agent YOLO. Permissions remain active until revoked.",
                 subject, identity_handle, target, caps.join(", "))
         } else {
@@ -3362,6 +3358,36 @@ async fn mcp_project_access_action(
                 return Err("Connected MCP client inventory accepts no query fields".into());
             }
             core_request(Method::GET, "/api/desktop/access/connected-clients", None).await
+        },
+        "tools" => {
+            let fields = data.as_object().ok_or("Invalid tool inventory query")?;
+            if fields.keys().any(|key| key != "identityHandle" && key != "projectId") {
+                return Err("Unexpected tool inventory query field".into());
+            }
+            let mut query: Vec<String> = Vec::new();
+            if let Some(value) = fields.get("identityHandle") {
+                let handle = value.as_str().ok_or("Invalid MCP identity handle")?;
+                if handle.len() != 20 || !handle.starts_with("idh_") ||
+                    !handle[4..].bytes().all(|b| b.is_ascii_hexdigit()) {
+                    return Err("Invalid MCP identity handle".into());
+                }
+                query.push(format!("identityHandle={}", handle));
+            }
+            if let Some(value) = fields.get("projectId") {
+                let project = value.as_str().ok_or("Invalid MCP project selection")?;
+                if project.is_empty() || project.len() > 63 ||
+                    !project.bytes().enumerate().all(|(i,b)|
+                        b.is_ascii_lowercase() || b.is_ascii_digit() || (b == b'-' && i > 0)) {
+                    return Err("Invalid MCP project selection".into());
+                }
+                query.push(format!("projectId={}", project));
+            }
+            let endpoint = if query.is_empty() {
+                "/api/desktop/access/tools".to_string()
+            } else {
+                format!("/api/desktop/access/tools?{}", query.join("&"))
+            };
+            core_request(Method::GET, &endpoint, None).await
         },
         "projects" => core_request(Method::GET, "/api/desktop/access/projects", None).await,
         "project_inventory" => core_request(Method::GET,
