@@ -169,8 +169,10 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       expect(gate(name,{requestId:"12345678-1234-1234-1234-123456789abc",
         workspace:a.root})).toMatch(/not certified/);
     }
-    expect(gate("superagent_lan_device_exec",{command:"cat /private"})).toMatch(/not certified/);
-    expect(gate("superagent_lan_android_screen",{deviceId:"123"})).toMatch(/not certified/);
+    // Remote device execution/screen operations do not access the MCP host filesystem.
+    // Their independent device/session/native-consent policy remains responsible for authorization.
+    expect(gate("superagent_lan_device_exec",{command:"cat /private"})).toBeNull();
+    expect(gate("superagent_lan_android_screen",{deviceId:"123"})).toBeNull();
   });
 
   it("allows only attested Core lifecycle requests through file policy, not through MCP authorization",()=>{
