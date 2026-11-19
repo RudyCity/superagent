@@ -24,6 +24,7 @@ export function visionPythonCandidates(
   if(platform==="win32"){
     const roots=[
       env.LOCALAPPDATA && path.win32.join(env.LOCALAPPDATA,"Programs","Python"),
+      env.ProgramFiles,
       env.ProgramFiles && path.win32.join(env.ProgramFiles,"Python"),
     ].filter((v):v is string=>typeof v==="string"&&path.win32.isAbsolute(v));
     for(const root of roots){
