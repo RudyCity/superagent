@@ -45,6 +45,54 @@ Windows dialog or a real installation transition.
 
 Windows, macOS and Linux **standalone installers and GitHub prerelease procedure**: see [Windows Standalone Installer](../../docs/guides/windows-standalone-installer.md). The bundled CLI, Core and Bun runtime are independent of a global Bun/Node install.
 
+## Overview: service versions, readiness and lifecycle actions
+
+The **Overview → Operational readiness** grid now displays the **running**
+and **verified available** version/build for each inspected service, followed
+by Start, Restart, Stop, and Update controls. Unsupported actions remain
+visible but disabled with a reason, rather than silently stopping a PID.
+
+- **Core:** current supervised worker build digest and version are compared
+  with the fresh, compiled local build. **Update** prepares a supervised
+  restart only when a different fresh local build is verified; a newer
+  *published* installer instead opens the Updates review.
+- **Tray:** running binary fingerprint and installed release slot are shown
+  separately. If the verified owner reports `SOURCE_CHANGED_NOT_LOADED`,
+  Update prepares a Tray-only restart. A separately staged native release
+  can use the existing owner-bound **upgrade** plan. An official published
+  installer must still be reviewed/downloaded/installed separately.
+- **MCP:** current backend PID / activated staged release digest are displayed.
+  **Reload** is the only live lifecycle action: it retains the authenticated
+  tunnel owner, OAuth issuer and public Cloudflare URL. The newer MCP
+  backend package, if published and SHA-256 verified, appears in the
+  Updates panel as an **independent downloadable component**; activation
+  requires the established private stage → plan → activate flow, *not*
+  a generic reload or stopping the Quick Tunnel.
+- **Daemon:** the embedded scheduler inherits the verified Core version.
+  Guardian, Vision, Channel Host, Transport, Muse, Telegram, and optional
+  tunnels show only their independently reported version. Missing metadata
+  means **Version not reported**, not an invented version or update.
+- **Version check:** the Overview checks the official release independently
+  of service health, caching the result for five minutes. It never treats
+  an older published prerelease as an upgrade to a newer local development
+  build or silently installs any downloaded archive.
+
+For lifecycle actions, clicking an enabled button **prepares an owner-scoped
+plan** and focuses **Lifecycle & Shutdown → Confirm & execute**. A second
+confirmation and fresh native/Core owner evidence are required before
+execution. Core Start/Stop and MCP Start/Stop intentionally remain disabled
+here; stopping a Core or Quick Tunnel is not equivalent to restarting an
+isolated worker. A service with an unverified owner cannot be restarted or
+stopped from Overview. A stopped optional service may be offered Start, but
+the native Core planner still verifies its dependencies and identity before
+issuing a plan.
+
+**Verification:** `bun --bun x vitest run tests/desktopOverviewOperations.test.ts`,
+`cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml
+lifecycle_console::tests`, followed by a real Windows Tray runtime check.
+Changes to source are not proof that the currently running Tray has reloaded
+its UI.
+
 ## Notification Center
 
 The titlebar bell beside **Reload**, the **Notifications** sidebar page, and
