@@ -262,6 +262,15 @@ describe("Core Delegate forwarded host dispatch signed identity boundary", () =>
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it("surfaces only an allowlisted public-web denial code without leaking the target", async () => {
+    vi.spyOn(delegateObservation, "safeDelegateChromeObservation")
+      .mockResolvedValue("control_chrome_cdp failed: DELEGATE_WEB_TARGET_NOT_PUBLIC_HTTP http://localhost:5173/private");
+    const reply = await call(signed("superagent_chrome_cdp", base));
+    expect(reply.status).toBe(409);
+    expect(reply.payload).toEqual({ success: false, error: "DELEGATE_WEB_TARGET_NOT_PUBLIC_HTTP" });
+    expect(JSON.stringify(reply.payload)).not.toContain("localhost");
+  });
+
   it("never returns tool errors containing secrets, tokens, URLs or private messages", async () => {
     const secret = "PRIVATE-SESSION-TOKEN-12345";
     const execute = vi.spyOn(delegateObservation, "safeDelegateChromeObservation")
