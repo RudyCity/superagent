@@ -619,7 +619,17 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
         : mcpRecoveryActive
           ? {enabled:true,strategy:"reloadable_owner_backend_recovery"}
           : {enabled:false,strategy:null};
-      return {service:item.service,state:item.state,ownerVerified:item.ownershipVerified,
+      // These categories are presentation/diagnostic metadata, not a
+      // substitute for the owner-verified `ready` authorization gate.
+      // Disabled optional services must not count as runtime failures.
+      const category=ready?"ready":
+        item.state==="unverified"?"unverified":
+        item.state==="degraded"||available?"degraded":
+        blocked?"blocked":
+        item.state==="unknown"?"failed":
+        item.state==="inactive"&&!policy.startOnBoot&&!policy.autoRecover?"not_configured":
+        item.state==="inactive"&&!policy.startOnBoot?"inactive":"failed";
+      return {service:item.service,state:item.state,category,ownerVerified:item.ownershipVerified,
         alive:available,ready,dependsOn:deps,dependencyBlocked:blocked,
         reason:item.reason,recoveryPolicy:{
           enabled:policy.autoRecover||ownerManagedRecovery.enabled,
@@ -628,9 +638,16 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
           threshold:policy.failureThreshold,maxPerHour:policy.maxRestartsPerHour}};
     });
     const answer:any={action,readOnly:true,observedAt:Date.now(),services:states,checks,
-      summary:{total:checks.length,ready:checks.filter(x=>x.ready).length,
-        degraded:checks.filter(x=>x.alive&&!x.ready).length,
-        unavailable:checks.filter(x=>!x.alive).length},
+      summary:{total:checks.length,ready:checks.filter(x=>x.category==="ready").length,
+        degraded:checks.filter(x=>x.category==="degraded").length,
+        unverified:checks.filter(x=>x.category==="unverified").length,
+        notConfigured:checks.filter(x=>x.category==="not_configured").length,
+        inactive:checks.filter(x=>x.category==="inactive").length,
+        blocked:checks.filter(x=>x.category==="blocked").length,
+        failed:checks.filter(x=>x.category==="failed").length,
+        // Unavailable only means a failed or unverified active dependency,
+        // never "all optional components not currently running".
+        unavailable:checks.filter(x=>x.category==="failed"||x.category==="unverified").length},
       note:"Monitoring is read-only; configuration does not grant permission to restart a process."};
     if(action==="doctor"&&(service==="core"||service==="all"))
       answer.coreRecycleReadiness = await inspectLegacyCoreRecycleReadiness(
