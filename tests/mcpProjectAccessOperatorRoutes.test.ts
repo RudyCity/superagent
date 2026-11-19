@@ -17,7 +17,7 @@ describe("MCP project access operator route boundary", () => {
   });
   async function invoke(
     pathname: string,
-    options: { peer?: string; host?: string; origin?: string; token?: string; method?: string; body?: string } = {},
+    options: { peer?: string; host?: string; origin?: string; token?: string; method?: string; body?: string; query?: string } = {},
   ) {
     const reply: { status?: number; body?: any } = {};
     const host = options.host ?? "localhost:7888";
@@ -41,7 +41,7 @@ describe("MCP project access operator route boundary", () => {
       },
     } as any;
     const handled = await handleServerRoute(req, response, pathname,
-      new URL("http://" + host + pathname), ctx);
+      new URL("http://" + host + pathname + (options.query || "")), ctx);
     return { handled, ...reply };
   }
 
@@ -70,6 +70,46 @@ describe("MCP project access operator route boundary", () => {
     expect(result.handled).toBe(true);
     expect(result.status).toBe(403);
     expect(result.body?.code).toBe("LOCAL_OPERATOR_AUTH_REQUIRED");
+  });
+
+  it("serves the complete read-only tool inventory only to the authenticated local operator", async () => {
+    const local=await invoke("/api/desktop/access/tools",{method:"GET"});
+    expect(local.status).toBe(200);
+    expect(local.body?.scope).toBe("local_operator_advisory_catalog");
+    expect(local.body?.active).toBeGreaterThanOrEqual(238);
+    expect(local.body?.tools).toHaveLength(local.body.active);
+    expect(local.body?.tools.find((t:any)=>t.name==="superagent_exec_command"))
+      .toMatchObject({approvalKind:"project",capability:"execute"});
+    expect(local.body?.tools.find((t:any)=>t.name==="superagent_register_project"))
+      .toMatchObject({approvalKind:"operator_admin"});
+    expect(JSON.stringify(local.body)).not.toMatch(/credentialHash|bearerToken|project-access\\.json/);
+    const remote=await invoke("/api/desktop/access/tools",{
+      method:"GET",peer:"203.0.113.10",host:"superagent.example.com",
+    });
+    expect(remote.status).toBe(403);
+    const tokenDenied=await invoke("/api/desktop/access/tools",{
+      method:"GET",token:"not-an-operator-token",
+    });
+    expect(tokenDenied.status).toBe(403);
+  });
+
+  it("rejects invalid tool inventory identity/project selectors without changing grants", async () => {
+    for (const query of [
+      "?identityHandle=not-an-identity",
+      "?projectId=../other",
+      "?unknown=1",
+      "?identityHandle=idh_0123456789abcdef&identityHandle=idh_2222222222222222",
+    ]) {
+      const result=await invoke("/api/desktop/access/tools",{method:"GET",query});
+      expect(result.status,query).toBe(400);
+      expect(result.body?.code).toBe("INVALID_TOOL_INVENTORY_SELECTION");
+    }
+    const unknown=await invoke("/api/desktop/access/tools",{
+      method:"GET",query:"?identityHandle=idh_0123456789abcdef&projectId=unknown",
+    });
+    expect(unknown.status).toBe(200);
+    expect(unknown.body.selectedProjectRecognized).toBe(false);
+    expect(unknown.body.grantedCapabilities).toEqual([]);
   });
 
   it("denies a local request without a valid operator token", async () => {
