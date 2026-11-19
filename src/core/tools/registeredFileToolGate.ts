@@ -244,7 +244,6 @@ const EXPLICIT_EFFECT_TOOLS = new Set([
 ]);
 
 /** No recursive traversal or regular expressions: search only granted file paths. */
-export 
 function certifiedRegistryAwareDiscovery(name:string,args:Args|undefined):boolean{
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
   if(name==="superagent_list_files"){
@@ -261,7 +260,7 @@ function certifiedRegistryAwareDiscovery(name:string,args:Args|undefined):boolea
   }
   return false;
 }
-function certifiedExplicitGrepSearchArgs(args:Args|undefined):boolean{
+export function certifiedExplicitGrepSearchArgs(args:Args|undefined):boolean{
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
   const allowed=["filePaths","query","caseSensitive","isRegex","offset","limit",
     "workspace","cwd","projectId"];
