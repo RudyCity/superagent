@@ -31,8 +31,10 @@
 .shutdown-stat span {display:block;margin-top:4px;font-size:10px;color:#a5b5ca}
 .shutdown-stat.blocked strong {color:#ffb4a5}
 .shutdown-panel-heading {display:flex;align-items:center;justify-content:space-between;gap:12px}
-.shutdown-panel-heading h3 {font-size:13px;letter-spacing:-.01em;margin:0;color:#eef5ff}
-.shutdown-panel-heading .button {font-size:11px;padding:8px 11px}
+.shutdown-panel-heading h3 {font-size:13px;letter-spacing:-.01em;margin:0;color:#eef5ff;white-space:nowrap}
+.shutdown-bulk-actions {display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
+.shutdown-panel-heading .button {font-size:10px;padding:7px 10px;min-height:31px}
+.shutdown-bulk-actions .button:disabled {opacity:.42;cursor:not-allowed}
 .shutdown-services {
   display:flex;
   flex-direction:column;
@@ -193,6 +195,9 @@
   .shutdown-stats {gap:6px}
   .shutdown-stat {padding:11px}
   .shutdown-stat strong {font-size:19px}
+  .shutdown-panel-heading {align-items:flex-start;flex-direction:column}
+  .shutdown-bulk-actions {justify-content:flex-start;width:100%}
+  .shutdown-bulk-actions .button {flex:1 1 auto}
   .shutdown-service {gap:9px;padding:10px}
   .shutdown-force-panel {grid-template-columns:minmax(0,1fr)}
   .shutdown-force-copy {grid-row:auto}
