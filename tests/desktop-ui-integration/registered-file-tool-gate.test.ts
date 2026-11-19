@@ -113,6 +113,7 @@ describe("permanent file access enforced at Core tool boundary",()=>{
   });
   it("allows structured Git actions only with matching recursive native file grants",()=>{
     const a=setup();
+    fs.mkdirSync(path.join(a.root,".git"));
     const rootRead=a.rule("root-read","allow",a.root,["read"],true);
     const rootWrite=a.rule("root-write","allow",a.root,["read","write"],true);
     const rootFull=a.rule("root-full","allow",a.root,["read","write","delete"],true);
@@ -134,6 +135,13 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     for(const file of ["../outside.txt","src/*.ts",".git/config","src/../.env",":(glob)src/*"]){
       expect(gate({action:"add",files:[file]},rootFull)).toMatch(/recursive native file grants/);
     }
+    // A linked worktree metadata redirect is not contained in the registered
+    // project root, so broad Git actions must refuse it.
+    fs.rmSync(path.join(a.root,".git"),{recursive:true,force:true});
+    fs.writeFileSync(path.join(a.root,".git"),"gitdir: ../outside-repo");
+    expect(gate({action:"status"},rootFull)).toMatch(/recursive native file grants/);
+    fs.rmSync(path.join(a.root,".git"),{force:true});
+    fs.mkdirSync(path.join(a.root,".git"));
     // Explicit host deny wins over a broad workspace allow.
     const protectedFile=a.rule("protected","deny",path.join(a.root,".env"),["read"]);
     expect(gate({action:"status"},rootFull,protectedFile)).toMatch(/recursive native file grants/);
