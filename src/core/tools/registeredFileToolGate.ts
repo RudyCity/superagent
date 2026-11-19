@@ -89,6 +89,79 @@ function certifiedMediaPlanPaths(args:Args|undefined):string[]|null {
   }else if(args.watermarkPath!==undefined)return null;
   return paths;
 }
+
+type ExplicitFileEffect = { raw:string; operations:FileOperation[] };
+function explicitFileEffects(name:string,args:Args|undefined):ExplicitFileEffect[]|null {
+  if(!args || typeof args!=="object" || Array.isArray(args))return null;
+  const effects:ExplicitFileEffect[]=[];
+  const add=(raw:unknown,operations:FileOperation[])=>{
+    if(typeof raw!=="string"||!raw.trim()||raw.length>2048)return false;
+    effects.push({raw,operations}); return true;
+  };
+  const addMany=(raw:unknown,operations:FileOperation[])=>{
+    if(!Array.isArray(raw)||raw.length<1||raw.length>50)return false;
+    for(const item of raw)if(!add(item,operations))return false;
+    return true;
+  };
+  if(name==="superagent_media_convert"){
+    const inputs=args.inputPaths===undefined?[args.inputPath]:args.inputPaths;
+    if(!Array.isArray(inputs)||inputs.length<1||!addMany(inputs,["read"])||
+       !add(args.outputPath,["write"]))return null;
+    return effects;
+  }
+  if(name==="superagent_media_transform"){
+    if(!add(args.inputPath,["read"])||!add(args.outputPath,["write"]))return null;
+    if(args.operation==="watermark"&&!add(args.watermarkPath,["read"]))return null;
+    return effects;
+  }
+  if(name==="superagent_media_batch"){
+    if(!Array.isArray(args.jobs)||args.jobs.length<1||args.jobs.length>20)return null;
+    for(const job of args.jobs){
+      if(!job||typeof job!=="object"||Array.isArray(job))return null;
+      const j=job as Args;
+      const mode=String(j.mode??j.kind??j.tool??j.action??"");
+      const target=mode.includes("transform")?"superagent_media_transform":"superagent_media_convert";
+      const nested=explicitFileEffects(target,j);
+      if(!nested)return null;
+      effects.push(...nested);
+    }
+    return effects;
+  }
+  if(["superagent_pdf_edit_vector_exact","superagent_pdf_ocr_searchable",
+      "superagent_pdf_redact_raster"].includes(name)){
+    if(!add(args.inputPath,["read"])||!add(args.outputPath,["write"]))return null;
+    return effects;
+  }
+  if(name==="superagent_pdf_sign"){
+    if(!add(args.inputPath,["read"])||!add(args.certificatePath,["read"])||
+       !add(args.outputPath,["write"]))return null;
+    return effects;
+  }
+  if(name==="superagent_pdf_edit"){
+    if(!add(args.inputPath,["read"])||!add(args.outputPath,["write"])||
+       !Array.isArray(args.operations)||args.operations.length<1||args.operations.length>100)return null;
+    for(const op of args.operations){
+      if(!op||typeof op!=="object"||Array.isArray(op))return null;
+      const item=op as Args;
+      for(const key of ["sourcePath","imagePath","fontPath"])
+        if(item[key]!==undefined&&!add(item[key],["read"]))return null;
+    }
+    return effects;
+  }
+  if(name==="superagent_pdf_verify_signature"){
+    if(args.verifyTrustedChain===true||args.verifyOfflineCrl===true||
+       args.verifyIndependentPades===true)return null;
+    if(!add(args.inputPath,["read"]))return null;
+    return effects;
+  }
+  return null;
+}
+const EXPLICIT_EFFECT_TOOLS = new Set([
+  "superagent_media_convert","superagent_media_transform","superagent_media_batch",
+  "superagent_pdf_edit","superagent_pdf_edit_vector_exact","superagent_pdf_ocr_searchable",
+  "superagent_pdf_redact_raster","superagent_pdf_sign","superagent_pdf_verify_signature",
+]);
+
 /** No recursive traversal or regular expressions: search only granted file paths. */
 export function certifiedExplicitGrepSearchArgs(args:Args|undefined):boolean{
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
@@ -347,7 +420,7 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
   if (CERTIFIED_NON_FILE_TOOLS.has(name)) return "certified_non_file";
   if (READ_TOOLS.has(name) || WRITE_TOOLS.has(name) || PATCH_TOOLS.has(name) ||
       Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,name) ||
-      name==="superagent_media_plan")
+      EXPLICIT_EFFECT_TOOLS.has(name) || name==="superagent_media_plan")
     return "requires_explicit_files";
   if (BROWSER_OBSERVATION_TOOLS.has(name) || name === "superagent_manage_services" ||
       name === "superagent_tool_execute" || name === "superagent_grep_search" ||
@@ -479,6 +552,10 @@ export function registeredFileToolGate(
   if(Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,call.name) &&
       !certifiedInputReaderArguments(call.name,call.args))
     return "Document/media reader requires exactly one explicit input path and certified argument keys.";
+  const explicitEffects=EXPLICIT_EFFECT_TOOLS.has(call.name)
+    ? explicitFileEffects(call.name,call.args) : null;
+  if(EXPLICIT_EFFECT_TOOLS.has(call.name) && !explicitEffects)
+    return "Tool requires explicit certified input/output file effects.";
   const mediaPlanPaths=call.name==="superagent_media_plan"
     ? certifiedMediaPlanPaths(call.args) : null;
   if(call.name==="superagent_media_plan" && !mediaPlanPaths)
@@ -489,19 +566,21 @@ export function registeredFileToolGate(
     mediaPlanPaths!==null?["read"]:
     WRITE_TOOLS.has(call.name)?["read","write"]:
     PATCH_TOOLS.has(call.name)?["read","write","delete"]:[];
-  if(!operations.length)return "Tool is not certified for permanent file access restrictions.";
+  if(!operations.length&&!explicitEffects)
+    return "Tool is not certified for permanent file access restrictions.";
   const args=call.args??{};
-  const entries=mediaPlanPaths ?? pathsIn(args);
-  if(!entries)return "Explicit target file path(s) required by permanent file access policy.";
+  const legacyEntries=mediaPlanPaths ?? (explicitEffects?null:pathsIn(args));
+  if(!explicitEffects&&!legacyEntries)
+    return "Explicit target file path(s) required by permanent file access policy.";
   if(!path.isAbsolute(workspace))return "Local absolute workspace required.";
-  for(const raw of entries){
-    const actual=absoluteCanonical(raw,workspace);
+  const effects:ExplicitFileEffect[]=explicitEffects ??
+    (legacyEntries??[]).map(raw=>({raw,operations}));
+  for(const effect of effects){
+    const actual=absoluteCanonical(effect.raw,workspace);
     if(!actual)return "Non-canonical, missing, symlinked, or traversal file target is denied.";
-    for(const operation of operations){
+    for(const operation of effect.operations){
       const decision=evaluatePersistentAccess(policy,{kind:"file",app:identity,path:actual,operation});
       if(decision.effect!=="allow"){
-        // An external MCP denial must never disclose a resolved host path,
-        // including paths obtained after canonicalization or native aliases.
         return "Permanent file access denies "+operation+" for the selected target.";
       }
     }
