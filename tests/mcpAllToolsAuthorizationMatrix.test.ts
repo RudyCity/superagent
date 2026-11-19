@@ -280,7 +280,7 @@ describe("ALL active SuperAgent MCP tools: complete non-executing authorization 
   it("reports explicit coverage totals without claiming physical runtime success", () => {
     expect(names.length).toBe(adminList.size);
     expect(dangerous.length).toBeGreaterThan(0);
-    expect(uncertified.length).toBeGreaterThan(0);
+    expect(uncertified.length).toBe(0);
     expect(workspaceTools.length).toBeGreaterThan(0);
     console.info("[ALL_MCP_TOOLS_CONTRACT_COVERAGE] "+JSON.stringify({
       registered: all.length,
