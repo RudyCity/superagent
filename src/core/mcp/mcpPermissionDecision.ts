@@ -169,7 +169,6 @@ export function describeBoundedServicePermission(
     layers: ({
       oauthScope: "granted",
       projectCapability: "not_checked",
-      projectCapability: "not_checked",
       hostFilePolicy: !filePolicyActive ? "not_checked" : valid ? "granted" : "blocked",
       nativeConsent: "not_checked",
       targetIdentity: "not_checked",
@@ -266,7 +265,6 @@ export function describeBoundedBrowserObservePermission(
     command: valid && typeof x?.command === "string" ? x.command : "unrecognized",
     layers: ({
       oauthScope: oauthAllowed ? "granted" : "blocked",
-      projectCapability: "not_checked",
       projectCapability: "not_checked",
       hostFilePolicy: !filePolicyActive ? "not_checked" : valid ? "granted" : "blocked",
       nativeConsent: "not_checked",
