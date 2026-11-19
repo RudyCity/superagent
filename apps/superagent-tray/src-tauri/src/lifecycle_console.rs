@@ -28,7 +28,7 @@ const FIELDS: &[&str] = &[
     "expectedSupervisorPid", "noCoreShutdown", "expectedWorkerPid",
     "expectedRunning", "noActiveJobs", "expectedProcessIdentity",
     "expectedLegacyCommandDigest", "clientMode", "expectedReleaseRevision",
-    "expectedCurrentDigest", "expectedExecutablePath", "revision", "autoRecover", "startOnBoot",
+    "expectedCurrentDigest", "expectedExecutablePath", "expectedPublicUrl", "revision", "autoRecover", "startOnBoot",
     "failureThreshold", "maxRestartsPerHour", "intervalSeconds",
     "reviewed", "limit",
 ];
@@ -46,7 +46,10 @@ pub fn validate(input: Value) -> Result<Value,String> {
         let is_reconcile = action == "reconcile" && (service == "all" || TARGETS.contains(&service));
         let is_owner_bound_core = service == "core" &&
             ["restart", "rollback", "drain"].contains(&action);
-        if (!TARGETS.contains(&service) && !is_owner_bound_core && !is_recycle && !is_reconcile) ||
+        // Reload only a verified MCP backend, never the Cloudflare owner,
+        // its public URL, or any generic MCP stop/restart path.
+        let is_owner_bound_mcp = service == "mcp" && action == "reload";
+        if (!TARGETS.contains(&service) && !is_owner_bound_core && !is_owner_bound_mcp && !is_recycle && !is_reconcile) ||
             value.get("confirm")!=Some(&Value::Bool(true)) {
             return Err("Native lifecycle mutation requires exact service and confirmation".into());
         }
@@ -61,6 +64,16 @@ pub fn validate(input: Value) -> Result<Value,String> {
                 return Err("CORE_OWNER_BOUND_PLAN_REQUIRED".into());
             }
         }
+        if is_owner_bound_mcp {
+            let pid=value.get("expectedOwnerPid").and_then(Value::as_u64)
+                .is_some_and(|pid|pid>0&&pid<=u32::MAX as u64);
+            let url=value.get("expectedPublicUrl").and_then(Value::as_str)
+                .is_some_and(|s|s.starts_with("https://")&&s.ends_with("/mcp")&&
+                    !s.contains('?')&&!s.contains('#')&&!s.contains('@')&&s.len()<2048);
+            if !pid||!url||value.get("port").and_then(Value::as_u64).is_none() {
+                return Err("MCP_RELOAD_OWNER_BOUND_PLAN_REQUIRED".into());
+            }
+        }
         if action!="configure" && action!="reconcile" &&
             !value.get("operationId").and_then(Value::as_str)
                 .is_some_and(|id|id.len()>=8&&id.len()<=128) {
@@ -72,8 +85,10 @@ pub fn validate(input: Value) -> Result<Value,String> {
         let is_recycle = operation == "recycle" && (service == "all" || service == "core" || service == "tray" || service == "vision");
         let is_owner_bound_core=service=="core" &&
             ["restart","rollback","drain"].contains(&operation);
-        if (!TARGETS.contains(&service) && !is_owner_bound_core && !is_recycle) ||
-            !["start","stop","restart","upgrade","rollback","drain","recycle"].contains(&operation) ||
+        let is_owner_bound_mcp=service=="mcp"&&operation=="reload";
+        if (!TARGETS.contains(&service) && !is_owner_bound_core && !is_owner_bound_mcp && !is_recycle) ||
+            !["start","stop","restart","upgrade","rollback","drain","recycle","reload"].contains(&operation) ||
+            (operation=="reload"&&!is_owner_bound_mcp) ||
             (service=="core" && !is_owner_bound_core && operation!="recycle") ||
             (is_owner_bound_core && value.get("port").and_then(Value::as_u64)!=Some(7888)) {
             return Err("Native lifecycle plan target is restricted".into());
@@ -110,6 +125,19 @@ mod tests {
         assert!(validate(json!({"action":"dashboard"})).is_ok());
         assert!(validate(json!({"action":"profile","service":"tray"})).is_ok());
         assert!(validate(json!({"action":"plan","service":"tray","targetAction":"upgrade"})).is_ok());
+        assert!(validate(json!({"action":"plan","service":"mcp","port":9227,
+            "targetAction":"reload"})).is_ok());
+        assert!(validate(json!({"action":"reload","service":"mcp","port":9227,
+            "confirm":true,"expectedOwnerPid":1001,
+            "expectedPublicUrl":"https://stable.example/mcp",
+            "operationId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"})).is_ok());
+        assert!(validate(json!({"action":"plan","service":"mcp","port":9227,
+            "targetAction":"stop"})).is_err());
+        assert!(validate(json!({"action":"stop","service":"mcp","port":9227,
+            "confirm":true,"operationId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"})).is_err());
+        assert!(validate(json!({"action":"reload","service":"mcp","port":9227,
+            "confirm":true,"expectedOwnerPid":1001,
+            "operationId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"})).is_err());
         assert!(validate(json!({"action":"plan","service":"core","port":7888,
             "targetAction":"recycle"})).is_ok());
         assert!(validate(json!({"action":"plan","service":"all","targetAction":"recycle"})).is_ok());
