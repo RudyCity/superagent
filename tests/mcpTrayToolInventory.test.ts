@@ -76,7 +76,8 @@ describe("local-operator MCP full tool inventory authorization read model",()=>{
       expect(allowed.grantedCapabilities).toEqual(expect.arrayContaining(["read","execute"]));
       const terminal=find(allowed,"superagent_exec_command");
       expect(terminal.grantState).toBe("granted");
-      expect(terminal.hostBlocked).toBe(false); // Host policy now classifies the tool per action.\n      expect(terminal.operationStatus).toBe("check_action_arguments"); // Arbitrary shell remains denied at execution.
+      expect(terminal.hostBlocked).toBe(false); // Host policy now classifies the tool per action.
+      expect(terminal.operationStatus).toBe("check_action_arguments"); // Arbitrary shell remains denied at execution.
       const files=find(allowed,"superagent_read_files");
       expect(files.grantState).toBe("granted");
       expect(files.operationStatus).toBe("file_rules_required");
