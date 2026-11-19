@@ -49,7 +49,7 @@ describe("headless Git executable resolution", () => {
       fs.writeFileSync(path.join(cwd,"approved.txt"),"changed\n");
       expect(String(await gitActionTool.execute({action:"restore",files:["approved.txt"]},cwd)))
         .toContain("Successfully restored files");
-      expect(fs.readFileSync(path.join(cwd,"approved.txt"),"utf8")).toBe("approved-v1\n");
+      expect(fs.readFileSync(path.join(cwd,"approved.txt"),"utf8")).toMatch(/^approved-v1\r?\n$/);
 
       const noClean=await gitActionTool.execute({action:"clean"},cwd);
       expect(String(noClean)).toContain("explicit file paths");
