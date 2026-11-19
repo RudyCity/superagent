@@ -4087,9 +4087,8 @@
           <div class="modal-eyebrow">NATIVE · LIFECYCLE &amp; MANUAL OVERRIDE</div>
           <h2 id="shutdown-manager-title">Shutdown Manager</h2>
           <p id="shutdown-manager-description" class="shutdown-description">
-            Review running services, active sessions and ownership before stopping anything.
-            Graceful operations use authenticated owners. Manual Kill separately allows the PC owner
-            to select observed process PIDs, including unverified services, with native confirmation.
+            Review running services and ownership before stopping anything.
+            Graceful stop uses authenticated owners; Manual Kill is an explicit PID override with native confirmation.
           </p>
         </div>
         <button type="button" id="shutdown-close" class="icon-button"
@@ -4121,9 +4120,7 @@
         <section class="shutdown-force-panel" aria-label="Force stop owner confirmation">
           <div class="shutdown-force-copy">
             <strong>Emergency force stop</strong>
-            <small>Interrupts authenticated SuperAgent owners, including MCP sessions and registered Cloudflare tunnels.
-              Use the separate Manual Kill section below to explicitly target observed but unverified PIDs.
-              The Tray remains open to show results.</small>
+            <small>Stops verified SuperAgent owners even when busy. Unverified OS processes stay in Manual Kill.</small>
           </div>
           <label for="shutdown-force-confirm">Type <code>FORCE STOP ALL</code> to unlock</label>
           <input id="shutdown-force-confirm" type="text" maxlength="14" autocomplete="off"
@@ -4133,9 +4130,7 @@
           <div class="shutdown-manual-heading">
             <div>
               <strong id="shutdown-manual-heading">Manual Kill · owner override</strong>
-              <small>Target the checked OS PIDs even when their SuperAgent owner status is unverified.
-                Killing a Core Supervisor or Guardian can interrupt active jobs, break connections, or
-                trigger automatic restarts. Each PID is checked against its current executable and start time.</small>
+              <small>Kill only checked OS PIDs after executable and process-start revalidation. This can interrupt jobs or connections.</small>
             </div>
             <button id="shutdown-manual-select-all" class="button ghost" type="button" disabled>Select all eligible</button>
           </div>
