@@ -122,6 +122,19 @@ function lifeRenderSummary(data){
   life("lifecycle-ready").textContent=String(summary.ready??"—");
   life("lifecycle-degraded").textContent=String(summary.degraded??"—");
   life("lifecycle-unavailable").textContent=String(summary.unavailable??"—");
+  const breakdown=life("lifecycle-status-breakdown");
+  if(breakdown){
+    const counters=[
+      ["Unverified",summary.unverified],
+      ["Not configured",summary.notConfigured],
+      ["Inactive",summary.inactive],
+      ["Blocked",summary.blocked],
+      ["Failed",summary.failed],
+    ];
+    breakdown.textContent=counters.every(([,count])=>typeof count==="number")
+      ? counters.map(([name,count])=>name+": "+count).join(" · ")
+      : "Detailed service status requires a newer Core build.";
+  }
   const digest=data?.trayRelease?.activeDigest;
   life("lifecycle-release").textContent=typeof digest==="string"?digest.slice(0,9):"Not staged";
   const holder=life("lifecycle-services");
@@ -132,10 +145,18 @@ function lifeRenderSummary(data){
   for(const item of checks){
     const card=lifeNode("article","","lifecycle-service-card");
     const header=lifeNode("div","","lifecycle-service-head");
+    const category=typeof item.category==="string"?item.category:
+      item.ready?"ready":item.state==="unverified"?"unverified":
+        item.alive?"degraded":item.state==="inactive"?"inactive":"failed";
+    const label={
+      ready:"Ready",degraded:"Degraded",unverified:"Unverified",
+      not_configured:"Not configured",inactive:"Inactive",
+      blocked:"Dependency blocked",failed:"Failed",
+    }[category]||"Unknown";
+    const tone=category==="ready"?"success":
+      ["degraded","unverified","failed"].includes(category)?"warning":"muted";
     header.append(lifeNode("strong",item.service||"Unknown service"),
-      lifeNode("span",item.ready?"Ready":item.state==="unverified"?"Unverified":
-        item.alive?"Degraded":item.state==="inactive"?"Inactive":"Unknown",
-        "lifecycle-chip "+(item.ready?"success":item.alive||item.state==="unverified"?"warning":"muted")));
+      lifeNode("span",label,"lifecycle-chip "+tone));
     const description=lifeNode("small",
       (item.ownerVerified?"Verified owner":"Owner not verified")+" · "+(item.state||"unknown"),
       "lifecycle-service-note");
@@ -209,7 +230,7 @@ async function lifecycleRefresh(force=false){
     else {
       // Never leave a previous successful health snapshot visible as current.
       for(const id of ["lifecycle-ready","lifecycle-degraded","lifecycle-unavailable",
-        "lifecycle-release"])life(id).textContent="—";
+        "lifecycle-release","lifecycle-status-breakdown"])life(id).textContent="—";
       const list=life("lifecycle-services");
       list.replaceChildren(lifeNode("p",
         "Owner status unavailable. Refresh before preparing a lifecycle plan.",
