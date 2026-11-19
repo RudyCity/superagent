@@ -606,10 +606,22 @@ fn force_candidates(preview:&Preview)->Result<Vec<Item>,String> {
     if selected.is_empty() {
         return Err("SHUTDOWN_FORCE_NO_VERIFIED_OWNER".into());
     }
-    // Independent MCP / registered Cloudflare first, managed services next,
-    // and direct Core last. A supervisor/foreign process never enters the list.
+    // Disable restart sources before their workers. Keep daemon + Core entries
+    // even when they share one PID: daemon force first aborts scheduled runs,
+    // then the Core entry can still terminate that verified worker. If an
+    // earlier force action already exited the PID, the later row is a no-op.
     selected.sort_by_key(|item|match item.kind.as_str(){
-        "mcp"=>0,"cloudflare"=>1,"managed"=>2,"daemon-direct"=>3,"core"=>9,_=>8,
+        "managed" if item.id=="managed:guardian" ||
+            item.id.starts_with("guardian-os:")=>0,
+        "core-supervisor"=>1,
+        "mcp"=>2,
+        "cloudflare"=>3,
+        "muse-watch"=>4,
+        "managed" if item.id=="managed:daemon"=>5,
+        "daemon-direct"=>5,
+        "managed"=>6,
+        "core"=>9,
+        _=>8,
     });
     Ok(selected)
 }
@@ -756,23 +768,35 @@ async fn force_stop_daemon(item:&Item)->Result<(),String> {
     manual_kill_one(item).await
 }
 
+async fn force_stop_verified_local(item:&Item)->Result<(),String> {
+    if !item.force_selectable || !manual_os_identity_matches(item) {
+        return Err("SHUTDOWN_FORCE_LOCAL_IDENTITY_CHANGED".into());
+    }
+    // Prefer the authenticated owner protocol when it is still safe, but a
+    // newly-busy owner must not turn Force Stop All back into graceful-only.
+    if item.selectable {
+        if stop_one(item).await.is_ok() {return Ok(());}
+        if !os_birth_matches(item) {return Ok(());}
+        if !manual_os_identity_matches(item) {
+            return Err("SHUTDOWN_FORCE_LOCAL_IDENTITY_CHANGED".into());
+        }
+    }
+    manual_kill_one(item).await
+}
+
 async fn force_stop_one(item:&Item)->Result<(),String> {
+    // If this exact birth-pinned process already exited (possibly because an
+    // earlier row owned the same PID), never adopt or signal a replacement.
+    if !os_birth_matches(item) {
+        return Ok(());
+    }
     // Confirm fresh native identity, not a stale cached preview or WebView PID.
     let fresh=inspect().await?;
     let live=fresh.services.iter().find(|current|current.id==item.id);
     if !live.is_some_and(|current|same_force_owner(item,current)) {
-        // A previously owned Cloudflare child may already have exited as a
-        // consequence of stopping its parent MCP owner.
-        if item.kind=="cloudflare" && !os_birth_matches(item) {
-            let mut system=System::new();
-            system.refresh_processes();
-            if item.pid.is_some_and(|pid|system.process(Pid::from_u32(pid)).is_none()){
-                return Ok(());
-            }
-        }
         return Err("SHUTDOWN_FORCE_OWNER_CHANGED".into());
     }
-    if !os_birth_matches(item){return Err("SHUTDOWN_FORCE_PROCESS_BIRTH_CHANGED".into());}
+    if !os_birth_matches(item){return Ok(());}
     match item.kind.as_str(){
         "mcp"=>{
             runtime_control::force_stop_mcp(&config_dir()?,
@@ -818,9 +842,10 @@ async fn force_stop_one(item:&Item)->Result<(),String> {
         // verified Core worker only if cooperative cancellation does not settle.
         "managed" if item.id=="managed:daemon"=>force_stop_daemon(item).await,
         "daemon-direct"=>force_stop_daemon(item).await,
-        // Existing owner-bound stop plans remain mandatory for every other
-        // supported service. No generic process-tree or Core-supervisor kill.
-        "managed"|"core" if item.selectable=>stop_one(item).await,
+        // Every other local background owner must still be independently
+        // verified and birth-pinned; no arbitrary PID or process-tree kill.
+        "managed"|"core"|"core-supervisor"|"muse-watch"=>
+            force_stop_verified_local(item).await,
         _=>Err("SHUTDOWN_FORCE_NO_OWNER_PROTOCOL".into()),
     }
 }
