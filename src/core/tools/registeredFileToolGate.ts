@@ -154,6 +154,16 @@ function explicitFileEffects(name:string,args:Args|undefined):ExplicitFileEffect
     if(!add(args.inputPath,["read"]))return null;
     return effects;
   }
+  if(name==="superagent_brain_publish"){
+    const action=String(args.action??"");
+    if(action==="confirm")return effects;
+    if(action!=="prepare"||!add(args.destinationPath,["write"]))return null;
+    return effects;
+  }
+  if(name==="superagent_use_skill"){
+    if(!add(args.path,["read"]))return null;
+    return effects;
+  }
   if(name==="superagent_pdf_render"){
     if(!add(args.inputPath,["read"])||typeof args.outputPrefix!=="string"||!args.outputPrefix.trim()||
        !Array.isArray(args.pages)||args.pages.length<1||args.pages.length>20)return null;
@@ -224,6 +234,7 @@ const EXPLICIT_EFFECT_TOOLS = new Set([
   "superagent_pdf_edit","superagent_pdf_edit_vector_exact","superagent_pdf_ocr_searchable",
   "superagent_pdf_redact_raster","superagent_pdf_sign","superagent_pdf_verify_signature",
   "superagent_pdf_render","superagent_pdf_split",
+  "superagent_brain_publish","superagent_use_skill",
 ]);
 
 /** No recursive traversal or regular expressions: search only granted file paths. */
