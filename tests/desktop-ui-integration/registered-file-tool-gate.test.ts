@@ -148,6 +148,42 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       operation:"watermark",watermarkPath:watermark})).toBeNull();
   });
 
+  it("certifies the final formerly-uncertified families without blanket bypass",()=>{
+    const a=setup();
+    const chromeRoot=path.join(a.root,"chrome-user-data");
+    fs.mkdirSync(chromeRoot,{recursive:true});
+    const localState=path.join(chromeRoot,"Local State");
+    fs.writeFileSync(localState,"{}");
+    const input=path.join(a.root,"report.docx"),output=path.join(a.root,"copy.docx");
+    fs.writeFileSync(input,"doc");
+    const policy=a.p(
+      a.rule("root-read","allow",a.root,["read"],true),
+      a.rule("chrome-state","allow",localState,["read"]),
+      a.rule("doc-read","allow",input,["read"]),
+      a.rule("doc-write","allow",output,["write"]),
+    );
+    const opts={registry:()=>policy,identity:a.identity};
+    const gate=(name:string,args:Record<string,unknown>)=>registeredFileToolGate({name,args},a.root,opts);
+
+    expect(getPermanentFileToolReadiness("superagent_list_files")).toBe("action_dependent");
+    expect(getPermanentFileToolReadiness("superagent_find_files")).toBe("action_dependent");
+    expect(gate("superagent_list_files",{dirPath:a.root})).toBeNull();
+    expect(gate("superagent_find_files",{path:a.root,pattern:"**/*.ts",maxDepth:4})).toBeNull();
+
+    expect(getPermanentFileToolReadiness("superagent_list_chrome_profiles")).toBe("requires_explicit_files");
+    expect(gate("superagent_list_chrome_profiles",{customUserDataPath:chromeRoot})).toBeNull();
+    expect(gate("superagent_list_chrome_profiles",{})).toMatch(/explicit certified file effects|explicit/i);
+
+    expect(getPermanentFileToolReadiness("superagent_office_cli")).toBe("action_dependent");
+    expect(gate("superagent_office_cli",{command:`view text "${input}"`})).toBeNull();
+    expect(gate("superagent_office_cli",{command:`convert "${input}" "${output}"`})).toBeNull();
+    expect(gate("superagent_office_cli",{command:"unknown ../../../secret.txt"})).toMatch(/explicit certified file effects|not certified/i);
+
+    expect(getPermanentFileToolReadiness("superagent_exec_command")).toBe("action_dependent");
+    expect(gate("superagent_exec_command",{command:"bun --version"})).toBeNull();
+    expect(gate("superagent_exec_command",{command:"echo still-blocked"})).toMatch(/not certified/i);
+  });
+
   it("distinguishes metadata, app-owned storage, explicit file paths and action-dependent tools",()=>{
     const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
     const gate=(name:string,args:Record<string,unknown>)=>registeredFileToolGate({name,args},a.root,opts);
