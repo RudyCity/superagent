@@ -167,7 +167,7 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     }
     expect(getPermanentFileToolReadiness("superagent_read_files")).toBe("requires_explicit_files");
     expect(getPermanentFileToolReadiness("superagent_browser_gateway")).toBe("action_dependent");
-    expect(getPermanentFileToolReadiness("superagent_exec_command")).toBe("uncertified");
+    expect(getPermanentFileToolReadiness("superagent_exec_command")).toBe("action_dependent");
     expect(gate("superagent_exec_command",{command:"echo hi"})).toMatch(/not certified/);
     for(const name of ["git_diff","get_git_diff","git_log"]) {
       expect(gate(name,{})).toMatch(/not certified/);
