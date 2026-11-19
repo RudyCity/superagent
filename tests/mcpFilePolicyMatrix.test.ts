@@ -37,7 +37,7 @@ describe("MCP full-catalog host file-policy transparency", () => {
       expect(MCP_TOOL_CLASSIFICATION[tool.name], tool.name).toMatch(/^(safe|dangerous)$/);
       expect(validStates.has(getPermanentFileToolReadiness(tool.name)), tool.name).toBe(true);
     }
-    expect(getPermanentFileToolReadiness("superagent_exec_command")).toBe("uncertified");
+    expect(getPermanentFileToolReadiness("superagent_exec_command")).toBe("action_dependent");
     expect(getPermanentFileToolReadiness("superagent_apply_patch")).toBe("requires_explicit_files");
     expect(getPermanentFileToolReadiness("superagent_replace_file_content")).toBe("requires_explicit_files");
     expect(getPermanentFileToolReadiness("superagent_find_process")).toBe("certified_non_file");
@@ -67,7 +67,7 @@ describe("MCP full-catalog host file-policy transparency", () => {
       const tools = (await listing(server)).tools as Array<any>;
       const byName = (name:string) => tools.find(x=>x.name===name);
       expect(byName("superagent_exec_command")._meta.filePolicy)
-        .toMatchObject({active:true,readiness:"uncertified"});
+        .toMatchObject({active:true,readiness:"action_dependent"});
       expect(byName("superagent_desktop_ui")._meta.mcpApproval)
         .toMatchObject({kind:"project",capability:"execute",oauthScope:"mcp:tools:write"});
       expect(byName("superagent_tool_execute")._meta.mcpApproval.kind)
@@ -103,9 +103,9 @@ describe("MCP full-catalog host file-policy transparency", () => {
         {query:"exec_command"}));
       expect(search.filePolicyActive).toBe(true);
       expect(search.tools.find((x:any)=>x.name==="superagent_exec_command").filePolicy)
-        .toBe("uncertified");
+        .toBe("action_dependent");
       expect(search.tools.find((x:any)=>x.name==="superagent_exec_command").filePolicyRequirement)
-        .toMatch(/not certified/i);
+        .toMatch(/version diagnostics|arbitrary shell/i);
       const describe = resultJson(await invoke(server,MCP_GATEWAY_TOOL_NAMES.describe,
         {name:"superagent_delegate_sync_history"}));
       expect(describe.filePolicy).toBe("certified_app_storage");
@@ -114,7 +114,7 @@ describe("MCP full-catalog host file-policy transparency", () => {
       expect(describe.note).toMatch(/never grants execution/i);
       const status = resultJson(await invoke(server,MCP_GATEWAY_TOOL_NAMES.status));
       expect(status.filePolicy).toMatchObject({active:true});
-      expect(status.filePolicy.readinessCounts.uncertified).toBeGreaterThan(0);
+      expect(status.filePolicy.readinessCounts.uncertified).toBe(0);
 
       const pureCapability = await invoke(server, "superagent_lan_capabilities");
       expect(pureCapability.isError).not.toBe(true);
