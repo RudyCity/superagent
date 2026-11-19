@@ -25,6 +25,8 @@ describe("headless Git executable resolution", () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-git-scoped-"));
     try {
       execFileSync("git", ["init", "--quiet"], { cwd, windowsHide: true });
+      execFileSync("git", ["config", "user.name", "SuperAgent Test"], { cwd, windowsHide:true });
+      execFileSync("git", ["config", "user.email", "superagent-test@example.invalid"], { cwd, windowsHide:true });
       fs.writeFileSync(path.join(cwd, "approved.txt"), "approved-v1\n");
       fs.writeFileSync(path.join(cwd, "unrelated.txt"), "unrelated\n");
 
