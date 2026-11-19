@@ -22,8 +22,9 @@ function mount(calls: Record<string,any> = {}) {
     });
     return nodes.get(id);
   };
-  const createElement=(tag:string)=>({tag,textContent:"",className:"",style:{},children:[],classList:{add(){}},
+  const createElement=(tag:string)=>({tag,textContent:"",className:"",style:{},children:[],events:{} as Record<string,any>,classList:{add(){}},
     append(...children:any[]){this.children.push(...children);},
+    addEventListener(event:string,fn:any){this.events[event]=fn;},
     setAttribute(){},
   });
   const ipc=async (name:string,args:any)=>{
@@ -73,6 +74,10 @@ function mount(calls: Record<string,any> = {}) {
       };
       return {requests:[],identities:[]};
     }
+    if(name==="get_tray_version")return calls.trayVersion??"1.14.107";
+    if(name==="check_release_updates")return calls.release??{
+      tag:"v1.14.104-rc.3",releaseVersion:"1.14.104",componentItems:[],
+    };
     if(name==="get_overview_owner_metrics"){
       if(calls.metricsError)throw new Error("OVERVIEW_OWNER_INVENTORY_UNAVAILABLE");
       return calls.metrics ?? {observedAt:Date.now(),
@@ -221,6 +226,86 @@ describe("Tray Overview owner-verified cockpit",()=>{
     expect(h.byId("op-desktop-policy").textContent).toBe("deny");
     expect(h.byId("op-mcp-requests").textContent).toBe("0");
     expect(h.byId("op-security-evidence").textContent).not.toContain("Enforced");
+  });
+  it("shows running and available Core builds, and disables unsafe service controls",async()=>{
+    const digest="a".repeat(64),next="b".repeat(64);
+    const dashboard={
+      observedAt:Date.now(),
+      checks:[
+        {service:"core",ready:true,ownerVerified:true,state:"active"},
+        {service:"mcp",ready:true,ownerVerified:true,state:"active"},
+      ],
+      services:[
+        {service:"core",state:"active",ownerPid:101,ownershipVerified:true,port:7888,
+          details:{runtimeVersion:"1.14.107",activeBuildDigest:digest,
+            sourceBuildDigest:next,buildFresh:true}},
+        {service:"mcp",state:"active",ownerPid:102,ownershipVerified:true,port:9227,
+          details:{reloadable:true,backendPid:103,backendReleaseDigest:null,
+            publicUrl:"https://stable.example/mcp"}},
+      ],
+    };
+    const h=mount({dashboard});await settle();
+    const rows=h.byId("op-service-list").children;
+    const core=rows[0],mcp=rows[1];
+    expect(core.children[0].children.some((x:any)=>x.textContent.includes("Built bbbbbbbbb ready"))).toBe(true);
+    const coreButtons=core.children[2].children;
+    expect(coreButtons.map((x:any)=>[x.textContent,x.disabled])).toEqual([
+      ["Start",true],["Restart",false],["Stop",true],["Update",false],
+    ]);
+    expect(mcp.children[0].children.some((x:any)=>x.textContent.includes("No verified staged release"))).toBe(true);
+    const mcpButtons=mcp.children[2].children;
+    expect(mcpButtons.map((x:any)=>[x.textContent,x.disabled])).toEqual([
+      ["Start",true],["Reload",false],["Stop",true],["Update",undefined],
+    ]);
+    expect(h.byId("op-version-summary").textContent).toContain("v1.14.104-rc.3");
+    expect(h.requests.some(x=>x.name==="lifecycle_console_request"&&
+      x.args.request.action==="restart")).toBe(false);
+  });
+  it("prepares MCP reload only with verified port and public URL; never stops MCP",async()=>{
+    const dashboard={observedAt:Date.now(),checks:[
+      {service:"mcp",ready:true,ownerVerified:true,state:"active"},
+    ],services:[{service:"mcp",ownerPid:102,port:9227,ownershipVerified:true,
+      state:"active",details:{reloadable:true,backendPid:103,
+        publicUrl:"https://stable.example/mcp"}}]};
+    const h=mount({dashboard,plan:{
+      service:"mcp",action:"reload",port:9227,
+      expectedOwnerPid:102,expectedPublicUrl:"https://stable.example/mcp",
+      operationId:"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    }});await settle();
+    const controls=h.byId("op-service-list").children[0].children[2].children;
+    expect(controls[0].disabled).toBe(true);
+    expect(controls[1].disabled).toBe(false);
+    expect(controls[2].disabled).toBe(true);
+    controls[1].events.click();await settle();
+    expect(h.requests.some(x=>x.name==="lifecycle_console_request"&&
+      x.args.request.action==="plan"&&x.args.request.service==="mcp"&&
+      x.args.request.targetAction==="reload"&&x.args.request.port===9227)).toBe(true);
+    expect(h.requests.some(x=>x.name==="lifecycle_console_request"&&
+      x.args.request.action==="reload")).toBe(false);
+    h.handlers.get("op-lifecycle-execute:click")?.();await settle();
+    expect(h.requests.some(x=>x.name==="lifecycle_console_request"&&
+      x.args.request.action==="reload"&&
+      x.args.request.expectedPublicUrl==="https://stable.example/mcp"&&
+      x.args.request.confirm===true)).toBe(true);
+  });
+  it("refuses unverified MCP owner and a stale Core update",async()=>{
+    const dashboard={checks:[
+      {service:"core",state:"active",ready:true,ownerVerified:true},
+      {service:"mcp",state:"unverified",ready:false,ownerVerified:false},
+    ],services:[
+      {service:"core",state:"active",ownershipVerified:true,ownerPid:101,
+        details:{runtimeVersion:"1.14.107",activeBuildDigest:"a".repeat(64),
+          sourceBuildDigest:"b".repeat(64),buildFresh:false}},
+      {service:"mcp",state:"unverified",ownershipVerified:false,port:9227,
+        details:{reloadable:true,publicUrl:"https://stable.example/mcp"}},
+    ]};
+    const h=mount({dashboard});await settle();
+    const core=h.byId("op-service-list").children[0].children[2].children;
+    const mcp=h.byId("op-service-list").children[1].children[2].children;
+    expect(core[3].disabled).toBe(true);
+    expect(mcp[1].disabled).toBe(true);
+    expect(h.requests.some(x=>x.name==="lifecycle_console_request"&&
+      x.args.request.action==="reload")).toBe(false);
   });
   it("offers an owner-bound lifecycle plan; never invokes the legacy restart",async()=>{
     const h=mount();await settle();
