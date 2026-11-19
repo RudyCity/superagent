@@ -518,8 +518,12 @@
     if (recent) {
       recent.replaceChildren();
       if (state.error) recent.append(empty(state.error));
-      else if (!active().length) recent.append(empty("You're all caught up. No current notifications."));
-      else prioritized().slice(0, 5).forEach((n) => recent.append(noteCard(n, true)));
+      else {
+        const categoryItems = prioritized().filter((n) => kindOf(n) === state.popoverCategory);
+        if (!categoryItems.length) recent.append(empty(
+          state.popoverCategory === "action" ? "No action-required notifications." : "No informational notifications."));
+        else categoryItems.slice(0, 5).forEach((n) => recent.append(noteCard(n, true)));
+      }
     }
     const inbox = $("notification-inbox-list");
     if (inbox) {
@@ -697,8 +701,16 @@
     if (state.busy) return;
     state.busy = true;
     render();
-    try { apply(await invoke(action, id)); }
-    catch {
+    try {
+      const result = await invoke(action, id);
+      if (!result || !Array.isArray(result.items)) throw new Error("Invalid native notification response");
+      apply(result);
+      // A successful native bulk receipt must be reflected by the bell and
+      // inbox immediately, even when action-required incidents stay unresolved.
+      if (action === "read-all" && state.unreadCount !== 0) {
+        state.error = "Some notifications remain unread. Refresh and retry.";
+      }
+    } catch {
       state.error = "Notification change could not be saved. Retry after checking Tray.";
     } finally { state.busy = false; render(); flushPendingReads(); }
   }
