@@ -64,7 +64,7 @@ Project grants never authorize unrelated MCP tools or other projects. OAuth scop
 
 ### Non-project MCP actions
 
-Service management, LAN/device controls and Desktop UI operations require separate **MCP Connection Controls** permission: request `{ projectId: "mcp-connection", capabilities: ["execute"], reason: "Operator-approved MCP operations" }` and approve it in SuperAgent Tray. It never grants project-file access, and native device/desktop approvals still apply.
+An MCP connection is authenticated and approved through the **OAuth connection flow**. This only authorizes connection and OAuth scopes; it grants **no tool execution**. For service management, LAN/device controls, and Desktop UI, first select a registered, enabled **local** project as the MCP session's active workspace and request `{ projectId: "superagent", capabilities: ["execute"], reason: "Operator-approved actions in this project" }` using the actual project ID. Approve in SuperAgent Tray > **Akses Proyek**. Only an approved, identity-bound Execute grant for the selected project can authorize these operations; any historical `mcp-connection` Execute grant is ignored. This remains subject to OAuth write scope, host permanent-file rules, and per-device/native consent. Remote or ambiguous project roots fail closed for these host-level operations.
 
 ## 3. Target each tool call by project ID
 
