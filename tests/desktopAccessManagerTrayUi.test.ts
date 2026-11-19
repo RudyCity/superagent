@@ -679,8 +679,10 @@ describe("independent MCP Connections and Project Access UI", () => {
     const now=Date.now();
     const label="ChatGPT - Laptop Rudy";
     const pending={...fixtures.requests[1],ownerConnectionName:label};
+    const approved={...fixtures.requests[0],requestId:"named-history-request",
+      status:"approved",ownerConnectionName:label};
     const ui=boot(true,{
-      ...fixtures,requests:[pending],
+      ...fixtures,requests:[pending,approved],
       connectedClients:{
         success:true,state:"verified",registrationState:"verified",observedAt:now,
         clients:[{sessionHandle:"ses_aaaaaaaaaaaa",principalHandle:"idh_1111111111111111",
@@ -700,6 +702,10 @@ describe("independent MCP Connections and Project Access UI", () => {
     const registered=ui.document.getElementById("access-mcp-registered-list")!;
     expect(registered.textContent).toContain(label);
     expect(registered.textContent).toContain("nama dari persetujuan OAuth");
+    const history=ui.document.getElementById("access-mcp-history-list")!;
+    expect(history.textContent).toContain(label);
+    expect(history.textContent).toContain("Proyek: ");
+    expect(history.textContent).toContain("Identitas: ");
     expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
       c.args?.action==="approve")).toBe(false);
   });
