@@ -1645,19 +1645,21 @@ mod tests {
             "bun.exe",None));
     }
     #[test]
-    fn explicit_manual_kill_allows_reviewed_owners_but_not_system_or_tray() {
+    fn force_selected_ignores_owner_kind_but_protects_system_and_tray() {
         let pid=std::process::id().saturating_add(5000);
         assert!(manual_process_allowed("managed",pid,"bun.exe"));
         assert!(manual_process_allowed("managed",pid,"powershell.exe"));
         assert!(manual_process_allowed("core-supervisor",pid,"node.exe"));
         assert!(manual_process_allowed("cloudflare",pid,"cloudflared.exe"));
-        assert!(!manual_process_allowed("cloudflare",pid,"bun.exe"));
+        assert!(manual_process_allowed("cloudflare",pid,"bun.exe"));
+        assert!(manual_process_allowed("agents",pid,"bun.exe"));
+        assert!(manual_process_allowed("process",pid,"python.exe"));
         assert!(!manual_process_allowed("managed",pid,"svchost.exe"));
         assert!(!manual_process_allowed("core",pid,"lsass.exe"));
+        assert!(!manual_process_allowed("process",pid,"systemd"));
         assert!(!manual_process_allowed("managed",pid,"superagent-tray.exe"));
         assert!(!manual_process_allowed("managed",std::process::id(),"bun.exe"));
         assert!(!manual_process_allowed("managed",4,"bun.exe"));
-        assert!(!manual_process_allowed("agents",pid,"bun.exe"));
     }
     #[test]
     fn manual_candidates_dedupe_shared_pid_and_enforce_birth_and_owner_kind() {
