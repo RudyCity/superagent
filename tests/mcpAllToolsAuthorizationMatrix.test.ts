@@ -290,6 +290,7 @@ describe("ALL active SuperAgent MCP tools: complete non-executing authorization 
       perToolNoScopeDirectDenials: active.length,
       dangerousDirectAndGatewayDenials: dangerous.length,
       uncertifiedHostDenials: uncertified.length,
+      uncertifiedToolNames: uncertified.map(tool => tool.name).sort(),
       workspaceCapabilityMetadata: workspaceTools.length,
       verifiedLevel: "in_process_contract_only",
       liveDeviceExecution: false,
