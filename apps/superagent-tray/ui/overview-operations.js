@@ -116,7 +116,7 @@
         (current||"Unverified build"),
         next:available?(available===current?"Built version is running":"Built "+available+" ready"):
           "No verified build metadata",
-        update:!!current&&!!available&&current!==available,
+        update:details.buildFresh===true&&!!current&&!!available&&current!==available,
         action:"restart"};
     }
     if(item.service==="tray"){
@@ -213,7 +213,7 @@
     renderPublishedStatus();
     try{
       const info=await readTelemetry("overview-release-check",()=>call("check_release_updates"));
-      if(!info||!/^v\\d+\\.\\d+\\.\\d+-rc\\.\\d+$/.test(info.tag||""))
+      if(!info||!/^v\d+\.\d+\.\d+-rc\.\d+$/.test(info.tag||""))
         throw Error("Official release metadata was not verified");
       state.published={tag:info.tag,version:info.releaseVersion,
         components:Array.isArray(info.componentItems)?info.componentItems:[]};
