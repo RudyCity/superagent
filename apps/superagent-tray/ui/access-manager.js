@@ -1566,15 +1566,20 @@
       row.dataset.requestId = String(req.requestId || "");
       const details = make("div", "access-mcp-history-detail");
       const head = make("div", "access-mcp-history-head");
-      const title = make("strong", "", humanMcpTarget(req));
+      // Show the OAuth connection display name first; the project is the grant target,
+      // not the identity of the MCP client that requested it.
+      const ownerName = typeof req.ownerConnectionName === "string" &&
+        req.ownerConnectionName.trim() ? req.ownerConnectionName.trim() : null;
+      const title = make("strong", "", ownerName || String(req.subject || "Identitas MCP tidak dikenal"));
       const state = make("span", "access-mcp-state access-mcp-state-" + String(req.status || "unknown"),
         ({ approved: "Disetujui", denied: "Ditolak", revoked: "Dicabut" })[req.status] || String(req.status || "Tidak diketahui"));
       head.append(title, state);
+      const project = make("div", "access-mcp-target", "Proyek: " + humanMcpTarget(req));
       const meta = make("span", "access-mcp-meta",
-        String(req.subject || "Identitas MCP") + " · " +
+        "Identitas: " + String(req.subject || "Tidak diketahui") + " · " +
         (Array.isArray(req.capabilities) ? req.capabilities.join(", ") : "") +
         " · " + new Date(req.decidedAt || req.createdAt || Date.now()).toLocaleString());
-      details.append(head, meta);
+      details.append(head, project, meta);
       row.append(details);
       if (req.status === "approved") {
         const revoke = action("Cabut Izin", "access-revoke", async () => {
