@@ -46,6 +46,156 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     }finally{await server.close();}
   });
 
+  it.each([false,true])("denies host-blocked Desktop UI before requesting Execute (gateway=%s)",async gateway=>{
+    prior=process.env.SUPERAGENT_CONFIG_DIR;
+    isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-host-first-"));
+    process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    fs.writeFileSync(path.join(isolated,"desktop-access-registry.json"),
+      JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
+    const identity={mode:"oauth" as const,subject:"host-before-connection",
+      scopes:["mcp:tools","mcp:tools:write"]};
+    const audits:string[]=[];
+    const activity:string[]=[];
+    const unsubscribe=onMcpActivity(event=>activity.push(JSON.stringify(event)));
+    const server=createSuperagentMcpServer({workspace:isolated,toolExposure:"gateway",authMode:"oauth",
+      getIdentity:()=>identity,allowDangerous:true,onToolCall:event=>audits.push(JSON.stringify(event))});
+    const sentinel="PRIVATE_WINDOW_AND_PROJECT_DO_NOT_ECHO";
+    try{
+      for(const args of [
+        {command:"inspect_window",pid:5344,nativeId:"123",title:sentinel},
+        {command:"open",pid:5344,nativeId:"123",allowInput:false},
+        {command:"inspect_security_prompts",limit:10,projectId:sentinel},
+      ]){
+        const described=await invoke(server,"superagent_tool_describe",{
+          name:"superagent_desktop_ui",checkArguments:args,
+        });
+        const preflight=JSON.parse(described.content[0].text).permissionPreflight;
+        expect(["HOST_FILE_POLICY_UNCERTIFIED","SCHEMA_INVALID"]).toContain(preflight.decisionCode);
+        const auditStart=audits.length,activityStart=activity.length;
+        let denied;
+        try{denied=await invoke(server,gateway?"superagent_tool_execute":"superagent_desktop_ui",
+          gateway?{name:"superagent_desktop_ui",arguments:args}:args);}
+        catch(error){denied={isError:true,content:[{text:error instanceof Error?error.message:String(error)}]};}
+        expect(denied.isError).toBe(true);
+        expect(JSON.stringify(denied)).toContain(preflight.decisionCode);
+        expect(JSON.stringify(denied)).not.toContain("MCP_APPROVAL_REQUIRED");
+        expect(listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID})).toHaveLength(0);
+        for(const output of [JSON.stringify(denied),JSON.stringify(audits.slice(auditStart)),JSON.stringify(activity.slice(activityStart))]){
+          expect(output).not.toContain(sentinel);
+          expect(output).not.toContain(isolated);
+        }
+      }
+    }finally{unsubscribe();await server.close();}
+  });
+
+  it.each(["readonly","safe_owner"] as const)("keeps host diagnostic state hidden from %s callers",async mode=>{
+    prior=process.env.SUPERAGENT_CONFIG_DIR;
+    isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-hidden-host-"));
+    process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    fs.writeFileSync(path.join(isolated,"desktop-access-registry.json"),
+      JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
+    const identity={mode:"oauth" as const,subject:"hidden-host-client",
+      scopes:mode==="readonly"?["mcp:tools"]:["mcp:tools","mcp:tools:write"]};
+    const server=createSuperagentMcpServer({toolExposure:"gateway",authMode:"oauth",getIdentity:()=>identity,
+      ...(mode==="safe_owner"?{lockSafeTools:true,allowDangerous:false,
+        allowedTools:["superagent_tool_describe","superagent_tool_execute","superagent_services_status"]}:{allowDangerous:true})});
+    try{
+      for(const gateway of [false,true]){
+        let response;
+        try{response=await invoke(server,gateway?"superagent_tool_execute":"superagent_desktop_ui",
+          gateway?{name:"superagent_desktop_ui",arguments:{command:"inspect_window"}}:{command:"inspect_window"});}
+        catch(error){response={isError:true,content:[{text:error instanceof Error?error.message:String(error)}]};}
+        expect(response.isError).toBe(true);
+        expect(JSON.stringify(response)).not.toMatch(/HOST_FILE_POLICY_UNCERTIFIED|SCHEMA_INVALID|permanent file policy|mcpConnectionExecute/);
+      }
+      expect(listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID})).toHaveLength(0);
+    }finally{await server.close();}
+  });
+
+  it.each([
+    {mode:"owner",gateway:false},{mode:"owner",gateway:true},
+    {mode:"scope",gateway:false},{mode:"scope",gateway:true},
+  ])("redacts unvalidated $mode denial metadata (gateway=$gateway)",async({mode,gateway})=>{
+    prior=process.env.SUPERAGENT_CONFIG_DIR;
+    isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-denial-private-"));
+    process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    const sentinel="PRIVATE_TITLE_PAYLOAD_AND_PROJECT_DO_NOT_ECHO";
+    const privatePath=path.join(isolated,sentinel);
+    const identity={mode:"oauth" as const,subject:"private-denial-client",
+      scopes:mode==="scope"?[]:["mcp:tools","mcp:tools:write"]};
+    const audits:any[]=[];
+    const activity:any[]=[];
+    const unsubscribe=onMcpActivity(event=>activity.push(event));
+    const server=createSuperagentMcpServer({workspace:isolated,toolExposure:"gateway",authMode:"oauth",
+      getIdentity:()=>identity,onToolCall:event=>audits.push(event),
+      ...(mode==="owner"?{allowedTools:["superagent_services_status"]}:{})});
+    const args={command:"inspect_window",title:sentinel,cwd:privatePath,projectId:privatePath,
+      payload:{text:sentinel}};
+    try{
+      let response;
+      try{response=await invoke(server,gateway?"superagent_tool_execute":"superagent_desktop_ui",
+        gateway?{name:"superagent_desktop_ui",arguments:args,cwd:privatePath,projectId:privatePath}:args);}
+      catch(error){response={isError:true,content:[{text:error instanceof Error?error.message:String(error)}]};}
+      expect(response.isError).toBe(true);
+      expect(audits).toHaveLength(1);
+      expect(activity).toHaveLength(1);
+      for(const output of [JSON.stringify(response),JSON.stringify(audits),JSON.stringify(activity)]){
+        expect(output).not.toContain(sentinel);
+        expect(output).not.toContain(isolated);
+      }
+      expect(audits[0]).toMatchObject({args:{},authorizationDecision:"denied",projectId:null,providerKind:null,
+        errorCode:mode==="owner"?"mcp_owner_allowlist_denied":"insufficient_oauth_scope"});
+      expect(audits[0].principalHash).toMatch(/^[a-f0-9]{16}$/);
+      expect(activity[0].args).toEqual({});
+      expect(activity[0].workspace).toBe("mcp://authorization");
+      expect(listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID})).toHaveLength(0);
+    }finally{unsubscribe();await server.close();}
+  });
+
+  it.each(["readonly","safe_owner"] as const)("rejects recursive gateways without exposing host state to %s callers",async mode=>{
+    prior=process.env.SUPERAGENT_CONFIG_DIR;
+    isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-recursive-private-"));
+    process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    const registry=path.join(isolated,"desktop-access-registry.json");
+    const sentinel="PRIVATE_RECURSIVE_TITLE_AND_PAYLOAD";
+    const privatePath=path.join(isolated,sentinel);
+    const audits:any[]=[];
+    const activity:any[]=[];
+    const unsubscribe=onMcpActivity(event=>activity.push(event));
+    const identity={mode:"oauth" as const,subject:"recursive-boundary-client",
+      scopes:mode==="readonly"?["mcp:tools"]:["mcp:tools","mcp:tools:write"]};
+    const server=createSuperagentMcpServer({workspace:isolated,toolExposure:"gateway",authMode:"oauth",
+      getIdentity:()=>identity,onToolCall:event=>audits.push(event),
+      ...(mode==="safe_owner"?{lockSafeTools:true,allowDangerous:false,
+        allowedTools:["superagent_tool_describe","superagent_tool_execute","superagent_services_status"]}:{})});
+    const outputs:string[]=[];
+    try{
+      for(const active of [false,true]){
+        if(active)fs.writeFileSync(registry,JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
+        const auditStart=audits.length,activityStart=activity.length;
+        const denied=await invoke(server,"superagent_tool_execute",{name:"superagent_tool_execute",
+          arguments:{name:"superagent_desktop_ui",arguments:{command:"inspect_window",title:sentinel,
+            cwd:privatePath,projectId:privatePath,payload:{text:sentinel}}}});
+        expect(denied.isError).toBe(true);
+        const output=JSON.stringify(denied);
+        outputs.push(output);
+        expect(output).not.toMatch(/HOST_FILE_POLICY_UNCERTIFIED|SCHEMA_INVALID|permanent file policy|mcpConnectionExecute/);
+        const newAudits=audits.slice(auditStart),newActivity=activity.slice(activityStart);
+        expect(newAudits).toHaveLength(1);
+        expect(newActivity).toHaveLength(1);
+        for(const serialized of [output,JSON.stringify(newAudits),JSON.stringify(newActivity)]){
+          expect(serialized).not.toContain(sentinel);
+          expect(serialized).not.toContain(isolated);
+        }
+        expect(newAudits[0]).toMatchObject({args:{},projectId:null,providerKind:null,
+          authorizationDecision:"denied",errorCode:"gateway_target_unavailable"});
+        expect(newActivity[0].workspace).toBe("mcp://authorization");
+        expect(listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID})).toHaveLength(0);
+      }
+      expect(outputs[0]).toBe(outputs[1]);
+    }finally{unsubscribe();await server.close();}
+  });
+
   it("preflights exact Desktop UI commands without executing or silently creating grants",async()=>{
     prior=process.env.SUPERAGENT_CONFIG_DIR;
     isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-v2-preflight-"));
@@ -260,7 +410,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       // ClientB with identical server cannot inherit clientA's grant.
       activeIdentity=clientB;
       await expect(invoke(server,"superagent_tool_execute",{
-        name:"superagent_desktop_ui",arguments:{command:"probe",title:secretTitle},
+        name:"superagent_desktop_ui",arguments:{command:"probe"},
       })).rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
 
       // ClientA loses grant between preflight and execute -> fails closed.
@@ -282,5 +432,48 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       expect(serializedTelemetry).not.toContain(secretTitle);
       expect(serializedTelemetry).not.toContain(secretPath);
     }finally{unsubscribe();await server.close();}
+  });
+
+  it("fails closed with a bounded store reason after preflight without leaking or creating an approval",async()=>{
+    prior=process.env.SUPERAGENT_CONFIG_DIR;
+    isolated=fs.mkdtempSync(path.join(os.tmpdir(),"sa-mcp-private-store-"));
+    process.env.SUPERAGENT_CONFIG_DIR=isolated;
+    fs.writeFileSync(path.join(isolated,"desktop-access-registry.json"),
+      JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
+    const identity={mode:"oauth" as const,subject:"store-recheck-writer",
+      scopes:["mcp:tools","mcp:tools:write"]};
+    grantProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,["execute"]);
+    const records:string[]=[];
+    const server=createSuperagentMcpServer({toolExposure:"gateway",authMode:"oauth",
+      getIdentity:()=>identity,allowDangerous:true,
+      onToolCall:(event)=>records.push(JSON.stringify(event))});
+    const sentinel="PRIVATE_TOKEN_JSON_MUST_NOT_ESCAPE";
+    const policy=path.join(isolated,"project-access.json");
+    try {
+      const preflight=await invoke(server,"superagent_tool_describe",{
+        name:"superagent_desktop_ui",checkArguments:{command:"probe"},
+      });
+      expect(JSON.parse(preflight.content[0].text).permissionPreflight.decisionCode)
+        .toBe("ALLOWED_TO_ATTEMPT");
+      for(const invalid of ["{"+sentinel,JSON.stringify({schemaVersion:1,grants:[{secret:sentinel}]})]){
+        fs.writeFileSync(policy,invalid);
+        for(const gateway of [false,true]){
+          let failure="";
+          try {
+            await invoke(server,gateway?"superagent_tool_execute":"superagent_desktop_ui",
+              gateway?{name:"superagent_desktop_ui",arguments:{command:"probe"}}:{command:"probe"});
+          }catch(error){failure=error instanceof Error?error.message:String(error);}
+          expect(failure).toContain("POLICY_STORE_UNAVAILABLE");
+          expect(failure).not.toContain(isolated);
+          expect(failure).not.toContain(sentinel);
+          expect(failure).not.toContain("MCP_APPROVAL_REQUIRED");
+        }
+        expect(fs.readFileSync(policy,"utf8")).toBe(invalid);
+        expect(listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID})).toHaveLength(0);
+      }
+      expect(JSON.stringify(records)).not.toContain(sentinel);
+      expect(JSON.stringify(records)).not.toContain(isolated);
+      expect(records.some(record=>record.includes("policy_store_unavailable"))).toBe(true);
+    }finally{await server.close();}
   });
 });

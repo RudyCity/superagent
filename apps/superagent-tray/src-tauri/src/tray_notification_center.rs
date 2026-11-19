@@ -39,6 +39,8 @@ struct Entry {
     occurrences: u32,
     #[serde(default)]
     last_seen_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    navigation_revision: Option<String>,
     #[serde(default)]
     snoozed_until: Option<u64>,
     #[serde(default)]
@@ -66,6 +68,9 @@ fn audit(ledger: &mut Ledger, action: &str, item_id: &str, source: &str) {
 fn kind_of(item: &Entry) -> &'static str {
     if item.resolved_at.is_none() && item.severity != "info" { "action" } else { "information" }
 }
+fn occurred_since(item: &Entry, since: u64) -> bool {
+    item.last_seen_at.unwrap_or(item.created_at) >= since
+}
 fn action_status(item: &Entry) -> &'static str {
     if item.expired_at.is_some() { "expired" }
     else if item.resolved_at.is_some() { "resolved" }
@@ -76,6 +81,33 @@ fn managed(item: &Entry) -> bool {
     item.id.starts_with("mcp-pending:") || item.id.starts_with("health:")
 }
 fn one_occurrence() -> u32 { 1 }
+
+/// Independent from occurrence timestamps: an explicit Mark unread wins over
+/// an older in-flight navigation ACK, even within the same clock tick.
+fn advance_navigation_revision(entry: &mut Entry) {
+    entry.navigation_revision = Some(uuid::Uuid::new_v4().to_string());
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NavigationTarget {
+    pub source: String,
+    profile: std::path::PathBuf,
+    created_at: u64,
+    revision: Option<String>,
+    occurrences: u32,
+    device_id: Option<String>,
+}
+
+fn navigation_target_for_entry(dir: &Path, entry: &Entry) -> Result<NavigationTarget, String> {
+    Ok(NavigationTarget {
+        source: entry.source.clone(),
+        profile: fs::canonicalize(dir).map_err(|_| "Notification profile unavailable")?,
+        created_at: entry.created_at,
+        revision: entry.navigation_revision.clone(),
+        occurrences: entry.occurrences,
+        device_id: entry.device_id.clone(),
+    })
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -197,7 +229,8 @@ fn read(dir: &Path) -> Result<Ledger, String> {
             i.title.len() > 160 || i.body.len() > 320 || i.id.chars().any(char::is_control) ||
             !SOURCES.contains(&i.source.as_str()) ||
             !["info", "warning", "critical"].contains(&i.severity.as_str()) ||
-            i.occurrences == 0 ||
+            i.occurrences == 0 || i.navigation_revision.as_ref()
+                .is_some_and(|revision| uuid::Uuid::parse_str(revision).is_err()) ||
             i.device_id.as_ref().is_some_and(|d| d.len() > 64 || d.is_empty() ||
                 !d.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b)))) ||
         ledger.history.len() > 120 ||
@@ -285,8 +318,7 @@ fn snapshot(ledger: &Ledger) -> Value {
         value["isSnoozed"] = json!(item.snoozed_until.is_some_and(|until| until > now));
         value
     }).collect();
-    let recent = ledger.items.iter().filter(|n|
-        n.last_seen_at.unwrap_or(n.created_at) >= now.saturating_sub(86_400_000));
+    let recent = ledger.items.iter().filter(|n| occurred_since(n, now.saturating_sub(86_400_000)));
     let (mut last_day_actions, mut last_day_information) = (0, 0);
     for item in recent {
         if kind_of(item) == "action" { last_day_actions += 1; }
@@ -333,6 +365,7 @@ pub fn publish(
         item.read_at = None;
         item.archived_at = None;
         item.last_seen_at = Some(now);
+        advance_navigation_revision(item);
         item.occurrences = item.occurrences.saturating_add(1);
         audit(&mut ledger, "reopened", id, source);
         write(dir, &mut ledger)?;
@@ -346,6 +379,7 @@ pub fn publish(
         title: trim(title, 80), body: trim(body, 160), created_at: now,
         read_at: None, archived_at: None, acknowledged_at: None,
         resolved_at: None, occurrences: 1, last_seen_at: None,
+        navigation_revision: Some(uuid::Uuid::new_v4().to_string()),
         snoozed_until: None, action_started_at: None, expired_at: None,
         device_id: Some("local".into()),
     });
@@ -359,6 +393,7 @@ pub fn resolve(dir: &Path, id: &str) -> Result<bool, String> {
     let Some(entry) = ledger.items.iter_mut().find(|n| n.id == id) else { return Ok(false); };
     if entry.resolved_at.is_some() { return Ok(false); }
     entry.resolved_at = Some(now_ms());
+    advance_navigation_revision(entry);
     let source = entry.source.clone();
     audit(&mut ledger, "auto_resolved", id, &source);
     write(dir, &mut ledger)?;
@@ -377,6 +412,7 @@ pub fn resolve_missing(
     for item in &mut ledger.items {
         if item.id.starts_with(prefix) && item.resolved_at.is_none() && !active.contains(&item.id) {
             item.resolved_at = Some(now);
+            advance_navigation_revision(item);
             completed.push((item.id.clone(), item.source.clone()));
         }
     }
@@ -386,15 +422,35 @@ pub fn resolve_missing(
 }
 /// Only native-published, currently active inbox items are eligible for a
 /// bounded navigation ticket. This never exposes title/body or file paths.
-pub fn navigation_source(dir: &Path, id: &str) -> Result<Option<String>, String> {
+pub fn navigation_target(dir: &Path, id: &str) -> Result<Option<NavigationTarget>, String> {
     if id.is_empty() || id.len() > 180 || id.chars().any(char::is_control) {
         return Ok(None);
     }
     let _guard=LEDGER_LOCK.lock().map_err(|_| "Notification store locked")?;
     let ledger=read(dir)?;
-    Ok(ledger.items.iter().find(|entry|
+    ledger.items.iter().find(|entry|
         entry.id == id && entry.archived_at.is_none() && entry.resolved_at.is_none())
-        .map(|entry|entry.source.clone()))
+        .map(|entry| navigation_target_for_entry(dir, entry)).transpose()
+}
+/// Revalidate and persist under the same ledger lock. A backend await must not
+/// read a replacement occurrence, a reopened item or an explicit Mark unread.
+pub fn mark_navigation_read(dir: &Path, id: &str, target: &NavigationTarget,
+    expires_at: std::time::Instant) -> Result<bool, String> {
+    let _guard = LEDGER_LOCK.lock().map_err(|_| "Notification store locked")?;
+    let mut ledger = read(dir)?;
+    let Some(entry) = ledger.items.iter_mut().find(|entry|
+        entry.id == id && entry.archived_at.is_none() && entry.resolved_at.is_none())
+        else { return Ok(false); };
+    if navigation_target_for_entry(dir, entry)? != *target ||
+        std::time::Instant::now() >= expires_at { return Ok(false); }
+    if entry.read_at.is_none() {
+        entry.read_at = Some(now_ms());
+        advance_navigation_revision(entry);
+        let source = entry.source.clone();
+        audit(&mut ledger, "read", id, &source);
+        write(dir, &mut ledger)?;
+    }
+    Ok(true)
 }
 /// Only an authenticated native producer may associate a notification with a
 /// verified remote device. Existing local incidents have deviceId=local.
@@ -412,6 +468,7 @@ pub fn publish_for_device(
         let mut ledger = read(dir)?;
         if let Some(entry) = ledger.items.iter_mut().find(|entry| entry.id == id) {
             entry.device_id = Some(device_id.into());
+            advance_navigation_revision(entry);
         }
         write(dir, &mut ledger)?;
     }
@@ -427,6 +484,7 @@ pub fn expire_verified(dir: &Path, id: &str) -> Result<bool, String> {
     let now = now_ms();
     entry.resolved_at = Some(now);
     entry.expired_at = Some(now);
+    advance_navigation_revision(entry);
     let source = entry.source.clone();
     audit(&mut ledger, "expired_verified", id, &source);
     write(dir, &mut ledger)?;
@@ -447,9 +505,9 @@ pub fn take_daily_digest(dir: &Path) -> Result<Option<(usize, usize)>, String> {
     }
     let since = now.saturating_sub(86_400_000);
     let action = ledger.items.iter().filter(|n|
-        n.created_at >= since && kind_of(n) == "action").count();
+        occurred_since(n, since) && kind_of(n) == "action").count();
     let information = ledger.items.iter().filter(|n|
-        n.created_at >= since && kind_of(n) == "information").count();
+        occurred_since(n, since) && kind_of(n) == "information").count();
     ledger.last_digest_at = Some(now);
     ledger.preferences.digest_next_at = Some(now.saturating_add(86_400_000));
     write(dir, &mut ledger)?;
@@ -534,16 +592,20 @@ pub fn perform(dir: &Path, action: &str, id: Option<&str>) -> Result<Value, Stri
             },
             _ => {},
         }
+        if changed || action == "unread" {
+            advance_navigation_revision(item);
+            changed = true;
+        }
         if changed { audit(&mut ledger, action, key, &source); }
     } else {
         for item in &mut ledger.items {
             if item.archived_at.is_some() { continue; }
             if action == "read-all" && item.read_at.is_none() {
-                item.read_at = Some(now); changed = true;
+                item.read_at = Some(now); advance_navigation_revision(item); changed = true;
             } else if action == "archive-read" && item.read_at.is_some() &&
                 (kind_of(item) == "information" || item.resolved_at.is_some()) {
                 // Bulk housekeeping must not silently hide active required actions.
-                item.archived_at = Some(now); changed = true;
+                item.archived_at = Some(now); advance_navigation_revision(item); changed = true;
             }
         }
     }
@@ -641,7 +703,7 @@ mod tests {
                 title: '"'.to_string().repeat(160), body: '\\'.to_string().repeat(320),
                 created_at: now, read_at: None, archived_at: None,
                 acknowledged_at: None, resolved_at: None,
-                occurrences: 1, last_seen_at: None,
+                occurrences: 1, last_seen_at: None, navigation_revision: None,
                 snoozed_until: None, action_started_at: None,
                 expired_at: None, device_id: Some("local".into()),
             });

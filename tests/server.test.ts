@@ -259,8 +259,10 @@ describe("GET /api/workspaces/catalog", () => {
 
 describe("M6 project browser operator lifecycle", () => {
   it("keeps registration separate from identity-scoped authorization", async () => {
-    const projectDir = path.join(path.dirname(process.cwd()), `sa-browser-route-${Date.now()}`);
+    const projectDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "sa-browser-route-")));
     fs.mkdirSync(path.join(projectDir, ".git"), { recursive: true });
+    const previousTempDiscovery = process.env.SUPERAGENT_ALLOW_TEMP_WORKSPACE;
+    process.env.SUPERAGENT_ALLOW_TEMP_WORKSPACE = "1";
 
     const { saveWorkspaceToDb } = await import("../src/core/storage/historyDb.js");
     const { setFullYoloMode } = await import("../src/core/permissions.js");
@@ -349,25 +351,40 @@ describe("M6 project browser operator lifecycle", () => {
       expect(revoked.status).toBe(200);
       expect(revoked.body.revoked).toBe(true);
 
-      await postJSON(port, "/api/projects/browser/grant", {
+      const regranted = await postJSON(port, "/api/projects/browser/grant", {
         projectId: "browser-route-project",
         identityHandle: identity.identityHandle,
         capabilities: ["read", "git"],
       });
+      expect(regranted.status).toBe(200);
       const disabled = await postJSON(port, "/api/projects/browser/disable", {
         projectId: "browser-route-project",
         enabled: false,
       });
       expect(disabled.status).toBe(200);
       expect(disabled.body.allGrantsRevoked).toBe(true);
-      expect(disabled.body.revokedGrantsCount).toBeGreaterThanOrEqual(1);
+      expect(disabled.body.revokedGrantsCount).toBe(1);
+      const { hasProjectAccess } = await import("../src/core/project/projectAccessPolicy.js");
+      expect(hasProjectAccess({mode:"oauth",subject:"browser-route-client"},"browser-route-project","read")).toBe(false);
+      expect(hasProjectAccess({mode:"oauth",subject:"browser-route-client"},"browser-route-project","git")).toBe(false);
 
+      expect((await postJSON(port, "/api/projects/browser/disable", {
+        projectId: "browser-route-project", enabled: true,
+      })).status).toBe(200);
+      expect((await postJSON(port, "/api/projects/browser/grant", {
+        projectId: "browser-route-project", identityHandle: identity.identityHandle, capabilities: ["read"],
+      })).status).toBe(200);
+      expect(hasProjectAccess({mode:"oauth",subject:"browser-route-client"},"browser-route-project","read")).toBe(true);
       const removed = await deleteJSON(port, "/api/projects/browser/browser-route-project");
       expect(removed.status).toBe(200);
       expect(removed.body.filesDeleted).toBe(false);
+      expect(removed.body.revokedGrants).toBe(1);
+      expect(hasProjectAccess({mode:"oauth",subject:"browser-route-client"},"browser-route-project","read")).toBe(false);
     } finally {
       setFullYoloMode(false);
       clearMcpIdentityPresence();
+      if (previousTempDiscovery === undefined) delete process.env.SUPERAGENT_ALLOW_TEMP_WORKSPACE;
+      else process.env.SUPERAGENT_ALLOW_TEMP_WORKSPACE = previousTempDiscovery;
       try { fs.rmSync(projectDir, { recursive: true, force: true }); } catch {}
     }
   }, 30000);

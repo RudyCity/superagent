@@ -29,10 +29,22 @@ fn serve(listener: TcpListener, expected_token: String, status: u16, body: Value
                 Err(error) => panic!("mock owner accept failed: {}", error),
             }
         };
-        socket.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
-        let mut request = [0u8; 4096];
-        let count = socket.read(&mut request).unwrap();
-        let request = String::from_utf8_lossy(&request[..count]);
+        // Windows can inherit the listener's nonblocking mode. Wait for a
+        // complete bounded HTTP header rather than racing the first packet.
+        socket.set_nonblocking(false).unwrap();
+        let read_deadline = Instant::now() + Duration::from_secs(3);
+        let mut request = Vec::new();
+        while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+            assert!(Instant::now() < read_deadline, "mock owner request timed out");
+            socket.set_read_timeout(Some(read_deadline.saturating_duration_since(Instant::now())
+                .max(Duration::from_millis(1)))).unwrap();
+            let mut chunk = [0u8; 4096];
+            let count = socket.read(&mut chunk).expect("mock owner request unavailable");
+            assert!(count > 0, "mock owner request closed before its header");
+            request.extend_from_slice(&chunk[..count]);
+            assert!(request.len() <= 16384, "mock owner request too large");
+        }
+        let request = String::from_utf8_lossy(&request);
         assert!(request.contains(&format!("Bearer {}", expected_token)));
         let body = body.to_string();
         socket.write_all(format!("HTTP/1.1 {} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", status, body.len(), body).as_bytes()).unwrap();

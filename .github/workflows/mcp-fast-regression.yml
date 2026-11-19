@@ -4,12 +4,15 @@ on:
     branches: [main]
     paths:
       - "src/core/mcp/**"
+      - "package.json"
+      - "bun.lock"
       - "src/core/tools/mcpTools.ts"
       - "src/app.tsx" # CLI StatusBar uses the same Core build entrypoint
       - "scripts/mcp-tool-policy-live-verify.ts"
       - "scripts/report-mcp-policy-readiness.ts"
       - "src/core/runtime/mcpManagedTunnelOwner.ts"
       - "src/core/runtime/serviceManager.ts"
+      - "src/core/runtime/serviceReadPolicy.ts"
       - "src/core/runtime/serviceOwnerAttestation.ts"
       - "src/core/runtime/checkoutRevision.ts"
       - "src/core/desktopUi/liveActivationGate.ts"
@@ -54,9 +57,19 @@ on:
       - "apps/superagent-tray/ui/runtime.js"
       - "tests/projectOperatorProof.test.ts"
       - "apps/superagent-tray/ui/access-manager.js"
-      - "apps/superagent-tray/src-tauri/src/main.rs"
+      - "apps/superagent-tray/ui/notifications.js"
+      - "apps/superagent-tray/ui/app.js"
+      - "apps/superagent-tray/src-tauri/src/**"
+      - "apps/superagent-tray/src-tauri/build.rs"
+      - "apps/superagent-tray/src-tauri/Cargo.toml"
+      - "apps/superagent-tray/src-tauri/Cargo.lock"
+      - "apps/superagent-tray/src-tauri/tauri.conf.json"
       - "src/serverRoutes.ts"
       - "src/core/project/projectOperator*.ts"
+      - "src/core/project/projectAccessPolicy.ts"
+      - "src/core/project/projectAccessRequestStore.ts"
+      - "src/core/project/projectRegistry.ts"
+      - "src/core/project/projectSecurityResources.ts"
       - "apps/superagent-tray/ui/access-manager.css"
       - "apps/superagent-tray/ui/overview-operations.js"
       - "apps/superagent-tray/ui/index.html"
@@ -65,12 +78,15 @@ on:
   pull_request:
     paths:
       - "src/core/mcp/**"
+      - "package.json"
+      - "bun.lock"
       - "src/core/tools/mcpTools.ts"
       - "src/app.tsx" # CLI StatusBar uses the same Core build entrypoint
       - "scripts/mcp-tool-policy-live-verify.ts"
       - "scripts/report-mcp-policy-readiness.ts"
       - "src/core/runtime/mcpManagedTunnelOwner.ts"
       - "src/core/runtime/serviceManager.ts"
+      - "src/core/runtime/serviceReadPolicy.ts"
       - "src/core/runtime/serviceOwnerAttestation.ts"
       - "src/core/runtime/checkoutRevision.ts"
       - "src/core/desktopUi/liveActivationGate.ts"
@@ -115,9 +131,19 @@ on:
       - "apps/superagent-tray/ui/runtime.js"
       - "tests/projectOperatorProof.test.ts"
       - "apps/superagent-tray/ui/access-manager.js"
-      - "apps/superagent-tray/src-tauri/src/main.rs"
+      - "apps/superagent-tray/ui/notifications.js"
+      - "apps/superagent-tray/ui/app.js"
+      - "apps/superagent-tray/src-tauri/src/**"
+      - "apps/superagent-tray/src-tauri/build.rs"
+      - "apps/superagent-tray/src-tauri/Cargo.toml"
+      - "apps/superagent-tray/src-tauri/Cargo.lock"
+      - "apps/superagent-tray/src-tauri/tauri.conf.json"
       - "src/serverRoutes.ts"
       - "src/core/project/projectOperator*.ts"
+      - "src/core/project/projectAccessPolicy.ts"
+      - "src/core/project/projectAccessRequestStore.ts"
+      - "src/core/project/projectRegistry.ts"
+      - "src/core/project/projectSecurityResources.ts"
       - "apps/superagent-tray/ui/access-manager.css"
       - "apps/superagent-tray/ui/overview-operations.js"
       - "apps/superagent-tray/ui/index.html"
@@ -162,6 +188,10 @@ jobs:
             tests/mcpPolicyReadinessReport.test.ts \
             tests/mcpApprovalAndFilePolicy.test.ts \
             tests/mcpPermissionDecision.test.ts \
+            tests/mcpServicePermissionParity.test.ts \
+            tests/mcpPolicyStorePrivacy.test.ts \
+            tests/mcpDefaultProjectAuthorization.test.ts \
+            tests/mcpReservedProjectScope.test.ts \
             tests/serviceOwnerAttestation.test.ts \
             tests/checkoutRevision.test.ts \
             tests/serviceManagerMcp.test.ts \
@@ -214,10 +244,19 @@ jobs:
           bun --bun x vitest run --maxWorkers=2
           tests/mcpApprovalAndFilePolicy.test.ts
           tests/mcpPermissionDecision.test.ts
+          tests/mcpServicePermissionParity.test.ts
+          tests/mcpPolicyStorePrivacy.test.ts
+          tests/mcpDefaultProjectAuthorization.test.ts
+          tests/mcpReservedProjectScope.test.ts
           tests/serviceOwnerAttestation.test.ts
           tests/checkoutRevision.test.ts
           tests/serviceManagerMcp.test.ts
           tests/mcpOAuthStore.test.ts
+          tests/mcpOAuthRoutes.test.ts
+          tests/mcpToolGateway.test.ts
+          tests/mcpSessionRegistry.test.ts
+          tests/mcpConnectedClientRegistry.test.ts
+          tests/desktopAccessManagerTrayUi.test.ts
           tests/desktopTrayNotificationsUi.test.ts
           tests/desktopTrayFeedback.test.ts
           tests/desktop-ui-integration/persistent-access-policy.test.ts

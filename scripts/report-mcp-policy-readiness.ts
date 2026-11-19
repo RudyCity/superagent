@@ -5,8 +5,9 @@
 import { buildMcpPolicyReadinessReport } from "../src/core/mcp/mcpPolicyReadinessReport.js";
 
 const report = buildMcpPolicyReadinessReport();
-console.log(JSON.stringify({
-  ...report,
-  unsafeToolNames: report.unsafeToolNames,
-}, null, 2));
+await new Promise<void>((resolve, reject) => {
+  process.stdout.write(JSON.stringify(report, null, 2) + "\n",
+    error => error ? reject(error) : resolve());
+});
+// Catalog imports also start runtime timers; only this completed report exits.
 process.exit(report.classificationComplete ? 0 : 2);

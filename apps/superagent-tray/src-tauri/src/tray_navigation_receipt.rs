@@ -15,6 +15,7 @@ pub struct Ticket {
     pub incident_id: String,
     pub route: &'static str,
     pub pending: Option<(String, &'static str)>,
+    target: tray_notification_center::NavigationTarget,
     issued: Instant,
 }
 static TICKETS: OnceLock<Mutex<HashMap<String, Ticket>>> = OnceLock::new();
@@ -90,16 +91,16 @@ fn fixed_route(source: &str, id: &str) -> Option<(&'static str, Option<(String, 
     Some((route, None))
 }
 pub fn issue(dir: &Path, incident_id: &str) -> Result<Value,String> {
-    let source = tray_notification_center::navigation_source(dir, incident_id)?
+    let target = tray_notification_center::navigation_target(dir, incident_id)?
         .ok_or("NAVIGATION_TARGET_EXPIRED")?;
-    let (route,pending) = fixed_route(&source,incident_id)
+    let (route,pending) = fixed_route(&target.source,incident_id)
         .ok_or("NAVIGATION_TARGET_UNSUPPORTED")?;
     let nonce = Uuid::new_v4().to_string();
     let mut map = tickets().lock().map_err(|_| "NAVIGATION_TICKETS_UNAVAILABLE")?;
     map.retain(|_,entry| entry.issued.elapsed() < TTL);
     if map.len() >= MAX_TICKETS { return Err("NAVIGATION_CAPACITY_REACHED".into()); }
     map.insert(nonce.clone(), Ticket {
-        incident_id:incident_id.to_owned(), route, pending, issued:Instant::now(),
+        incident_id:incident_id.to_owned(), route, pending, target, issued:Instant::now(),
     });
     Ok(json!({"status":"ISSUED","nonce":nonce,"route":route,
         "incidentHash":hash_id(incident_id),"expiresInMs":TTL.as_millis(),
@@ -114,15 +115,21 @@ pub fn consume(dir:&Path, incident_id:&str, nonce:&str, route:&str,
     let Some(entry)=entry else {return Ok(None)};
     if entry.issued.elapsed()>=TTL || entry.incident_id!=incident_id ||
         entry.route!=route || !target_found {return Ok(None)}
-    let source=tray_notification_center::navigation_source(dir,incident_id)?;
-    let Some(source)=source else {return Ok(None)};
-    if fixed_route(&source,incident_id).map(|(r,_)|r)!=Some(entry.route) {
+    let target=tray_notification_center::navigation_target(dir,incident_id)?;
+    let Some(target)=target else {return Ok(None)};
+    if target != entry.target ||
+        fixed_route(&target.source,incident_id).map(|(r,_)|r)!=Some(entry.route) {
         return Ok(None);
     }
     Ok(Some(entry))
 }
-pub fn receipt(incident_id:&str,route:&str,status:&str)->Value{
-    let target_tab = route.split_once(':').map(|(_, tab)| tab);
+pub fn complete(dir: &Path, ticket: &Ticket) -> Result<bool, String> {
+    if ticket.issued.elapsed() >= TTL { return Ok(false); }
+    tray_notification_center::mark_navigation_read(dir, &ticket.incident_id, &ticket.target,
+        ticket.issued + TTL)
+}
+pub fn receipt(incident_id:&str,route:Option<&str>,status:&str)->Value{
+    let target_tab = route.and_then(|r| r.split_once(':')).map(|(_, tab)| tab);
     json!({
         "status": status,
         "route": route,
@@ -134,6 +141,9 @@ pub fn receipt(incident_id:&str,route:&str,status:&str)->Value{
         "sourceBuildSha": option_env!("SUPERAGENT_TRAY_SOURCE_REVISION"),
     })
 }
+#[cfg(test)]
+#[path = "../../../../tests/tray_navigation_receipt_security.rs"]
+mod security_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,12 +188,15 @@ mod tests {
             "security:connections",true).unwrap().is_some());
         assert!(consume(&dir,"mcp-pending:connections:req_valid",nonce,
             "security:connections",true).unwrap().is_none());
-        let delivered = receipt("mcp-pending:connections:req_valid", "security:connections", "DELIVERED");
+        let delivered = receipt("mcp-pending:connections:req_valid", Some("security:connections"), "DELIVERED");
         assert_eq!(delivered["targetFound"], Value::Bool(true));
         assert_eq!(delivered["targetTab"], Value::String("connections".into()));
         assert_eq!(delivered["webviewDigest"].as_str().map(str::len), Some(64));
-        let not_delivered = receipt("mcp-pending:connections:req_valid", "security:connections", "NOT_DELIVERED");
+        let not_delivered = receipt("mcp-pending:connections:req_valid", Some("security:connections"), "NOT_DELIVERED");
         assert_eq!(not_delivered["targetFound"], Value::Bool(false));
+        let none_delivered = receipt("mcp-pending:connections:req_valid", None, "NOT_DELIVERED");
+        assert_eq!(none_delivered["targetFound"], Value::Bool(false));
+        assert_eq!(none_delivered["targetTab"], Value::Null);
         tray_notification_center::resolve(&dir,"mcp-pending:connections:req_valid").unwrap();
         assert!(issue(&dir,"mcp-pending:connections:req_valid").is_err());
         let _=std::fs::remove_dir_all(dir);

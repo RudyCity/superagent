@@ -8,6 +8,9 @@ import {
 } from "../src/core/mcp/tools/workspaceChainMcpTools.js";
 import { setFullYoloMode } from "../src/core/permissions.js";
 import { getWorkspaceChains } from "../src/core/workspace/WorkspaceChainConfig.js";
+import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
+import { registerProject } from "../src/core/project/projectRegistry.js";
+import { grantProjectAccess } from "../src/core/project/projectAccessPolicy.js";
 
 let configDir: string;
 let previousConfigDir: string | undefined;
@@ -43,14 +46,24 @@ describe("Workspace Chain MCP adapter", () => {
     expect(JSON.parse(textOf(result))).toMatchObject({ count: 0, chains: [] });
   });
 
-  it("requires Full YOLO for chain mutation and cross-workspace execution", async () => {
-    const manage = await dispatchWorkspaceChainMcpTool("superagent_manage_workspace_chain", { action: "list" }, process.cwd());
-    expect(manage.isError).toBe(true);
-    expect(textOf(manage)).toContain("Full YOLO");
-
-    const exec = await dispatchWorkspaceChainMcpTool("superagent_cross_workspace_exec", { operation: "exec", nodeId: "main", command: "echo unsafe" }, process.cwd());
-    expect(exec.isError).toBe(true);
-    expect(textOf(exec)).toContain("Full YOLO");
+  it("requires an explicit chain capability regardless of chat Full YOLO", async () => {
+    const identity={mode:"oauth" as const,subject:"chain-fixture",scopes:["mcp:tools","mcp:tools:write"]};
+    registerProject({id:"chain-fixture",name:"Chain fixture",type:"local",root:configDir});
+    const server=createSuperagentMcpServer({workspace:configDir,authMode:"oauth",getIdentity:()=>identity});
+    const handler=(server as any)._requestHandlers.get("tools/call");
+    const invoke=()=>handler({method:"tools/call",params:{
+      name:"superagent_manage_workspace_chain",arguments:{action:"list",projectId:"chain-fixture"},
+    }});
+    try {
+      for(const chatFull of [false,true]) {
+        setFullYoloMode(chatFull);
+        await expect(invoke()).rejects.toThrow(/PROJECT_GRANT_MISSING/);
+      }
+      setFullYoloMode(false);
+      grantProjectAccess(identity,"chain-fixture",["chain"]);
+      expect((await invoke()).isError).not.toBe(true);
+      expect(getWorkspaceChains(configDir,false)).toEqual([]);
+    } finally { await server.close(); }
   });
 
   it("rejects inline SSH passwords before they can be persisted", async () => {

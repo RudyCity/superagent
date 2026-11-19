@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleServerRoute } from "../src/serverRoutes.js";
 import { ensureServerAuthToken } from "../src/core/utils/serverSecurity.js";
 import { controlChromeCdpTool } from "../src/core/tools/chromeCdpTools.js";
+import * as delegateObservation from "../src/core/tools/safeDelegateChromeObservation.js";
 import { controlChromeVisionTool } from "../src/core/tools/chromeVisionTools.js";
 import { delegateReadChatTool, delegateSendMessageTool } from "../src/core/tools/delegateTools.js";
 import {
@@ -128,7 +129,7 @@ describe("Core Delegate forwarded host dispatch signed identity boundary", () =>
   it("allows a legitimate signed browser request exactly once in an authenticated ALS scope", async () => {
     const body = signed("superagent_chrome_cdp", base);
     let observed: string | undefined;
-    const execute = vi.spyOn(controlChromeCdpTool, "execute")
+    const execute = vi.spyOn(delegateObservation, "safeDelegateChromeObservation")
       .mockImplementation(async () => {
         await Promise.resolve();
         observed = getDelegateMcpPrincipalId();
@@ -177,7 +178,7 @@ describe("Core Delegate forwarded host dispatch signed identity boundary", () =>
 
   it("consumes signed nonce before dispatch and rejects subsequent replay with 409", async () => {
     const body = signed("superagent_chrome_cdp", base);
-    const execute = vi.spyOn(controlChromeCdpTool, "execute").mockResolvedValue("once");
+    const execute = vi.spyOn(delegateObservation, "safeDelegateChromeObservation").mockResolvedValue("once");
     const first = await call(body);
     const duplicate = await call(body);
     expect([first.status, duplicate.status]).toEqual([200, 409]);
@@ -189,7 +190,7 @@ describe("Core Delegate forwarded host dispatch signed identity boundary", () =>
 
   it("blocks concurrent duplicate requests without sending a second browser operation", async () => {
     const body = signed("superagent_chrome_cdp", base);
-    const execute = vi.spyOn(controlChromeCdpTool, "execute").mockResolvedValue("once");
+    const execute = vi.spyOn(delegateObservation, "safeDelegateChromeObservation").mockResolvedValue("once");
     const results = await Promise.all([call(body), call(body)]);
     expect(results.map(r => r.status).filter(status => status === 200)).toHaveLength(1);
     expect(results.map(r => r.status).filter(status => status === 403 || status === 409)).toHaveLength(1);
@@ -263,7 +264,7 @@ describe("Core Delegate forwarded host dispatch signed identity boundary", () =>
 
   it("never returns tool errors containing secrets, tokens, URLs or private messages", async () => {
     const secret = "PRIVATE-SESSION-TOKEN-12345";
-    const execute = vi.spyOn(controlChromeCdpTool, "execute")
+    const execute = vi.spyOn(delegateObservation, "safeDelegateChromeObservation")
       .mockResolvedValue("control_chrome_cdp failed: token=" + secret + " https://private.example/secret");
     const result = await call(signed("superagent_chrome_cdp", base));
     expect(result.status).toBe(409);

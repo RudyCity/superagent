@@ -15,6 +15,10 @@ import {
   sanitizeDesktopUiLogText,
 } from "../../src/core/tools/desktopUiTools.js";
 import { setFullYoloMode, setYoloMode } from "../../src/core/permissions.js";
+import { grantProjectAccess } from "../../src/core/project/projectAccessPolicy.js";
+import { MCP_CONNECTION_PROJECT_ID } from "../../src/core/project/projectAccessRequestStore.js";
+
+const desktopIdentity = { mode: "static-bearer" as const, subject: "tester", credentialHash: "c".repeat(64) };
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -143,6 +147,7 @@ describe("desktop UI MCP security integration", () => {
 
   it("forwards screenshot image blocks through the MCP gateway without audit leakage", async () => {
     setYoloMode(true);
+    grantProjectAccess(desktopIdentity, MCP_CONNECTION_PROJECT_ID, ["execute"]);
     const png = Buffer.from("89504e470d0a1a0a0000000049454e44", "hex").toString("base64");
     vi.spyOn(desktopUiSessionManager, "snapshot").mockResolvedValue({
       schema: { version: 1 } as any,
@@ -153,7 +158,7 @@ describe("desktop UI MCP security integration", () => {
       toolExposure: "gateway",
       allowDangerous: true,
       authMode: "static-bearer",
-      getIdentity: () => ({ mode: "static-bearer", subject: "tester", credentialHash: "credential-hash" }),
+      getIdentity: () => desktopIdentity,
       onToolCall: (info) => observed.push(info),
     });
     const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
@@ -175,12 +180,13 @@ describe("desktop UI MCP security integration", () => {
 
   it("sanitizes desktop args before the server audit hook sees them", async () => {
     setYoloMode(true);
+    grantProjectAccess(desktopIdentity, MCP_CONNECTION_PROJECT_ID, ["execute"]);
     const observed: any[] = [];
     const server = createSuperagentMcpServer({
       toolExposure: "full",
       allowDangerous: true,
       authMode: "static-bearer",
-      getIdentity: () => ({ mode: "static-bearer", subject: "tester", credentialHash: "credential-hash" }),
+      getIdentity: () => desktopIdentity,
       onToolCall: (info) => observed.push(info),
     });
     const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);

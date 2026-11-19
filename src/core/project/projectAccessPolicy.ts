@@ -17,6 +17,15 @@ export const PROJECT_ACCESS_CAPABILITIES = [
 export type ProjectAccessCapability = typeof PROJECT_ACCESS_CAPABILITIES[number];
 export type ProjectAccessIdentity = Pick<McpIdentity, "mode" | "subject"> & Partial<Pick<McpIdentity, "credentialHash" | "ownerConnectionName">>;
 
+/** Safe across MCP responses and audit observers; never retain the storage cause. */
+export class ProjectAccessPolicyStoreError extends Error {
+  readonly code = "POLICY_STORE_UNAVAILABLE";
+  constructor() {
+    super("[POLICY_STORE_UNAVAILABLE] Invalid MCP project access policy JSON or unavailable permission store. Operator repair is required; approval cannot repair this gate.");
+    this.name = "ProjectAccessPolicyStoreError";
+  }
+}
+
 interface ProjectAccessGrant {
   projectId: string;
   principalKey: string;
@@ -50,11 +59,11 @@ export function getProjectPrincipalKey(identity: ProjectAccessIdentity): string 
   return crypto.createHash("sha256").update(principal, "utf8").digest("hex");
 }
 
-function validateDocument(raw: unknown, filePath: string): ProjectAccessDocument {
-  if (!raw || typeof raw !== "object") throw new Error(`Invalid MCP project access policy at ${filePath}: expected an object.`);
+function validateDocument(raw: unknown): ProjectAccessDocument {
+  if (!raw || typeof raw !== "object") throw new ProjectAccessPolicyStoreError();
   const doc = raw as Partial<ProjectAccessDocument>;
   if (doc.schemaVersion !== PROJECT_ACCESS_SCHEMA_VERSION || !Array.isArray(doc.grants)) {
-    throw new Error(`Invalid MCP project access policy at ${filePath}: unsupported schema or missing grants array.`);
+    throw new ProjectAccessPolicyStoreError();
   }
   const seen = new Set<string>();
   for (const grant of doc.grants) {
@@ -65,10 +74,10 @@ function validateDocument(raw: unknown, filePath: string): ProjectAccessDocument
       || grant.capabilities.some((capability) => !(PROJECT_ACCESS_CAPABILITIES as readonly string[]).includes(capability))
       || typeof grant.grantedAt !== "number" || !Number.isFinite(grant.grantedAt)
       || typeof grant.updatedAt !== "number" || !Number.isFinite(grant.updatedAt)) {
-      throw new Error(`Invalid MCP project access policy at ${filePath}: malformed grant.`);
+      throw new ProjectAccessPolicyStoreError();
     }
     const key = `${grant.principalKey}:${grant.projectId}`;
-    if (seen.has(key)) throw new Error(`Invalid MCP project access policy at ${filePath}: duplicate grant for project ${grant.projectId}.`);
+    if (seen.has(key)) throw new ProjectAccessPolicyStoreError();
     seen.add(key);
   }
   return doc as ProjectAccessDocument;
@@ -76,27 +85,28 @@ function validateDocument(raw: unknown, filePath: string): ProjectAccessDocument
 
 function readDocument(policyPath?: string): ProjectAccessDocument {
   const filePath = getProjectAccessPolicyPath(policyPath);
-  if (!fs.existsSync(filePath)) return { schemaVersion: PROJECT_ACCESS_SCHEMA_VERSION, grants: [] };
   let raw: unknown;
   try {
     raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
   } catch (error) {
-    throw new Error(`Invalid MCP project access policy JSON at ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      return { schemaVersion: PROJECT_ACCESS_SCHEMA_VERSION, grants: [] };
+    throw new ProjectAccessPolicyStoreError();
   }
-  return validateDocument(raw, filePath);
+  return validateDocument(raw);
 }
 
 function writeDocument(doc: ProjectAccessDocument, policyPath?: string): void {
   const filePath = getProjectAccessPolicyPath(policyPath);
   const dir = path.dirname(filePath);
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const tempPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     fs.writeFileSync(tempPath, `${JSON.stringify(doc, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
     fs.renameSync(tempPath, filePath);
-  } catch (error) {
+  } catch {
     try { fs.rmSync(tempPath, { force: true }); } catch {}
-    throw new Error(`Could not write MCP project access policy at ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new ProjectAccessPolicyStoreError();
   }
 }
 

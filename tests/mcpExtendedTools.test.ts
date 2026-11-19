@@ -5,31 +5,40 @@ import os from "os";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
 import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
+import { registerProject, removeProject } from "../src/core/project/projectRegistry.js";
+import { grantProjectAccess } from "../src/core/project/projectAccessPolicy.js";
+import { MCP_CONNECTION_PROJECT_ID } from "../src/core/project/projectAccessRequestStore.js";
 
 describe("Superagent Extended MCP Tools Execution Suite", () => {
   const testDir = path.join(process.cwd(), `.tmp_mcp_ext_test_${Date.now()}`);
+  const identity = {mode:"oauth" as const,subject:"extended-fixture",scopes:["mcp:tools","mcp:tools:write"]};
+  const projectId = "extended-fixture";
 
   beforeEach(() => {
     setFullYoloMode(false);
     setYoloMode(true);
     fs.mkdirSync(testDir, { recursive: true });
+    registerProject({id:projectId,name:"Extended tools fixture",type:"local",root:testDir});
+    grantProjectAccess(identity,projectId,["read","write","git","planning"]);
+    grantProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,["execute"]);
   });
 
   afterEach(() => {
     setFullYoloMode(false);
     setYoloMode(false);
+    removeProject(projectId);
     try {
       fs.rmSync(testDir, { recursive: true, force: true });
     } catch {}
   });
 
   async function callMcpTool(name: string, args: Record<string, unknown> = {}) {
-    const server = createSuperagentMcpServer();
+    const server = createSuperagentMcpServer({workspace:testDir,authMode:"oauth",getIdentity:()=>identity});
     const handler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
-    return await handler({
+    try { return await handler({
       method: "tools/call",
       params: { name, arguments: args },
-    });
+    }); } finally { await server.close(); }
   }
 
   it("inspects port and searches processes via diagnostics MCP tools", async () => {

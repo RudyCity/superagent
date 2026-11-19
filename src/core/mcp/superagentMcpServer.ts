@@ -125,11 +125,12 @@ import {
   dispatchProjectMcpTool,
 } from "./tools/projectTools.js";
 import { resolveProjectTarget } from "../project/projectRouter.js";
-import { getProject } from "../project/projectRegistry.js";
+import { getProject, listProjects } from "../project/projectRegistry.js";
+import { ReservedProjectIdError } from "../project/projectSecurityResources.js";
 import type { ResolvedProjectTarget } from "../project/projectRouter.js";
 import { LocalProjectProvider } from "../project/providers/localProjectProvider.js";
 import type { ProjectProvider, ProjectProviderKind, ResolvedProjectContext } from "../project/providers/types.js";
-import { getProjectCapabilityForTool, hasProjectAccess } from "../project/projectAccessPolicy.js";
+import { getProjectCapabilityForTool, hasProjectAccess, ProjectAccessPolicyStoreError } from "../project/projectAccessPolicy.js";
 import { standaloneSshProjectProvider } from "./tools/standaloneSshProjectTools.js";
 
 const localProjectProvider = new LocalProjectProvider();
@@ -163,11 +164,13 @@ type McpRequestAuditContext = {
   requiredCapability?: string;
   authorizationDecision?: "allowed" | "denied" | "not_applicable";
   errorCode?: string;
+  unvalidatedTarget?: boolean;
 };
 
 function classifyMcpAuditError(error?: string): string | undefined {
   if (!error) return undefined;
   const message = error.toLowerCase();
+  if (message.includes("[policy_store_unavailable]")) return "policy_store_unavailable";
   if (message.includes("health probe exceeded its deadline") || message.includes("timed out")) return "provider_timeout";
   if (message.includes('"status": "unavailable"') || message.includes("could not verify the registered root")) return "provider_unavailable";
   if (message.includes(".env") || message.includes("protected config") || message.includes("protected path")) return "protected_path";
@@ -1268,19 +1271,23 @@ function extractMcpResultText(result: unknown): string {
       projectId: effectiveProjectId,
     };
     const emitAudit = (info: { tool: string; args: unknown; ok: boolean; error?: string; durationMs?: number }) => {
-      const projectId = auditContext.projectId ?? effectiveProjectId
-        ?? (typeof rawArgs.projectId === "string" ? rawArgs.projectId : null);
+      const errorCode = auditContext.errorCode ?? classifyMcpAuditError(info.error)
+        ?? (!info.ok ? "tool_execution_failed" : undefined);
+      const unvalidatedAuthorizationFailure = auditContext.unvalidatedTarget === true || ["mcp_owner_allowlist_denied",
+        "insufficient_oauth_scope", "insufficient_oauth_admin_scope"].includes(errorCode ?? "");
+      const privatePermissionFailure = unvalidatedAuthorizationFailure || errorCode === "policy_store_unavailable" ||
+        (desktopCall && ["desktop_schema_invalid", "desktop_host_file_policy_denied"].includes(errorCode ?? ""));
+      const projectId = privatePermissionFailure ? null : (auditContext.projectId ?? effectiveProjectId
+        ?? (typeof rawArgs.projectId === "string" ? rawArgs.projectId : null));
       const registeredProject = projectId ? getProject(projectId) : null;
-      const providerKind = auditContext.providerKind ?? registeredProject?.type
-        ?? (/^ssh:/i.test(effectiveWs) ? "ssh" : /^chain:/i.test(effectiveWs) ? "chain" : null);
+      const providerKind = privatePermissionFailure ? null : (auditContext.providerKind ?? registeredProject?.type
+        ?? (/^ssh:/i.test(effectiveWs) ? "ssh" : /^chain:/i.test(effectiveWs) ? "chain" : null));
       const requiredCapability = auditContext.requiredCapability
         ?? (WORKSPACE_SCOPED_MCP_TOOLS.has(toolName)
           ? getProjectCapabilityForTool(toolName, rawArgs)
           : level ? `${level}_tool` : undefined);
       const authorizationDecision = auditContext.authorizationDecision
         ?? (info.ok ? (WORKSPACE_SCOPED_MCP_TOOLS.has(toolName) ? "allowed" : "not_applicable") : "denied");
-      const errorCode = auditContext.errorCode ?? classifyMcpAuditError(info.error)
-        ?? (!info.ok ? "tool_execution_failed" : undefined);
       const privateDelegate = delegateMcpObservation(toolName, rawArgs);
       const wrappedLifecycle = toolName === MCP_GATEWAY_TOOL_NAMES.execute &&
         rawArgs.name === "superagent_lifecycle";
@@ -1298,7 +1305,13 @@ function extractMcpResultText(result: unknown): string {
         ...info, args: lifecycleAuditArgs,
         ...(info.error ? { error: "EXTERNAL_LIFECYCLE_CALL_FAILED" } : {}),
       } : info;
-      if (desktopCall) {
+      if (auditContext.errorCode === "policy_store_unavailable") {
+        safeInfo = { ...info, args: {}, error: new ProjectAccessPolicyStoreError().message };
+      } else if (unvalidatedAuthorizationFailure) {
+        safeInfo = { ...info, args: {}, error: errorCode };
+      } else if (privatePermissionFailure) {
+        safeInfo = { ...info, args: {}, error: "DESKTOP_UI_PERMISSION_DENIED" };
+      } else if (desktopCall) {
         safeInfo = {
           ...safeInfo,
           args: desktopAuditArgs,
@@ -1315,14 +1328,37 @@ function extractMcpResultText(result: unknown): string {
           ...safeInfo,
           correlationId: auditContext.correlationId,
           principalHash: auditContext.principalHash,
-          projectId,
-          providerKind,
+          projectId: privatePermissionFailure ? null : projectId,
+          providerKind: privatePermissionFailure ? null : providerKind,
           requiredCapability,
           authorizationDecision,
           errorCode,
         });
       } catch {
         // Audit observers must never break tool execution.
+      }
+    };
+    const denyUnvalidatedCall = (errorCode: string, reason: string) => {
+      auditContext.authorizationDecision = "denied";
+      auditContext.errorCode = errorCode;
+      auditContext.unvalidatedTarget = true;
+      mcpToolMetrics.record(toolName, 0, true, Buffer.byteLength(reason, "utf8"));
+      emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
+      emitMcpActivity({ type: "tool_call", tool: toolName, args: {}, ok: false,
+        error: reason, durationMs: 0, timestamp: Date.now(), workspace: "mcp://authorization" });
+      return { content: [{ type: "text", text: reason }], isError: true };
+    };
+    const checkCurrentProjectAccess = (...args: Parameters<typeof hasProjectAccess>) => {
+      try { return hasProjectAccess(...args); }
+      catch (error) {
+        if (error instanceof ProjectAccessPolicyStoreError) {
+          auditContext.authorizationDecision = "denied";
+          auditContext.errorCode = "policy_store_unavailable";
+          emitAudit({ tool: toolName, args: {}, ok: false, error: error.message, durationMs: 0 });
+          emitMcpActivity({ type: "tool_call", tool: toolName, args: {}, ok: false,
+            error: error.message, durationMs: 0, timestamp: Date.now(), workspace: "mcp://permission-store" });
+        }
+        throw error;
       }
     };
     // Block direct calls too, including clients that cached an old tools/list response.
@@ -1358,25 +1394,53 @@ function extractMcpResultText(result: unknown): string {
         : PRIVILEGED_MCP_TOOLS.has(toolName) && !scopes.includes("mcp:tools:admin")
           ? "mcp:tools:admin" : null;
       if (requiredScope) {
-        const reason = "missing required OAuth scope " + requiredScope;
-        auditContext.authorizationDecision = "denied";
-        auditContext.errorCode = requiredScope === "mcp:tools:admin"
-          ? "insufficient_oauth_admin_scope" : "insufficient_oauth_scope";
-        // Denied OAuth scopes must not leak file contents, shell commands or
-        // other caller-supplied arguments into audit/activity subscribers.
-        emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
-        emitMcpActivity({
-          type: "tool_call",
-          tool: toolName,
-          args: {},
-          ok: false,
-          error: reason,
-          durationMs: 0,
-          timestamp: Date.now(),
-          workspace: activeWorkspace,
-        });
-        throw new McpError(ErrorCode.InvalidRequest,
-          "Tool requires OAuth " + requiredScope + " scope; Security Approval cannot elevate token permissions.");
+        const reason = "Tool requires OAuth " + requiredScope + " scope; Security Approval cannot elevate token permissions.";
+        denyUnvalidatedCall(requiredScope === "mcp:tools:admin"
+          ? "insufficient_oauth_admin_scope" : "insufficient_oauth_scope", reason);
+        throw new McpError(ErrorCode.InvalidRequest, reason);
+      }
+    }
+    if (effectiveAllowedTools && !effectiveAllowedTools.includes(toolName)) {
+      const errReason = "[TOOL_DISABLED] Tool is blocked by the MCP owner's explicit tool allowlist.";
+      denyUnvalidatedCall("mcp_owner_allowlist_denied", errReason);
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        errReason
+      );
+    }
+    const gatewayTarget = toolName === MCP_GATEWAY_TOOL_NAMES.execute
+      ? validateGatewayExecuteTarget(getAuthorizedMcpTools(), rawArgs) : null;
+    if (toolName === MCP_GATEWAY_TOOL_NAMES.execute && !gatewayTarget) {
+      return denyUnvalidatedCall("gateway_target_unavailable",
+        "Target tool unavailable, unauthorized, or arguments invalid.");
+    }
+    if (WORKSPACE_SCOPED_MCP_TOOLS.has(gatewayTarget?.name ?? toolName)) {
+      try { listProjects(); }
+      catch (error) {
+        if (error instanceof ReservedProjectIdError) {
+          return denyUnvalidatedCall("reserved_project_id", error.message);
+        }
+        throw error;
+      }
+    }
+    // Bounded Desktop UI certification precedes an approval request that could
+    // never override this host gate. Hidden targets disclose no policy state.
+    if (desktopCall) {
+      const visible = getAuthorizedMcpTools();
+      const target = gatewayTarget;
+      if (!describeGatewayTool(visible, "superagent_desktop_ui") ||
+          (toolName === MCP_GATEWAY_TOOL_NAMES.execute && !target)) {
+        return denyUnvalidatedCall("gateway_target_unavailable", "Tool unavailable or not authorized.");
+      }
+      const hostBlock = registeredFileToolGate({ name: "superagent_desktop_ui",
+        args: target ? target.arguments : rawArgs }, activeWorkspace);
+      if (hostBlock) {
+        // Only the host verdict is classified here; no connection grant is read.
+        const denial = describeBoundedDesktopPermission({ oauthAllowed: true,
+          connectionDecision: "approval_required", filePolicyActive: true, hostBlock });
+        return denyUnvalidatedCall(denial.decisionCode === "SCHEMA_INVALID"
+          ? "desktop_schema_invalid" : "desktop_host_file_policy_denied",
+          `[${denial.decisionCode}] Access denied by host permanent file policy: ${hostBlock}`);
       }
     }
     // Connection-wide operations (service control, LAN, desktop input, etc.)
@@ -1387,7 +1451,7 @@ function extractMcpResultText(result: unknown): string {
         // Revoking one's own grant decreases privilege and must remain usable.
         && toolName !== "superagent_revoke_project_access"
         && (!callerIdentity?.subject ||
-          !hasProjectAccess(callerIdentity, MCP_CONNECTION_PROJECT_ID, "execute"))) {
+          !checkCurrentProjectAccess(callerIdentity, MCP_CONNECTION_PROJECT_ID, "execute"))) {
       // An authorization error alone is invisible to the native Tray inbox.
       // Queue a bounded, identity-bound request only after OAuth write-scope
       // validation. This NEVER grants access, replays the tool, or consults YOLO.
@@ -1414,97 +1478,96 @@ function extractMcpResultText(result: unknown): string {
       emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
       throw new McpError(ErrorCode.InvalidRequest, reason);
     }
-    if (!gatewayCall) {
-      if (toolName !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(toolName)
-        && (typeof rawArgs.projectId === "string" || typeof rawArgs.workspace === "string" || typeof rawArgs.cwd === "string" || typeof rawArgs.worktreePath === "string")) {
-        try {
-          const resolvedTarget = resolveMcpProjectTarget(toolName, {
-            projectId: rawArgs.projectId,
-            workspace: rawArgs.workspace,
-            cwd: rawArgs.cwd,
-            worktreePath: rawArgs.worktreePath,
-            sessionWorkspace: activeWorkspace || process.cwd(),
+    if (toolName !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(toolName)
+      && (WORKSPACE_SCOPED_MCP_TOOLS.has(toolName) || typeof rawArgs.projectId === "string"
+        || typeof rawArgs.workspace === "string" || typeof rawArgs.cwd === "string" || typeof rawArgs.worktreePath === "string")) {
+      try {
+        const resolvedTarget = resolveMcpProjectTarget(toolName, {
+          projectId: rawArgs.projectId,
+          workspace: rawArgs.workspace,
+          cwd: rawArgs.cwd,
+          worktreePath: rawArgs.worktreePath,
+          sessionWorkspace: activeWorkspace || process.cwd(),
+        });
+        effectiveWs = resolvedTarget.workspace;
+        effectiveProjectId = resolvedTarget.projectId;
+        auditContext.projectId = resolvedTarget.projectId;
+        auditContext.providerKind = resolvedTarget.project?.type ?? null;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const rawExplicitTarget = [rawArgs.workspace, rawArgs.cwd, rawArgs.worktreePath]
+          .find((value) => typeof value === "string" && value.trim()) as string | undefined;
+        if (!rawArgs.projectId && rawExplicitTarget && !/^(?:ssh:|chain:)/i.test(rawExplicitTarget)
+          && message.includes("Workspace target is not registered or authorized")) {
+          effectiveWs = path.isAbsolute(rawExplicitTarget)
+            ? path.resolve(rawExplicitTarget)
+            : path.resolve(activeWorkspace || process.cwd(), rawExplicitTarget);
+        } else {
+          emitAudit({
+            tool: toolName,
+            args: desktopCall ? desktopAuditArgs : permissionPreflightCall ? permissionPreflightAuditArgs : gatewayCall ? gatewayAuditArgs : summarizeArgs(rawArgs),
+            ok: false,
+            error: message,
+            durationMs: 0,
           });
-          effectiveWs = resolvedTarget.workspace;
-          effectiveProjectId = resolvedTarget.projectId;
-          auditContext.projectId = resolvedTarget.projectId;
-          auditContext.providerKind = resolvedTarget.project?.type ?? null;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          const rawExplicitTarget = [rawArgs.workspace, rawArgs.cwd, rawArgs.worktreePath]
-            .find((value) => typeof value === "string" && value.trim()) as string | undefined;
-          if (!rawArgs.projectId && rawExplicitTarget && !/^(?:ssh:|chain:)/i.test(rawExplicitTarget)
-            && message.includes("Workspace target is not registered or authorized")) {
-            effectiveWs = path.isAbsolute(rawExplicitTarget)
-              ? path.resolve(rawExplicitTarget)
-              : path.resolve(activeWorkspace || process.cwd(), rawExplicitTarget);
-          } else {
-            emitAudit({
-              tool: toolName,
-              args: desktopCall ? desktopAuditArgs : permissionPreflightCall ? permissionPreflightAuditArgs : summarizeArgs(rawArgs),
-              ok: false,
-              error: message,
-              durationMs: 0,
-            });
-            throw new McpError(ErrorCode.InvalidParams, message);
+          throw new McpError(ErrorCode.InvalidParams, message);
+        }
+      }
+    }
+
+    // For nested gateway calls, derive file scope from the target operation,
+    // not the gateway wrapper's active workspace (which may be unrelated).
+    const nestedFileArgs = toolName === MCP_GATEWAY_TOOL_NAMES.execute
+      && rawArgs.arguments && typeof rawArgs.arguments === "object"
+      && !Array.isArray(rawArgs.arguments)
+      ? rawArgs.arguments as Record<string,unknown> : rawArgs;
+    let fileGuardWorkspace = effectiveWs;
+    if (nestedFileArgs !== rawArgs) {
+      const explicitProject = typeof nestedFileArgs.projectId === "string"
+        ? getProject(nestedFileArgs.projectId) : null;
+      if (typeof nestedFileArgs.projectId === "string" &&
+          (!explicitProject || !explicitProject.enabled || explicitProject.type !== "local" ||
+            !explicitProject.root)) {
+        fileGuardWorkspace = ""; // fail closed for missing/remote project
+      } else {
+        fileGuardWorkspace = explicitProject?.root || fileGuardWorkspace;
+        for (const key of ["cwd","workspace","worktreePath"]) {
+          if (typeof nestedFileArgs[key] === "string" && nestedFileArgs[key]) {
+            fileGuardWorkspace = String(nestedFileArgs[key]);
+            break;
           }
         }
       }
-
-      const permanentFileBlock = registeredFileToolGate({
-        name: toolName, args: rawArgs,
-      }, effectiveWs);
-      if (permanentFileBlock) {
-        auditContext.authorizationDecision = "denied";
-        auditContext.errorCode = "permanent_file_policy_denied";
-        emitAudit({ tool: toolName, args: {}, ok: false,
-          error: "Permanent file restriction denied this call", durationMs: 0 });
-        return {
-          content: [{ type: "text", text: "Access denied by host permanent file policy: " + permanentFileBlock }],
-          isError: true,
-        };
-      }
-      const blockedRoot = blockedYoloToolCall(rawArgs, effectiveWs);
-      if (blockedRoot) {
-        emitAudit({
-          tool: toolName,
-          args: desktopCall ? desktopAuditArgs : permissionPreflightCall ? permissionPreflightAuditArgs : summarizeArgs(rawArgs),
-          ok: false,
-          error: "MCP hard safety blocklist denied access",
-        });
-        return {
-          content: [{ type: "text", text: `Access denied by MCP hard safety blocklist: ${blockedRoot}` }],
-          isError: true,
-        };
-      }
     }
 
-    if (effectiveAllowedTools && !effectiveAllowedTools.includes(toolName)) {
-      const errReason = "blocked by MCP tool allowlist";
-      const safeBlockedArgs = gatewayCall ? gatewayAuditArgs
-        : desktopCall ? desktopAuditArgs
-        : permissionPreflightCall ? permissionPreflightAuditArgs
-        : toolName.startsWith("superagent_lifecycle") ? { action: rawArgs.action }
-        : summarizeArgs(rawArgs);
-      emitAudit({ tool: toolName, args: safeBlockedArgs, ok: false, error: errReason });
-      emitMcpActivity({
-        type: "tool_call",
+    const permanentFileBlock = registeredFileToolGate({
+      name: toolName === MCP_GATEWAY_TOOL_NAMES.execute && typeof rawArgs.name === "string"
+        ? rawArgs.name : toolName,
+      args: nestedFileArgs,
+    }, fileGuardWorkspace);
+    if (permanentFileBlock) {
+      auditContext.authorizationDecision = "denied";
+      auditContext.errorCode = "permanent_file_policy_denied";
+      emitAudit({ tool: toolName, args: {}, ok: false,
+        error: "Permanent file restriction denied this call", durationMs: 0 });
+      return {
+        content: [{ type: "text", text: "Access denied by host permanent file policy: " + permanentFileBlock }],
+        isError: true,
+      };
+    }
+    const blockedRoot = blockedYoloToolCall(rawArgs, effectiveWs);
+    if (blockedRoot) {
+      emitAudit({
         tool: toolName,
-        args: safeBlockedArgs,
+        args: desktopCall ? desktopAuditArgs : permissionPreflightCall ? permissionPreflightAuditArgs : gatewayCall ? gatewayAuditArgs : summarizeArgs(rawArgs),
         ok: false,
-        error: "Blocked by MCP tool allowlist",
-        durationMs: 0,
-        timestamp: Date.now(),
-        workspace: effectiveWs,
+        error: "MCP hard safety blocklist denied access",
       });
-      throw new McpError(
-        ErrorCode.InvalidRequest,
-        isDangerous
-          ? `Tool '${toolName}' is classified as dangerous and is blocked by the MCP owner's explicit tool allowlist.`
-          : `Tool '${toolName}' is not enabled on this MCP server (blocked by MCP tool allowlist).`
-      );
+      return {
+        content: [{ type: "text", text: "Access denied by MCP hard safety blocklist: " + String(blockedRoot) }],
+        isError: true,
+      };
     }
-
     // Independently enforce the exact approved project boundary, never the
     // chat agent's YOLO parent-directory or Full YOLO bypass.
     if (isDangerous && toolName !== MCP_GATEWAY_TOOL_NAMES.execute
@@ -1514,7 +1577,7 @@ function extractMcpResultText(result: unknown): string {
       const identity = getIdentity?.();
       const capability = getProjectCapabilityForTool(toolName, rawArgs);
       const grant = Boolean(project?.enabled && identity?.subject &&
-        hasProjectAccess(identity, project.id, capability));
+        checkCurrentProjectAccess(identity, project.id, capability));
       const remoteProject = project?.type === "ssh" || project?.type === "chain";
       const within = Boolean(project && (remoteProject ||
         (project.type === "local" && project.root &&
@@ -1719,6 +1782,11 @@ function extractMcpResultText(result: unknown): string {
       const failed = !!(result && typeof result === "object" && (result as any).isError);
       const durationMs = Date.now() - startedAt;
       const outputText = extractMcpResultText(result);
+      const policyStoreFailure = failed && outputText.includes("[POLICY_STORE_UNAVAILABLE]");
+      if (policyStoreFailure) {
+        auditContext.authorizationDecision = "denied";
+        auditContext.errorCode = "policy_store_unavailable";
+      }
       mcpToolMetrics.record(toolName, durationMs, failed, Buffer.byteLength(outputText, "utf8"));
       const wrappedLifecycle = toolName === MCP_GATEWAY_TOOL_NAMES.execute &&
         rawArgs.name === "superagent_lifecycle";
@@ -1731,7 +1799,7 @@ function extractMcpResultText(result: unknown): string {
           ["superagent_chrome_cdp_web","superagent_chrome_cdp"].includes(String(rawArgs.name)) &&
           rawArgs.arguments && typeof rawArgs.arguments === "object" &&
           (rawArgs.arguments as Record<string, unknown>).transport === "delegate");
-      const safeActivityArgs = privateBrowser
+      const safeActivityArgs = policyStoreFailure ? {} : privateBrowser
         ? { command: rawArgs.command ?? (rawArgs.arguments as any)?.command,
             contentRedacted: true }
         : desktopCall ? desktopAuditArgs
@@ -1742,7 +1810,7 @@ function extractMcpResultText(result: unknown): string {
               workerId: lifecycleParams.workerId }
         : gatewayCall ? gatewayAuditArgs
         : rawArgs;
-      const safeActivityOutput = privateBrowser
+      const safeActivityOutput = policyStoreFailure ? new ProjectAccessPolicyStoreError().message : privateBrowser
         ? "[DELEGATE_CDP_RESPONSE_REDACTED]"
         : desktopCall ? "[DESKTOP_UI_RESPONSE_REDACTED]"
         : permissionPreflightCall ? "[TOOL_PERMISSION_PREFLIGHT_REDACTED]"
@@ -1758,18 +1826,23 @@ function extractMcpResultText(result: unknown): string {
         output: failed ? undefined : safeActivityOutput,
         durationMs,
         timestamp: Date.now(),
-        workspace: effectiveWs,
+        workspace: policyStoreFailure ? "mcp://permission-store" : effectiveWs,
       });
       return result;
     } catch (err: any) {
       const durationMs = Date.now() - startedAt;
       const errorMsg = err?.message || String(err);
+      const policyStoreFailure = err instanceof ProjectAccessPolicyStoreError;
+      if (policyStoreFailure) {
+        auditContext.authorizationDecision = "denied";
+        auditContext.errorCode = "policy_store_unavailable";
+      }
       mcpToolMetrics.record(toolName, durationMs, true, Buffer.byteLength(errorMsg, "utf8"));
       const wrappedLifecycle = toolName === MCP_GATEWAY_TOOL_NAMES.execute &&
         rawArgs.name === "superagent_lifecycle";
       const lifecycleParams = wrappedLifecycle && rawArgs.arguments && typeof rawArgs.arguments === "object"
         && !Array.isArray(rawArgs.arguments) ? rawArgs.arguments as Record<string, unknown> : rawArgs;
-      const safeActivityArgs = desktopCall ? desktopAuditArgs
+      const safeActivityArgs = policyStoreFailure ? {} : desktopCall ? desktopAuditArgs
         : permissionPreflightCall ? permissionPreflightAuditArgs
         : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
           ? { action: lifecycleParams.action, workflowId: lifecycleParams.workflowId,
@@ -1777,7 +1850,7 @@ function extractMcpResultText(result: unknown): string {
               workerId: lifecycleParams.workerId }
         : gatewayCall ? gatewayAuditArgs
         : rawArgs;
-      const safeErrorMsg = desktopCall
+      const safeErrorMsg = policyStoreFailure ? new ProjectAccessPolicyStoreError().message : desktopCall
         ? "DESKTOP_UI_CALL_FAILED"
         : permissionPreflightCall ? "TOOL_PERMISSION_PREFLIGHT_FAILED"
         : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
@@ -1797,7 +1870,7 @@ function extractMcpResultText(result: unknown): string {
         error: safeErrorMsg,
         durationMs,
         timestamp: Date.now(),
-        workspace: effectiveWs,
+        workspace: policyStoreFailure ? "mcp://permission-store" : effectiveWs,
       });
       throw err;
     }

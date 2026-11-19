@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
+import { parse } from "yaml";
 
 const yml = fs.readFileSync(".github/workflows/bun-runtime.yml", "utf8");
 
@@ -27,9 +28,16 @@ describe("Bun full-regression prerequisites on disposable Ubuntu runner", () => 
       "PDF_MEDIA_BACKENDS_OK", "SUPERAGENT_PDF_PYTHON_BIN",
     ]) expect(yml).toContain(required);
   });
-  it("runs the Bun-native security suite in Bun and keeps it out of Vitest", () => {
-    expect(yml).toContain("bun test tests/delegateMcpPrincipalBinding.test.ts");
-    expect(yml).toContain("--exclude tests/delegateMcpPrincipalBinding.test.ts");
+  it("runs principal security tests with Vitest and includes them in the full regression", () => {
+    const steps = parse(yml).jobs.regression.steps;
+    const principal = steps.find((step: { name?: string }) => step.name === "Run authenticated principal security tests");
+    const regression = steps.find((step: { name?: string }) => step.name === "Run vitest regression");
+    expect(principal?.run).toMatch(/^bun --bun x vitest run tests\/delegateMcpPrincipalBinding\.test\.ts(?:\s|$)/);
+    expect(regression?.run).toMatch(/^bun --bun x vitest run(?:\s|$)/);
+    expect(regression?.run).not.toMatch(/--exclude|--testNamePattern|\s+tests\//);
+    const source = fs.readFileSync("tests/delegateMcpPrincipalBinding.test.ts", "utf8");
+    expect(source).toContain('from "vitest"');
+    expect(source).not.toContain('from "bun:test"');
     expect(yml).not.toContain("--poolOptions.");
   });
 });

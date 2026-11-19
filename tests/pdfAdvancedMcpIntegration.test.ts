@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +8,8 @@ import fsSync from "node:fs";
 import { createCanvas } from "@napi-rs/canvas";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
 import { setYoloMode } from "../src/core/permissions.js";
+import { registerProject, removeProject } from "../src/core/project/projectRegistry.js";
+import { grantProjectAccess } from "../src/core/project/projectAccessPolicy.js";
 
 let dir: string;
 const oldSecret = process.env.SUPERAGENT_PDF_P12_PASSWORD;
@@ -40,6 +42,8 @@ afterAll(async()=>{
   await fs.rm(dir,{recursive:true,force:true});
 });
 beforeEach(async()=>{
+  registerProject({id:"pdf-advanced-fixture",name:"Advanced PDF fixture",type:"local",root:dir});
+  grantProjectAccess({mode:"oauth",subject:"pdf-advanced-mcp-qa"},"pdf-advanced-fixture",["read","write"]);
   const doc=await PDFDocument.create();
   const page=doc.addPage([400,560]);
   page.drawText("CONFIDENTIAL CODE",{x:40,y:460,font:await doc.embedFont(StandardFonts.Helvetica),size:15});
@@ -47,6 +51,7 @@ beforeEach(async()=>{
 });
 
 const ocrModelReady = fsSync.existsSync(path.join(os.homedir(), ".superagent-r", "models", "pdf-ocr-v6", "tiny", "PP-OCRv6_rec_tiny.onnx"));
+afterEach(()=>removeProject("pdf-advanced-fixture"));
 
 describe("Advanced PDF tools through primary authenticated MCP server",()=>{
   it("discovers and describes all three new tools through the same gateway",async()=>{

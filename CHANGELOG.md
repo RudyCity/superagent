@@ -1,3 +1,14 @@
+## [1.14.107] - 2026-11-19
+### Permission diagnostics and native notification integrity
+- Share the production service read-action policy with nonexecuting MCP permission diagnostics; retain independent Execute, project, host policy and native consent gates, with privacy and argument-parity regression coverage.
+- Resolve registered default projects before direct and gateway mutation authorization, honoring existing identity-scoped grants without treating the session workspace as approval. Reject corrupt or unavailable grant stores with bounded, path-free errors and redacted audit fields.
+- Bind native navigation and OS activation tickets to the exact profile and incident revision. Recheck expiry, foreground state and the current incident before an atomic read acknowledgment; reject stale, replayed, reopened and cross-profile tickets without echoing private routes.
+- Keep notification occurrence timestamps independent from navigation revisions and read legacy ledgers without revisions. Older strict ledger readers require rollback compatibility review before rollout.
+- Extend focused security CI and isolated test fixtures without weakening production authorization.
+- Make the source-policy readiness command flush one complete JSON report and exit with its classification status, preventing imported runtime timers from hanging the CI report step; keep the reusable report builder unchanged.
+- Preserve section-level wiki retrieval on Windows by parsing LF and CRLF headings identically; verify regenerated chunks against source content.
+- Source implementation only: installed runtime verification, independent native security review, cross-platform CI, signing and release acceptance remain separate gates. No production restart, permission grant or deployment is performed by this change.
+
 ## [1.14.106] - 2026-11-18
 ### Tray Core startup and restart recovery
 - Require authenticated readiness for the requested Core target before reporting a successful start; an unauthorized HTTP response is not readiness.

@@ -3230,10 +3230,9 @@ export async function handleServerRoute(
       return true;
     }
 
+    const revokedGrantsCount = !enabled ? revokeAllProjectAccess(projectId) : 0;
     const updated = updateProject(projectId, { enabled });
-    let revokedGrantsCount = 0;
     if (!enabled) {
-      revokedGrantsCount = revokeAllProjectAccess(projectId);
       await standaloneSshProjectProvider.closeProject(projectId);
     }
 
@@ -3278,13 +3277,12 @@ export async function handleServerRoute(
     }
 
     await standaloneSshProjectProvider.closeProject(projectId);
+    const revokedGrants = revokeAllProjectAccess(projectId);
     const removed = removeProject(projectId);
     if (!removed) {
       sendJSON(res, 404, { success: false, error: `Project not found: ${projectId}` });
       return true;
     }
-    const revokedGrants = revokeAllProjectAccess(projectId);
-
     sendJSON(res, 200, {
       success: true,
       removed: projectId,

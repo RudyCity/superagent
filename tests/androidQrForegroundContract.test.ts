@@ -18,7 +18,7 @@ describe("Android QR scanner foreground return contract", () => {
     expect(mainActivity).toContain("if (!visible || isFinishing() || launching || preparingFolder || pendingQrPayload == null) return;");
     expect(mainActivity).toContain("if (!visible || isFinishing()) {");
     expect(mainActivity).toContain("pendingQrPayload = setup;");
-    expect(mainActivity).toContain("if (!requestingCapture && !ScreenProjectionService.isActive()) stopDirectSharing();");
+    expect(mainActivity).toMatch(/if \(!requestingCapture && !ScreenProjectionService\.isActive\(\) &&\s*!LanTransferForegroundService\.isHolding\(server\)\) stopDirectSharing\(\);/);
     expect(mainActivity).toContain("TunnelForegroundService.requestStart(this, setup, sharedFileName, sharedFileBytes)");
   });
 

@@ -49,8 +49,8 @@ describe("MCP independent project Security Approval", () => {
     fs.writeFileSync(path.join(projectA, "from-a.txt"), "alpha");
     fs.writeFileSync(path.join(projectB, "from-b.txt"), "bravo");
     fs.writeFileSync(path.join(projectB, ".env.local"), "TEST_SECRET=private");
-    registerProject({ projectId: projectAId, name: "Project A", type: "local", root: projectA });
-    registerProject({ projectId: projectBId, name: "Project B", type: "local", root: projectB });
+    registerProject({ id: projectAId, name: "Project A", type: "local", root: projectA });
+    registerProject({ id: projectBId, name: "Project B", type: "local", root: projectB });
     setYoloMode(false);
   });
   afterEach(() => {

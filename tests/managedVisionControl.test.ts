@@ -14,6 +14,10 @@ const testProfile=fs.mkdtempSync(path.join(os.tmpdir(),"managed-vision-e2e-"));
 process.env.SUPERAGENT_CONFIG_DIR=testProfile;
 const fixture=fs.mkdtempSync(path.join(os.tmpdir(),"vision-stub-"));
 const owned=new Map<number,number>();
+function isAlive(pid:number){
+  try{process.kill(pid,0);return true;}
+  catch(error){return (error as NodeJS.ErrnoException).code!=="ESRCH";}
+}
 async function freePort(){
   const server=net.createServer();
   return new Promise<number>((resolve,reject)=>{
@@ -31,21 +35,42 @@ const operation=async(plan:any)=>{
   return await manageServices({service,action,port,operationId,
     expectedOwnerPid,expectedInstanceId,noPublicIngress,confirm:true}) as any;
 };
-afterAll(()=>{
-  for(const [port,pid] of owned){
-    if(readVisionOwner(port)?.pid===pid&&readListenerOwners()?.get(port)===pid)
-      try{
-        if(process.platform==="win32")
-          spawnSync("taskkill",["/F","/PID",String(pid)],{stdio:"ignore",timeout:2500});
-        else process.kill(pid,"SIGTERM");
-      }catch{}
+afterAll(async()=>{
+  try {
+    if(process.env.SUPERAGENT_CONFIG_DIR!==testProfile)
+      throw new Error("VISION_TEST_PROFILE_CHANGED: retaining test ownership evidence");
+    for(const [port,pid] of owned)
+      if(!readVisionOwner(port)&&isAlive(pid))
+        throw new Error("VISION_TEST_OWNER_RECORD_MISSING: retaining test profile");
+    for(const file of fs.readdirSync(testProfile)){
+      const match=/^vision-owner-(\d+)\.json$/.exec(file);
+      if(!match)continue;
+      const port=Number(match[1]),owner=readVisionOwner(port);
+      const status=await inspectManagedVision(port);
+      if(!owner||!status.verified||status.ownerPid!==owner.pid||
+         readListenerOwners()?.get(port)!==owner.pid)
+        throw new Error("VISION_TEST_OWNER_UNVERIFIED: retaining test profile and fixture");
+      const response=await fetch(`http://127.0.0.1:${port}/_superagent/vision/lifecycle`,{
+        method:"POST",headers:{Authorization:`Bearer ${owner.token}`,"Content-Type":"application/json"},
+        body:JSON.stringify({action:"stop",instanceId:owner.instanceId}),signal:AbortSignal.timeout(6000),
+      });
+      if(!response.ok||(await response.json() as {ok?:boolean}).ok!==true)
+        throw new Error("VISION_TEST_GRACEFUL_STOP_REFUSED: retaining test profile");
+      const deadline=Date.now()+8000;
+      while((readListenerOwners()?.has(port)||isAlive(owner.pid))&&Date.now()<deadline)
+        await new Promise(resolve=>setTimeout(resolve,100));
+      if(readListenerOwners()?.has(port)||isAlive(owner.pid))
+        throw new Error("VISION_TEST_STOP_UNCERTAIN: retaining test profile");
+      owned.delete(port);
+    }
+    fs.rmSync(fixture,{recursive:true,force:true,maxRetries:10,retryDelay:250});
+    fs.rmSync(testProfile,{recursive:true,force:true,maxRetries:10,retryDelay:250});
+  } finally {
+    if(original===undefined)delete process.env.PYTHONPATH;
+    else process.env.PYTHONPATH=original;
+    if(oldProfile===undefined)delete process.env.SUPERAGENT_CONFIG_DIR;
+    else process.env.SUPERAGENT_CONFIG_DIR=oldProfile;
   }
-  if(original===undefined)delete process.env.PYTHONPATH;
-  else process.env.PYTHONPATH=original;
-  if(oldProfile===undefined)delete process.env.SUPERAGENT_CONFIG_DIR;
-  else process.env.SUPERAGENT_CONFIG_DIR=oldProfile;
-  fs.rmSync(fixture,{recursive:true,force:true,maxRetries:10,retryDelay:250});
-  fs.rmSync(testProfile,{recursive:true,force:true,maxRetries:10,retryDelay:250});
 });
 describe("Vision independent owner lifecycle",()=>{
   it("rejects any attempt to stop an unsupervised/legacy Vision process",async()=>{
@@ -69,7 +94,7 @@ describe("Vision independent owner lifecycle",()=>{
     fs.writeFileSync(path.join(fixture,"transformers.py"),"BackboneConfigMixin = object\n");
     fs.writeFileSync(path.join(fixture,"huggingface_hub.py"),
       "def hf_hub_download(*args, **kwargs): raise RuntimeError('model inference not exercised in lifecycle test')\n");
-    process.env.PYTHONPATH=fixture;
+    process.env.PYTHONPATH=[fixture,original].filter(Boolean).join(path.delimiter);
     // Preflight the ACTUAL script (not only torch/transformers imports). Any
     // Python traceback must surface in CI instead of a 35s opaque PID timeout.
     const python=process.env.SUPERAGENT_VISION_PYTHON||"python";

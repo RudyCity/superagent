@@ -9,7 +9,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getRootConfigDir } from "../config/paths.js";
+import { getRootConfigDir, getPackageRootDir } from "../config/paths.js";
 import { requestCoreSupervisor } from "./coreSupervisor.js";
 import { planMcpCoreStart,executeMcpCoreStart } from "./coreMcpBootstrap.js";
 import { controlCoreLifecycle, prepareCoreLifecycle } from "./coreLifecycleControl.js";
@@ -51,7 +51,8 @@ import {planGlobalLifecycleRecycle,executeGlobalLifecycleRecycle,reconcileGlobal
 import { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
 import { summarizeServiceOwnerAttestation } from "./serviceOwnerAttestation.js";
 import { readCheckoutRevision } from "./checkoutRevision.js";
-import { getPackageRootDir } from "../config/paths.js";
+import { isReadOnlyServiceAction, parseReadOnlyServiceArgs, validateServicePort } from "./serviceReadPolicy.js";
+export { validateServicePort } from "./serviceReadPolicy.js";
 export { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
 export type ServiceAction =
   "inventory"|"status"|"owner_status"|"plan"|"restart"|"rollback"|"drain"|"reload"|"start"|"stop"|"doctor"
@@ -108,12 +109,6 @@ function observedMcpPort(listeners:Map<number,number>|null):number {
   }));
   return discoverObservedMcpPort(listeners,records);
 }
-export function validateServicePort(input:unknown,fallback?:number):number {
-  const v=input===undefined?fallback:input;
-  if(typeof v!=="number"||!Number.isSafeInteger(v)||v<1024||v>65535)
-    throw new Error("SERVICE_INVALID_PORT");
-  return v;
-}
 export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
   if(!raw||typeof raw!=="object"||Array.isArray(raw))
     throw new Error("SERVICE_ARGUMENTS_OBJECT_REQUIRED");
@@ -129,15 +124,20 @@ export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
     "expectedReleaseRevision","expectedCurrentDigest",
     "expectedProcessIdentity","expectedLegacyCommandDigest","clientMode","expectedExecutablePath"]);
   if(Object.keys(v).some(k=>!allowed.has(k)))throw new Error("SERVICE_UNEXPECTED_ARGUMENT");
-  if(!["inventory","status","owner_status","plan","restart","rollback","drain","reload","start","stop","doctor",
-    "health","dashboard","logs","profile","configure","reconcile","upgrade","watchdog","recycle"].includes(String(v.action)))
+  if(!isReadOnlyServiceAction(v.action) && (typeof v.action!=="string" ||
+    !["plan","restart","rollback","drain","reload","start","stop","configure","reconcile","upgrade","watchdog","recycle"].includes(v.action)))
     throw new Error("SERVICE_UNKNOWN_ACTION");
   if(v.service!==undefined&&v.service!=="all"&&
      (typeof v.service!=="string"||!known.has(v.service)))throw new Error("SERVICE_UNKNOWN_TARGET");
   if(v.port!==undefined)validateServicePort(v.port);
+  if(isReadOnlyServiceAction(v.action)){
+    const parsed=parseReadOnlyServiceArgs(v);
+    if(!parsed)throw new Error("SERVICE_INVALID_INSPECTION_ARGUMENTS");
+    return parsed;
+  }
   if(v.confirm!==undefined&&typeof v.confirm!=="boolean")throw new Error("SERVICE_INVALID_CONFIRM");
-  if(v.targetAction!==undefined&&
-     !["restart","rollback","drain","reload","start","stop","upgrade","recycle"].includes(String(v.targetAction)))
+  if(v.targetAction!==undefined&&(typeof v.targetAction!=="string"||
+     !["restart","rollback","drain","reload","start","stop","upgrade","recycle"].includes(v.targetAction)))
     throw new Error("SERVICE_INVALID_TARGET_ACTION");
   if(v.expectedOwnerPid!==undefined&&
      (!Number.isSafeInteger(v.expectedOwnerPid)||Number(v.expectedOwnerPid)<0))
@@ -149,7 +149,7 @@ export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
   if(v.expectedLegacyCommandDigest!==undefined&&
      (typeof v.expectedLegacyCommandDigest!=="string"||!/^[a-f0-9]{64}$/.test(v.expectedLegacyCommandDigest)))
     throw new Error("SERVICE_INVALID_LEGACY_COMMAND_DIGEST");
-  if(v.clientMode!==undefined&&!["tline","chrome-extension"].includes(String(v.clientMode)))
+  if(v.clientMode!==undefined&&(typeof v.clientMode!=="string"||!["tline","chrome-extension"].includes(v.clientMode)))
     throw new Error("SERVICE_INVALID_CLIENT_MODE");
   if(v.expectedInstanceId!==undefined&&(typeof v.expectedInstanceId!=="string"||
      !(/^[a-f0-9]{32}$/.test(v.expectedInstanceId)||v.expectedInstanceId==="absent")))
@@ -176,7 +176,7 @@ export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
     throw new Error("SERVICE_INVALID_LOCAL_TUNNEL_TARGET");
   if(v.corePort!==undefined)validateServicePort(v.corePort);
   if(v.wsPort!==undefined)validateServicePort(v.wsPort);
-  if(v.channelMode!==undefined&&!["idle","muse-ws","telegram-fallback"].includes(String(v.channelMode)))
+  if(v.channelMode!==undefined&&(typeof v.channelMode!=="string"||!["idle","muse-ws","telegram-fallback"].includes(v.channelMode)))
     throw new Error("SERVICE_INVALID_CHANNEL_MODE");
   if(v.expectedPublicUrl!==undefined&&
      (typeof v.expectedPublicUrl!=="string"||!/^https:\/\/[^\s]+$/.test(v.expectedPublicUrl)||v.expectedPublicUrl.length>1024))
@@ -206,7 +206,7 @@ export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
       throw new Error("SERVICE_PROFILE_INVALID_NUMERIC");
   }
   if((v.service===undefined||v.service==="all")&&
-     !["inventory","status","doctor","health","dashboard","logs","profile","watchdog","recycle"].includes(String(v.action))&&
+     !["watchdog","recycle"].includes(String(v.action))&&
      !(v.action==="plan"&&v.targetAction==="recycle")&&
      !(v.action==="reconcile"))
     throw new Error("SERVICE_SINGLE_TARGET_REQUIRED");
@@ -967,7 +967,7 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
 /** One metadata-only audit envelope for every mutation and preflight. */
 export async function manageServices(raw:unknown):Promise<unknown>{
   const args=validateManageServicesArgs(raw);
-  if(["status","inventory","doctor","health","dashboard", "profile","logs"].includes(args.action)||
+  if(isReadOnlyServiceAction(args.action)||
     args.action==="watchdog"&&args.confirm!==true)
     return manageServicesInternal(args);
   const service=args.service??"all",since=Date.now();

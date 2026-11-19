@@ -63,7 +63,9 @@ describe("Android LAN Client source and wire-protocol contract", () => {
     expect(protocol).toContain('expires = 0; // Pair code is single-use');
     expect(protocol).toContain("SESSION_IDLE_MS = 600_000");
     expect(protocol).toContain("SESSION_MAX_MS = 3_600_000");
-    expect(protocol).toContain("MAX_REQUEST_BYTES = 8192");
+    expect(protocol).toContain("MAX_REQUEST_BYTES = 32 * 1024");
+    expect(protocol).toContain("while (data.size() <= MAX_REQUEST_BYTES)");
+    expect(protocol).toContain('throw new IllegalArgumentException("LAN request oversized.")');
   });
 
   it("matches Windows controller reply and LAN discovery envelopes", () => {

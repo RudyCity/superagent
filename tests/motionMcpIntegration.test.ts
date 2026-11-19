@@ -7,11 +7,18 @@ import { readMotionAsset } from "../src/core/motion/assets/motionAssets.js";
 import { readMotionAudio } from "../src/core/motion/assets/motionAudio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
-import { getProjectCapabilityForTool } from "../src/core/project/projectAccessPolicy.js";
+import { getProjectCapabilityForTool, grantProjectAccess, type ProjectAccessCapability } from "../src/core/project/projectAccessPolicy.js";
+import { registerProject } from "../src/core/project/projectRegistry.js";
 import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
 import { getMotionProject } from "../src/core/motion/motionService.js";
 
 const dirs: string[] = [];
+const identity={mode:"oauth" as const,subject:"motion-fixture",scopes:["mcp:tools","mcp:tools:write"]};
+function authorizedServer(root:string,capabilities:ProjectAccessCapability[]) {
+  const project=registerProject({name:path.basename(path.dirname(root)),type:"local",root});
+  grantProjectAccess(identity,project.id,capabilities);
+  return createSuperagentMcpServer({workspace:root,authMode:"oauth",getIdentity:()=>identity,allowDangerous:true});
+}
 async function fixture() {
   const parent = await fs.mkdtemp(path.join(os.tmpdir(), "motion-mcp-"));
   const root = path.join(parent, "workspace");
@@ -28,7 +35,7 @@ const invoke = async (handler: any, name: string, args: Record<string, unknown> 
 
 describe("Motion MCP integration", () => {
   it("exposes all sixteen tools with classification and explicit project capabilities", async () => {
-    // allowDangerous alone does not grant writes; scoped local YOLO does.
+    // Discovery is independent of the explicit grants required by invocation.
     setYoloMode(true);
     const server = createSuperagentMcpServer({ toolExposure: "full", allowDangerous: true });
     const list = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
@@ -59,7 +66,7 @@ describe("Motion MCP integration", () => {
   it("creates and edits using the authorized workspace without losing revision guards", async () => {
     setYoloMode(true);
     const root = await fixture();
-    const server = createSuperagentMcpServer({ workspace: root, allowDangerous: true });
+    const server = authorizedServer(root,["read","write","execute"]);
     const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
     const created = await invoke(call, "superagent_studio_create", { name: "Demo Studio" });
     expect(created.isError, created.content?.[0]?.text).toBeFalsy();
@@ -88,7 +95,7 @@ describe("Motion MCP integration", () => {
     setYoloMode(true);
     const root = await fixture();
     const other = await fixture();
-    const server = createSuperagentMcpServer({ workspace: root, allowDangerous: true });
+    const server = authorizedServer(root,["read","write"]);
     const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
     const canvas = createCanvas(4, 4);
     canvas.getContext("2d").fillRect(0, 0, 4, 4);
@@ -115,13 +122,13 @@ describe("Motion MCP integration", () => {
     expect(clip.id).toMatch(/^audio-[0-9a-f]{64}$/);
     expect(await readMotionAudio(root, clip.id)).toEqual(wav);
     await expect(invoke(call, "superagent_motion_import_image", { base64, workspace: other }))
-      .rejects.toThrow(/scope|outside|not authorized/i);
+      .rejects.toThrow(/PROJECT_GRANT_MISSING/);
     await expect(readMotionAsset(other, asset.id)).rejects.toThrow();
   });
 
   it("exposes only read-only job storage stats to unprivileged MCP clients", async () => {
     const root = await fixture();
-    const server = createSuperagentMcpServer({ workspace: root });
+    const server = authorizedServer(root,["read"]);
     const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
     const result = await invoke(call, "superagent_motion_storage", { minAgeDays: 12 });
     expect(result.isError, result.content?.[0]?.text).toBeFalsy();
@@ -132,7 +139,7 @@ describe("Motion MCP integration", () => {
   });
   it("reports queued recovery readiness without allowing an unprivileged spawn", async () => {
     const root = await fixture();
-    const server = createSuperagentMcpServer({ workspace: root });
+    const server = authorizedServer(root,["read"]);
     const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
     const status = await invoke(call, "superagent_motion_queue_recovery");
     expect(status.isError, status.content?.[0]?.text).toBeFalsy();
@@ -148,10 +155,10 @@ describe("Motion MCP integration", () => {
   it("rejects out-of-workspace routing through an explicit unauthorized path", async () => {
     const root = await fixture();
     const other = await fixture();
-    const server = createSuperagentMcpServer({ workspace: root });
+    const server = authorizedServer(root,["read"]);
     const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
     const response = await invoke(call, "superagent_motion_list", { workspace: other });
     expect(response.isError).toBe(true);
-    expect(response.content[0].text).toMatch(/outside|not authorized|scope/i);
+    expect(response.content[0].text).toMatch(/PROJECT_GRANT_MISSING/);
   });
 });

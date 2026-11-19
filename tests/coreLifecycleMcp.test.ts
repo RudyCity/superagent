@@ -3,12 +3,15 @@ import {createSuperagentMcpServer,MCP_TOOL_CLASSIFICATION,MCP_TOOL_DEFINITIONS} 
 import {setFullYoloMode,setYoloMode} from "../src/core/permissions.js";
 import {CallToolRequestSchema,ListToolsRequestSchema} from "@modelcontextprotocol/sdk/types.js";
 import {getToolSecuritySchemes} from "../src/core/mcp/mcpToolPolicy.js";
+import {grantProjectAccess} from "../src/core/project/projectAccessPolicy.js";
+import {MCP_CONNECTION_PROJECT_ID} from "../src/core/project/projectAccessRequestStore.js";
 
 const names=["superagent_core_status","superagent_core_plan","superagent_core_restart",
   "superagent_core_rollback","superagent_core_drain"];
+const operator={mode:"oauth" as const,subject:"operator",scopes:["mcp:tools","mcp:tools:write"]};
 
 function handlers(config:Parameters<typeof createSuperagentMcpServer>[0]){
-  const server=createSuperagentMcpServer(config);
+  const server=createSuperagentMcpServer({authMode:"oauth",getIdentity:()=>operator,...config});
   const map=(server as any)._requestHandlers;
   return {server,list:map.get(ListToolsRequestSchema.shape.method.value),
     call:map.get(CallToolRequestSchema.shape.method.value)};
@@ -24,9 +27,10 @@ describe("Core MCP control: independent auth, gateway, supervisor guard",()=>{
       expect(getToolSecuritySchemes(name,"oauth")[0].scopes).toContain("mcp:tools:write");
     }
   });
-  it("advertises status only with local YOLO off; dangerous tools remain hidden",async()=>{
+  it("safe-only owner advertises status and hides mutation regardless of chat YOLO",async()=>{
     setYoloMode(false);
-    const {server,list}=handlers({allowDangerous:true,toolExposure:"gateway"});
+    const {server,list}=handlers({lockSafeTools:true,allowDangerous:false,
+      allowedTools:names.slice(0,2),toolExposure:"gateway"});
     try {
       const visible=(await list({method:"tools/list",params:{}})).tools.map((t:any)=>t.name);
       expect(visible).toContain(names[0]);
@@ -58,6 +62,7 @@ describe("Core MCP control: independent auth, gateway, supervisor guard",()=>{
   });
   it("OAuth write principals may see Core lifecycle tools but still require confirmation",async()=>{
     setYoloMode(true);
+    grantProjectAccess(operator,MCP_CONNECTION_PROJECT_ID,["execute"]);
     const {server,list,call}=handlers({
       allowDangerous:true,toolExposure:"gateway",authMode:"oauth",
       getIdentity:()=>({mode:"oauth",subject:"operator",scopes:["mcp:tools","mcp:tools:write"]}),
@@ -80,6 +85,7 @@ describe("Core MCP control: independent auth, gateway, supervisor guard",()=>{
   });
   it("refuses mutation without confirm or supervised owner; never falls back to process kill",async()=>{
     setYoloMode(true);
+    grantProjectAccess(operator,MCP_CONNECTION_PROJECT_ID,["execute"]);
     const {server,call}=handlers({allowDangerous:true,toolExposure:"full"});
     try {
       const denied=await call({method:"tools/call",params:{name:"superagent_core_restart",arguments:{port:19997,operationId:"sample-operation-id-0001",expectedBuildDigest:"a".repeat(64)}}});
@@ -95,7 +101,8 @@ describe("Core MCP control: independent auth, gateway, supervisor guard",()=>{
   });
   it("read-only status works with YOLO off and reports missing owner safely",async()=>{
     setYoloMode(false);
-    const {server,call}=handlers({toolExposure:"gateway"});
+    const {server,call}=handlers({toolExposure:"gateway",
+      getIdentity:()=>({...operator,scopes:["mcp:tools"]})});
     try {
       const result=await call({method:"tools/call",params:{name:names[0],arguments:{port:19997}}});
       expect(result.isError).toBe(true);

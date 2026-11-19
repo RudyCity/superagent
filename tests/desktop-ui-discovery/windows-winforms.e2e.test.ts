@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
 import { execa } from "execa";
 import { describe, expect, it } from "vitest";
@@ -21,19 +21,31 @@ $form.Width = 520
 $form.Height = 340
 $form.StartPosition = "Manual"
 $form.Location = New-Object System.Drawing.Point(120,120)
+$form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+$form.ShowInTaskbar = $false
 $button = New-Object System.Windows.Forms.Button
 $button.Text = "Inspect Me"
 $button.AccessibleName = "Inspect Me"
 $button.Location = New-Object System.Drawing.Point(30,30)
 $button.Size = New-Object System.Drawing.Size(160,45)
+$button.TabStop = $false
+$button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$button.BackColor = [System.Drawing.Color]::LightGray
+$button.FlatAppearance.MouseOverBackColor = $button.BackColor
+$button.FlatAppearance.MouseDownBackColor = $button.BackColor
 $form.Controls.Add($button)
 $timeout = New-Object System.Windows.Forms.Timer
-$timeout.Interval = 30000
+$timeout.Interval = 60000
 $timeout.Add_Tick({ $timeout.Stop(); $form.Close() })
 $timeout.Start()
-$form.Show()
-[Console]::Out.WriteLine("READY|" + $PID + "|" + $form.Handle.ToInt64())
-[Console]::Out.Flush()
+$form.Add_Shown({
+  [void]$form.BeginInvoke([Action]{
+    $form.ActiveControl = $null
+    $form.Refresh()
+    [Console]::Out.WriteLine("READY|" + $PID + "|" + $form.Handle.ToInt64())
+    [Console]::Out.Flush()
+  })
+})
 [System.Windows.Forms.Application]::Run($form)
 `;
 
@@ -99,6 +111,17 @@ describe.skipIf(!isWindows)("Windows native window discovery E2E", () => {
       const active = await adapter.getActiveWindow!();
       if (fixture!.active) expect(active?.nativeId).toBe(fixture!.nativeId);
 
+      // Establish that this fixture has painted stable pixels before the real
+      // session's independent stale-screenshot and window identity checks.
+      await expect.poll(async () => {
+        const first = await adapter.capture(target);
+        const second = await adapter.capture(target);
+        return first.targetWindow.nativeId === target.nativeId &&
+          second.targetWindow.nativeId === target.nativeId &&
+          createHash("sha256").update(first.image).digest("hex") ===
+            createHash("sha256").update(second.image).digest("hex");
+      }, { timeout: 12000, interval: 100 }).toBe(true);
+
       const manager = new DesktopUiSessionManager(new DesktopUiConsentManager());
       const inspected = await manager.inspectWindow({
         pid: target.pid,
@@ -115,5 +138,5 @@ describe.skipIf(!isWindows)("Windows native window discovery E2E", () => {
     } finally {
       await terminate(child);
     }
-  }, 30000);
+  }, 45000);
 });

@@ -9,6 +9,7 @@ import {
   certifiedServiceInspection,
   READ_ONLY_SERVICE_ACTIONS,
 } from "../tools/registeredFileToolGate.js";
+import { parseReadOnlyServiceArgs } from "../runtime/serviceReadPolicy.js";
 
 export const MCP_PERMISSION_DECISION_CODES = [
   "ALLOWED_TO_ATTEMPT", "SCHEMA_INVALID", "OAUTH_SCOPE_MISSING",
@@ -112,23 +113,13 @@ export function describeBoundedDesktopPermission(input: BoundedDesktopPermission
 
 /** Service inspection is explicitly metadata-only. Never query a path, owner,
  * executable, policy grant or process during this advisory preflight. */
-const SERVICE_NAMES = new Set<string>(["all", ...MANAGED_SERVICE_NAMES]);
 const SERVICE_INSPECTION_FIELDS = ["action", "service", "port", "limit"] as const;
 
 function isValidReadOnlyServiceArgs(args: unknown): { valid: boolean; action: string } {
-  const x = args && typeof args === "object" && !Array.isArray(args)
-    ? args as Record<string, unknown> : null;
-  const candidate: Record<string, unknown> | null = x
-    ? { ...x, action: x.action === undefined ? "status" : x.action }
-    : null;
-  const valid = Boolean(
-    candidate &&
-    certifiedServiceInspection(candidate) &&
-    (candidate.service === undefined || SERVICE_NAMES.has(String(candidate.service))),
-  );
+  const parsed = parseReadOnlyServiceArgs(args);
   return {
-    valid,
-    action: valid && typeof candidate?.action === "string" ? candidate.action : "unrecognized",
+    valid: parsed !== null,
+    action: parsed?.action ?? "unrecognized",
   };
 }
 

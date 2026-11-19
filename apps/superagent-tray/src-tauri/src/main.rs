@@ -350,28 +350,35 @@ async fn tray_notification_center_ack_navigation(
     let Some(ticket)=tray_navigation_receipt::consume(
         &dir,&incident_id,&nonce,&route,target_found)? else {
         return Ok(tray_navigation_receipt::receipt(
-            &incident_id,&route,"NOT_DELIVERED"));
+            &incident_id,None,"NOT_DELIVERED"));
     };
-    if let Some((request_id,tab))=ticket.pending {
+    if let Some((request_id,tab))=&ticket.pending {
         let payload=match core_request(Method::GET,"/api/desktop/access/requests",None).await {
             Ok(body)=>body,
             Err(_)=>return Ok(tray_navigation_receipt::receipt(
-                &incident_id,&route,"BACKEND_UNAVAILABLE")),
+                &incident_id,Some(ticket.route),"BACKEND_UNAVAILABLE")),
         };
         let valid=payload.get("success")==Some(&Value::Bool(true)) &&
             payload.get("requests").and_then(Value::as_array).is_some_and(|requests|
                 requests.iter().any(|req|
                     req.get("requestId").and_then(Value::as_str)==Some(request_id.as_str()) &&
                     req.get("status").and_then(Value::as_str)==Some("pending") &&
-                    (tab=="legacy" ||
+                    (*tab=="legacy" ||
                      (req.get("projectId").and_then(Value::as_str)==Some("mcp-connection")) ==
-                     (tab=="connections"))));
+                     (*tab=="connections"))));
         if !valid { return Ok(tray_navigation_receipt::receipt(
-            &incident_id,&route,"TARGET_EXPIRED")); }
+            &incident_id,Some(ticket.route),"TARGET_EXPIRED")); }
     }
-    // Native read persistence is a distinct transition after navigation.
-    tray_notification_center::perform(&dir,"read",Some(&incident_id))?;
-    Ok(tray_navigation_receipt::receipt(&incident_id,&route,"DELIVERED"))
+    // Core inventory may have awaited a reload or user focus change. Recheck
+    // foreground and the exact ledger revision before persisting the read ACK.
+    if !window.is_visible().unwrap_or(false) || !window.is_focused().unwrap_or(false) ||
+       window.is_minimized().unwrap_or(true) {
+        return Ok(tray_navigation_receipt::receipt(&incident_id,Some(ticket.route),"NOT_DELIVERED"));
+    }
+    if !tray_navigation_receipt::complete(&dir,&ticket)? {
+        return Ok(tray_navigation_receipt::receipt(&incident_id,Some(ticket.route),"TARGET_EXPIRED"));
+    }
+    Ok(tray_navigation_receipt::receipt(&incident_id,Some(ticket.route),"DELIVERED"))
 }
 
 /// Foreground refresh of the exact same authenticated security projection used

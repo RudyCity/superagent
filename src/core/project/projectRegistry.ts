@@ -3,6 +3,7 @@ import { revokeAllProjectAccess } from "./projectAccessPolicy.js";
 import path from "node:path";
 import { getRootConfigDir } from "../config/paths.js";
 import { getWorkspaceChain } from "../workspace/WorkspaceChainConfig.js";
+import { assertProjectIdNotReserved } from "./projectSecurityResources.js";
 
 export const PROJECT_REGISTRY_SCHEMA_VERSION = 1;
 export type RegisteredProjectType = "local" | "ssh" | "chain";
@@ -61,6 +62,7 @@ function normalizeProject(input: RegisterProjectInput, now: number, idOverride?:
   if (!/^[a-z0-9](?:[a-z0-9-]{0,62})$/.test(id)) {
     throw new Error("Project ID must contain 1-63 lowercase letters, digits, or hyphens and begin with a letter or digit.");
   }
+  assertProjectIdNotReserved(id);
   if (!["local", "ssh", "chain"].includes(input.type)) throw new Error("Project type must be local, ssh, or chain.");
 
   let root: string | undefined;
@@ -127,6 +129,7 @@ function readRegistry(registryPath?: string): ProjectRegistryDocument {
     if (!project || typeof project !== "object" || typeof project.id !== "string" || !/^[a-z0-9](?:[a-z0-9-]{0,62})$/.test(project.id)) {
       throw new Error(`Invalid MCP project registry at ${filePath}: malformed project record.`);
     }
+    assertProjectIdNotReserved(project.id);
     if (ids.has(project.id)) throw new Error(`Invalid MCP project registry at ${filePath}: duplicate project ID ${project.id}.`);
     ids.add(project.id);
     const allowedKeys = new Set(["id", "name", "type", "root", "target", "description", "tags", "enabled", "createdAt", "updatedAt"]);
