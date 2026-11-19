@@ -471,6 +471,20 @@ function certifiedSkillAccess(name:string,args:Args|undefined):boolean {
   if(Object.keys(args).some(key=>!["skillName","path"].includes(key)))return false;
   return typeof args.skillName==="string"&&args.skillName.trim().length>0&&args.path===undefined;
 }
+
+function certifiedManagedChromeLaunch(args:Args|undefined):boolean {
+  if(!args||typeof args!=="object"||Array.isArray(args))return false;
+  if(args.userDataDir!==undefined||args.isolated===false)return false;
+  const managed=args.managedCdp===true||args.remoteDebuggingPort!==undefined;
+  if(!managed)return false;
+  if(args.url!==undefined){
+    if(typeof args.url!=="string")return false;
+    try { const u=new URL(args.url); if(!["http:","https:"].includes(u.protocol))return false; }
+    catch{return false;}
+  }
+  return Object.keys(args).every(key=>["profileName","url","managedCdp",
+    "remoteDebuggingPort","isolated","mode"].includes(key));
+}
 function certifiedWorktreeMetadata(args:Args|undefined):boolean {
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
   if(args.action!=="list")return false;
@@ -518,6 +532,8 @@ export function describePermanentFileToolReadiness(name:string):string {
     return "Skill-name lookup is app-owned storage; an explicit path requires permanent read permission.";
   if(name==="superagent_manage_worktrees")
     return "List is certified metadata; recursive worktree removal remains blocked until every child file is mediated.";
+  if(name==="superagent_launch_chrome")
+    return "Only Managed CDP launches using SuperAgent-owned isolated profile storage and HTTP(S) URLs are certified.";
   if(MIXED_ACTION_TOOLS.has(name))
     return "Only non-file sub-actions are certified; shell/file/content-capable actions remain independently blocked.";
   if(FIXED_PLANNING_TOOLS.has(name))
@@ -554,7 +570,7 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
       CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name) || name === "superagent_desktop_ui" ||
       name==="superagent_use_skill" || name==="superagent_manage_worktrees" ||
       FIXED_PLANNING_TOOLS.has(name) || MIXED_ACTION_TOOLS.has(name) ||
-      name==="superagent_check_project_health")
+      name==="superagent_check_project_health" || name==="superagent_launch_chrome")
     return "action_dependent";
   return "uncertified";
 }
@@ -651,6 +667,7 @@ export function registeredFileToolGate(
   if(call.name==="superagent_get_skills"&&certifiedSkillAccess(call.name,call.args))return null;
   if(call.name==="superagent_use_skill"&&certifiedSkillAccess(call.name,call.args))return null;
   if(call.name==="superagent_manage_worktrees"&&certifiedWorktreeMetadata(call.args))return null;
+  if(call.name==="superagent_launch_chrome"&&certifiedManagedChromeLaunch(call.args))return null;
   if(MIXED_ACTION_TOOLS.has(call.name)&&certifiedMixedAction(call.name,call.args))return null;
   const planningEffects=FIXED_PLANNING_TOOLS.has(call.name)
     ?fixedPlanningEffects(call.name,call.args,workspace)
