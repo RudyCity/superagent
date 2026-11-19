@@ -6,9 +6,9 @@ import { registerProject, listProjects, updateProject } from "../src/core/projec
 import { resolveProjectTarget } from "../src/core/project/projectRouter.js";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
 import { onMcpActivity } from "../src/core/mcp/mcpActivityBus.js";
-import { hasProjectAccess } from "../src/core/project/projectAccessPolicy.js";
-import { MCP_CONNECTION_PROJECT_ID, MCP_CONNECTION_PROJECT_PATH, createProjectAccessRequest,
-  approveProjectAccessRequest, listProjectAccessRequests } from "../src/core/project/projectAccessRequestStore.js";
+import { hasProjectAccess, grantProjectAccess } from "../src/core/project/projectAccessPolicy.js";
+import { MCP_CONNECTION_PROJECT_ID, createProjectAccessRequest,
+  listProjectAccessRequests } from "../src/core/project/projectAccessRequestStore.js";
 
 describe("MCP virtual connection scope cannot alias a registered project", () => {
   let config: string;
@@ -27,11 +27,9 @@ describe("MCP virtual connection scope cannot alias a registered project", () =>
     else process.env.SUPERAGENT_CONFIG_DIR = previous;
     fs.rmSync(config, { recursive: true, force: true });
   });
-  function connectionGrant() {
-    const request = createProjectAccessRequest(identity, { projectId: MCP_CONNECTION_PROJECT_ID,
-      capabilities: ["execute"], reason: "Operator-approved isolated connection fixture" });
-    expect(request.projectPath).toBe(MCP_CONNECTION_PROJECT_PATH);
-    approveProjectAccessRequest(request.requestId);
+  function legacyConnectionGrant() {
+    // Simulate a historical grant already on disk; it must have no effect.
+    grantProjectAccess(identity, MCP_CONNECTION_PROJECT_ID, ["execute"]);
     expect(hasProjectAccess(identity, MCP_CONNECTION_PROJECT_ID, "execute")).toBe(true);
   }
   function legacyCollision() {
@@ -49,10 +47,16 @@ describe("MCP virtual connection scope cannot alias a registered project", () =>
     expect(fs.existsSync(path.join(config, "projects.json"))).toBe(false);
   });
 
-  it("preserves ordinary prefixed IDs and virtual execute grant semantics", () => {
+  it("refuses new operation grants against the virtual MCP connection", () => {
+    expect(() => createProjectAccessRequest(identity, { projectId: MCP_CONNECTION_PROJECT_ID,
+      capabilities: ["execute"], reason: "Deprecated non-project Execute" })).toThrow(/OAuth|registered project/);
+    expect(listProjectAccessRequests({ status: "pending" })).toHaveLength(0);
+  });
+
+  it("preserves ordinary prefixed IDs but never inherits connection Execute", () => {
     const project = registerProject({ id: "mcp-connection-app", name: "Ordinary project", type: "local", root });
     expect(updateProject(project.id, { name: "Updated ordinary project" }).id).toBe(project.id);
-    connectionGrant();
+    legacyConnectionGrant();
     expect(hasProjectAccess(identity, project.id, "execute")).toBe(false);
     expect(resolveProjectTarget({ projectId: project.id, sessionWorkspace: root }).projectId).toBe(project.id);
   });
@@ -67,8 +71,8 @@ describe("MCP virtual connection scope cannot alias a registered project", () =>
     expect(fs.readFileSync(path.join(config, "projects.json"), "utf8")).toBe(bytes);
   });
 
-  it("keeps virtual connection permission diagnostics independent of a legacy project collision", async () => {
-    connectionGrant();
+  it("keeps project permission diagnostics independent of a legacy project collision", async () => {
+    legacyConnectionGrant();
     const bytes = legacyCollision();
     const server = createSuperagentMcpServer({ workspace: root, toolExposure: "gateway", authMode: "oauth",
       getIdentity: () => identity });
@@ -78,7 +82,7 @@ describe("MCP virtual connection scope cannot alias a registered project", () =>
       } });
       expect(result.isError).not.toBe(true);
       expect(JSON.parse(result.content[0].text).permissionPreflight).toMatchObject({
-        decisionCode: "ALLOWED_TO_ATTEMPT", performedExecution: false, mcpConnectionExecute: { decision: "granted" },
+        decisionCode: "PROJECT_CAPABILITY_MISSING", performedExecution: false, mcpProjectExecute: { decision: "approval_required" },
       });
       expect(listProjectAccessRequests({ status: "pending" })).toHaveLength(0);
       expect(fs.readFileSync(path.join(config, "projects.json"), "utf8")).toBe(bytes);
@@ -89,7 +93,7 @@ describe("MCP virtual connection scope cannot alias a registered project", () =>
     { gateway: false, explicit: false }, { gateway: false, explicit: true },
     { gateway: true, explicit: false }, { gateway: true, explicit: true },
   ])("denies legacy project execute with only a connection grant (gateway=$gateway, explicit=$explicit)", async ({ gateway, explicit }) => {
-    connectionGrant();
+    legacyConnectionGrant();
     const policyBytes = fs.readFileSync(path.join(config, "project-access.json"), "utf8");
     const registryBytes = legacyCollision();
     const audits: unknown[] = [], activities: unknown[] = [];
