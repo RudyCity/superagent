@@ -4117,15 +4117,10 @@
         </div>
         <div id="shutdown-services" class="shutdown-services"
           role="group" aria-label="Select OS processes to force"></div>
-        <section class="shutdown-force-panel" aria-label="Force selected confirmation">
-          <div class="shutdown-force-copy">
-            <strong>Force selected</strong>
-            <small>Ownership is not checked. Critical OS processes and this Tray itself remain protected.</small>
-          </div>
-          <label for="shutdown-force-confirm">Type <code>FORCE SELECTED</code> to unlock</label>
-          <input id="shutdown-force-confirm" type="text" maxlength="14" autocomplete="off"
-            spellcheck="false" placeholder="FORCE SELECTED" aria-label="Force selected confirmation phrase" />
-        </section>
+        <div class="shutdown-force-note">
+          Force selected terminates the checked OS processes immediately.
+          Ownership is ignored; critical OS processes and this Tray itself remain protected.
+        </div>
         <section id="shutdown-progress" class="shutdown-progress" aria-label="Force process progress"
           aria-live="polite" hidden>
           <h3 id="shutdown-progress-status">Force operation progress</h3>
