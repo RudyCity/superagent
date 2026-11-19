@@ -348,6 +348,36 @@ function certifiedSupervisedCoreMutation(name:string, args:Args|undefined):boole
     OPERATION_ID.test(args.operationId) && typeof args.expectedBuildDigest === "string" &&
     /^[a-f0-9]{64}$/.test(args.expectedBuildDigest);
 }
+/**
+ * Only a URL-preserving, owner-attested MCP backend swap is certified here.
+ * This does not certify generic service mutations, owner termination, tunnel
+ * recreation or caller-supplied executable/file paths.
+ * Runtime checks OAuth, project Execute, owner lease, URL and operation ledger.
+ */
+export function certifiedMcpBackendReloadArgs(args:Args|undefined):boolean {
+  if(!args||typeof args!=="object"||Array.isArray(args)||args.service!=="mcp")
+    return false;
+  if(!Number.isSafeInteger(args.port)||Number(args.port)<1024||Number(args.port)>65535)
+    return false;
+  if(args.action==="plan"){
+    return args.targetAction==="reload" &&
+      Object.keys(args).every(key=>["action","service","port","targetAction"].includes(key));
+  }
+  if(args.action!=="reload" ||
+     Object.keys(args).some(key=>!["action","service","port","confirm","operationId","expectedOwnerPid","expectedPublicUrl"].includes(key)))
+    return false;
+  if(args.confirm!==true || typeof args.operationId!=="string" ||
+     !OPERATION_ID.test(args.operationId) ||
+     !Number.isSafeInteger(args.expectedOwnerPid)||Number(args.expectedOwnerPid)<1 ||
+     typeof args.expectedPublicUrl!=="string"||args.expectedPublicUrl.length>2048)
+    return false;
+  try {
+    const url=new URL(args.expectedPublicUrl);
+    return url.protocol==="https:" && Boolean(url.hostname) &&
+      !url.username && !url.password && !url.search && !url.hash &&
+      url.pathname==="/mcp" && url.toString()===args.expectedPublicUrl;
+  }catch{return false;}
+}
 const BROWSER_OBSERVATION_TOOLS = new Set([
   "superagent_browser_gateway", "superagent_chrome_cdp",
   "superagent_chrome_cdp_observe", "superagent_chrome_cdp_web",
@@ -680,7 +710,7 @@ export function describePermanentFileToolReadiness(name:string):string {
   if(name==="superagent_list_files"||name==="superagent_find_files")
     return "Directory discovery is performed by a registry-aware traversal that filters denied children and never reads file contents.";
   if(name==="superagent_manage_services")
-    return "Read-only status, inventory, owner_status, doctor, health, dashboard, logs or profile actions only; lifecycle mutations remain restricted.";
+    return "Read-only inspections and a strict owner-verified MCP backend reload (plan then confirm with exact owner PID, operation ID and public HTTPS URL) are certified; all other lifecycle mutations remain restricted.";
   if(name==="superagent_use_skill")
     return "Skill-name lookup is app-owned storage; an explicit path requires permanent read permission.";
   if(name==="superagent_manage_worktrees")
@@ -871,7 +901,10 @@ export function registeredFileToolGate(
     const args=call.args??{};
     if(certifiedServiceInspection(args) &&
        (call.name==="superagent_services_status" || args.action!==undefined))return null;
-    return "Service inspection is not certified with unsupported arguments; use only the documented read-only fields.";
+    if(call.name==="superagent_manage_services"&&certifiedMcpBackendReloadArgs(args))return null;
+    return call.name==="superagent_manage_services"
+      ? "Only read-only service inspection or exact owner-bound MCP backend reload (plan then confirm) is certified; other service lifecycle mutations remain restricted."
+      : "Service inspection is not certified with unsupported arguments; use only the documented read-only fields.";
   }
   if(READ_SEARCH.has(call.name) &&
       !(call.name==="superagent_grep_search"&&certifiedExplicitGrepSearchArgs(call.args)) &&
