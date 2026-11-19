@@ -111,17 +111,40 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       ["superagent_list_chrome_profiles",{}],
     ] as const)expect(gate(name,args)).toMatch(/not certified|explicit certified file effects/);
   });
-  it("certifies bounded Git history but never exposes protected working-tree file names",()=>{
-    const a=setup(),opts={registry:()=>a.p(a.rule("root","allow",a.root,["read"],true)),identity:a.identity};
-    const gate=(args:Record<string,unknown>)=>
-      registeredFileToolGate({name:"superagent_git_action",args},a.root,opts);
+  it("allows structured Git actions only with matching recursive native file grants",()=>{
+    const a=setup();
+    const rootRead=a.rule("root-read","allow",a.root,["read"],true);
+    const rootWrite=a.rule("root-write","allow",a.root,["read","write"],true);
+    const rootFull=a.rule("root-full","allow",a.root,["read","write","delete"],true);
+    const gate=(args:Record<string,unknown>,...rules:PersistentAccessPolicy["rules"])=>
+      registeredFileToolGate({name:"superagent_git_action",args},a.root,
+        {registry:()=>a.p(...rules),identity:a.identity});
     expect(gate({action:"log",limit:5,projectId:"superagent"})).toBeNull();
     expect(gate({action:"log",limit:500})).toMatch(/not certified/);
-    expect(gate({action:"status"})).toMatch(/protected workspace files/);
-    expect(gate({action:"diff"})).toMatch(/protected workspace files/);
+    expect(gate({action:"status"},rootRead)).toBeNull();
+    expect(gate({action:"diff"},rootRead)).toBeNull();
+    expect(gate({action:"status"})).toMatch(/recursive native file grants/);
+    expect(gate({action:"commit",message:"Scoped change"},rootWrite)).toBeNull();
+    expect(gate({action:"commit",message:"Scoped change"},rootRead)).toMatch(/recursive native file grants/);
+    expect(gate({action:"add",files:["src/main.ts"]},rootWrite)).toBeNull();
+    expect(gate({action:"restore",files:["src/main.ts"]},rootFull)).toBeNull();
+    expect(gate({action:"clean",files:["src/main.ts"]},rootFull)).toBeNull();
+    expect(gate({action:"clean"},rootFull)).toMatch(/recursive native file grants/);
+    expect(gate({action:"restore",files:["src"]},rootFull)).toMatch(/recursive native file grants/);
+    for(const file of ["../outside.txt","src/*.ts",".git/config","src/../.env",":(glob)src/*"]){
+      expect(gate({action:"add",files:[file]},rootFull)).toMatch(/recursive native file grants/);
+    }
+    // Explicit host deny wins over a broad workspace allow.
+    const protectedFile=a.rule("protected","deny",path.join(a.root,".env"),["read"]);
+    expect(gate({action:"status"},rootFull,protectedFile)).toMatch(/recursive native file grants/);
+    expect(gate({action:"add",files:["src/main.ts"]},rootFull,protectedFile)).toMatch(/recursive native file grants/);
+    // The gateway wrapper cannot bypass the same host check.
+    expect(registeredFileToolGate({name:"superagent_tool_execute",args:{
+      name:"superagent_git_action",arguments:{action:"diff"},
+    }},a.root,{registry:()=>a.p(rootRead),identity:a.identity})).toBeNull();
     expect(registeredFileToolGate({name:"superagent_tool_execute",args:{
       name:"superagent_git_action",arguments:{action:"status"},
-    }},a.root,opts)).toMatch(/protected workspace files/);
+    }},a.root,{registry:()=>a.p(),identity:a.identity})).toMatch(/recursive native file grants/);
   });
   it("does not use permanent file policy as a catch-all blocker for non-file capabilities",()=>{
     const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
