@@ -8,19 +8,19 @@ import {
 } from "../src/core/mcp/mcpPermissionDecision.js";
 
 describe("bounded MCP permission trace never grants an action", () => {
-  const allowed = { oauthAllowed:true, connectionDecision:"granted" as const,
+  const allowed = { oauthAllowed:true, projectDecision:"granted" as const,
     filePolicyActive:true, hostBlock:null };
   it("does not execute and marks native/target/project as unchecked", () => {
     const result = describeBoundedDesktopPermission(allowed);
     expect(result.decisionCode).toBe("ALLOWED_TO_ATTEMPT");
     expect(result.performedExecution).toBe(false);
     expect(result.layers).toMatchObject({nativeConsent:"not_checked",
-      targetIdentity:"not_checked",projectCapability:"not_checked",hostFilePolicy:"granted"});
+      targetIdentity:"not_checked",projectCapability:"granted",hostFilePolicy:"granted"});
     expect(MCP_PERMISSION_DECISION_CODES).toContain(result.decisionCode);
   });
   it("host denial outranks a missing Execute grant; repair advice never repeats a grant", () => {
     const result = describeBoundedDesktopPermission({
-      ...allowed, connectionDecision:"approval_required",
+      ...allowed, projectDecision:"approval_required",
       hostBlock:"Desktop UI content not certified for host permanent file access" });
     expect(result.decisionCode).toBe("HOST_FILE_POLICY_UNCERTIFIED");
     expect(result.remediation).toMatch(/cannot override/);
@@ -31,14 +31,14 @@ describe("bounded MCP permission trace never grants an action", () => {
       hostBlock:"Desktop UI metadata command has unsupported arguments"})
       .decisionCode).toBe("SCHEMA_INVALID");
     expect(describeBoundedDesktopPermission({...allowed,
-      connectionDecision:"unavailable"}).decisionCode).toBe("POLICY_STORE_UNAVAILABLE");
+      projectDecision:"unavailable"}).decisionCode).toBe("POLICY_STORE_UNAVAILABLE");
     expect(describeBoundedDesktopPermission({...allowed,
       oauthAllowed:false}).decisionCode).toBe("OAUTH_SCOPE_MISSING");
   });
   it("preflights read-only service status without granting MCP Execute or leaking paths", () => {
     const allowed=describeBoundedServicePermission({action:"owner_status",service:"tray"},true);
     expect(allowed.decisionCode).toBe("ALLOWED_TO_ATTEMPT");
-    expect(allowed.layers).toMatchObject({connectionExecute:"not_checked",
+    expect(allowed.layers).toMatchObject({projectCapability:"not_checked",
       hostFilePolicy:"granted",nativeConsent:"not_checked"});
     expect(allowed.performedExecution).toBe(false);
     for (const args of [
@@ -62,13 +62,12 @@ describe("bounded MCP permission trace never grants an action", () => {
 
   it("provides structured machine-readable remediationAction and supports bounded service-manage and browser-observe preflight", () => {
     const missingGrant = describeBoundedDesktopPermission({
-      ...allowed, connectionDecision: "approval_required",
+      ...allowed, projectDecision: "approval_required",
     });
     expect(missingGrant.remediationAction).toMatchObject({
       kind: "open_tray_section",
       trayPage: "security",
-      trayTab: "connections",
-      projectId: "mcp-connection",
+      trayTab: "mcp",
       requiredCapability: "execute",
       retryableAfterGrant: true,
     });
@@ -88,7 +87,7 @@ describe("bounded MCP permission trace never grants an action", () => {
     const manageRead = describeBoundedServiceManagePermission({
       args: { action: "owner_status", service: "tray" },
       oauthAllowed: true,
-      connectionDecision: "granted",
+      projectDecision: "granted",
       filePolicyActive: true,
       hostBlock: null,
     });
@@ -98,7 +97,7 @@ describe("bounded MCP permission trace never grants an action", () => {
     const manageMutate = describeBoundedServiceManagePermission({
       args: { action: "restart", service: "tray", confirm: true },
       oauthAllowed: true,
-      connectionDecision: "granted",
+      projectDecision: "granted",
       filePolicyActive: true,
       hostBlock: "Tool is not certified for permanent file access restrictions.",
     });
@@ -127,19 +126,18 @@ describe("bounded MCP permission trace never grants an action", () => {
     });
   });
 
-  it("offers only explicit human request advice for missing connection Execute", () => {
-    const result = describeBoundedDesktopPermission({ ...allowed, connectionDecision:"approval_required" });
+  it("routes missing project Execute to Akses Proyek without submitting a grant", () => {
+    const result = describeBoundedDesktopPermission({ ...allowed, projectDecision:"approval_required" });
     expect(result.remediationActions).toEqual([{
-      kind:"open_tab",page:"security",tab:"connections",route:"security:connections",
-      requiresUserAction:true,request:{tool:"superagent_request_project_access",
-        arguments:{projectId:"mcp-connection",capabilities:["execute"]},requiresUserSubmission:true},
+      kind:"open_tab",page:"security",tab:"mcp",route:"security:mcp",
+      requiresUserAction:true,
     }]);
     expect(result.performedExecution).toBe(false);
   });
 
   it("never suggests a grant when an independent host or store gate blocks execution", () => {
-    for (const input of [{...allowed,connectionDecision:"approval_required" as const,hostBlock:"uncertified"},
-      {...allowed,connectionDecision:"unavailable" as const}]) {
+    for (const input of [{...allowed,projectDecision:"approval_required" as const,hostBlock:"uncertified"},
+      {...allowed,projectDecision:"unavailable" as const}]) {
       const result=describeBoundedDesktopPermission(input);
       expect(result.remediationActions).toEqual([expect.objectContaining({kind:"operator_repair",requiresUserAction:true})]);
       expect(JSON.stringify(result.remediationActions)).not.toMatch(/request_project_access|capabilities/);
