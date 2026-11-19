@@ -406,6 +406,25 @@ export class DaemonScheduler {
     this.startedAt = null;
   }
 
+  /**
+   * Emergency operator stop: stop future scheduling and cooperatively abort
+   * every currently active daemon run. Job definitions are preserved.
+   */
+  public forceStopDaemon(): { cancelledRuns: number; activeJobsCount: number } {
+    this.stopDaemon();
+    let cancelledRuns = 0;
+    for (const [runId, controller] of this.activeRunAbortControllers) {
+      if (controller.signal.aborted) continue;
+      this.cancelledRunIds.add(runId);
+      controller.abort();
+      cancelledRuns += 1;
+    }
+    const activeJobsCount = this.runningJobIds.size;
+    this.log("Emergency daemon stop requested; aborted " + cancelledRuns +
+      " active run(s), " + activeJobsCount + " job(s) still finalizing.");
+    return { cancelledRuns, activeJobsCount };
+  }
+
   public isRunning(): boolean {
     return this.tickTimer !== null;
   }
