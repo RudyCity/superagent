@@ -38,6 +38,8 @@ describe("MCP full-catalog host file-policy transparency", () => {
       expect(validStates.has(getPermanentFileToolReadiness(tool.name)), tool.name).toBe(true);
     }
     expect(getPermanentFileToolReadiness("superagent_exec_command")).toBe("uncertified");
+    expect(getPermanentFileToolReadiness("superagent_apply_patch")).toBe("requires_explicit_files");
+    expect(getPermanentFileToolReadiness("superagent_replace_file_content")).toBe("requires_explicit_files");
     expect(getPermanentFileToolReadiness("superagent_find_process")).toBe("certified_non_file");
     expect(getPermanentFileToolReadiness("superagent_sync_projects")).toBe("certified_non_file");
     expect(getPermanentFileToolReadiness("superagent_device_android_diagnostic")).toBe("certified_non_file");
