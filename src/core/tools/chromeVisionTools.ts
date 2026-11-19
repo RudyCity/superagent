@@ -30,6 +30,7 @@ import { createHash } from "node:crypto";
 import { delegateCdpTransport } from "../delegate/cdpTransport.js";
 import { delegateTargetId, parseBrowserTargetId } from "../browserTransport/targetIdentity.js";
 import { resolveBrowserTransport } from "../browserTransport/router.js";
+import {resolveVisionPython} from "../runtime/visionPythonRuntime.js";
 import { authorizeDelegateTarget, noteDelegateWriteSuccess, withDelegateTargetLock } from "../browserTransport/sessionCoordinator.js";
 
 function cdpHost(): string {
@@ -58,25 +59,11 @@ export const VISION_NOT_RUNNING_MSG =
   "Start it manually with: python scripts/vision_server.py 8095 " +
   "(from the superagent repo root).";
 
-/**
- * Find a usable Python interpreter. Tries `python`, `py`, `python3` in order.
+/** Resolve a real Python executable (not an app alias or launcher PID).
+ * A Windows MCP owner often runs without the interactive shell's PATH.
  */
 async function findPython(): Promise<string | null> {
-  const { execFile } = await import("child_process");
-  const candidates = ["python", "py", "python3"];
-  for (const cmd of candidates) {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        execFile(cmd, ["--version"], { timeout: 5000, windowsHide: true }, (err: any) => {
-          err ? reject(err) : resolve();
-        });
-      });
-      return cmd;
-    } catch {
-      // try next
-    }
-  }
-  return null;
+  return resolveVisionPython()?.executable ?? null;
 }
 
 /**
@@ -134,7 +121,7 @@ async function ensureVisionRunning(): Promise<void> {
     }
     const python = await findPython();
     if (!python) {
-      throw new Error("No Python interpreter found (tried python, py, python3). Install Python 3.10+.");
+      throw new Error("Vision Python unavailable to MCP: configure SUPERAGENT_VISION_PYTHON with an absolute executable path or install Python for the service account.");
     }
 
     const child = spawn(python, [script, String(visionPort())], {
@@ -770,7 +757,7 @@ async function cmdStatus(): Promise<string> {
     chromeLine = `- Chrome CDP (port ${cdpPort()}): ${cdpOk ? "connected" : "not reachable"}`;
   }
   const serviceUp = await visionHealth();
-  const pythonCmd = await findPython();
+  const pythonRuntime = resolveVisionPython();
   const lines = [
     "UI-DETR-1 Set-of-Mark (SoM) Vision Status:",
     chromeLine,
@@ -778,7 +765,7 @@ async function cmdStatus(): Promise<string> {
     `- Model: racineai/UI-DETR-1 (~535MB RF-DETR Medium)`,
     `- Endpoints: /detect, /perceive (SoM tags), /diff (visual state verification)`,
     `- Cached Perception Sessions: ${visionCaches.size}`,
-    `- Python runtime: ${pythonCmd || "not found in PATH"}`,
+    `- Python runtime: ${pythonRuntime ? "Python "+pythonRuntime.version+" ("+pythonRuntime.source+")" : "not available to MCP (set SUPERAGENT_VISION_PYTHON)"}`,
   ];
   return lines.join("\n");
 }
