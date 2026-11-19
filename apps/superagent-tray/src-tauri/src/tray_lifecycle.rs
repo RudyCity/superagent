@@ -486,9 +486,9 @@ mod tests{
             stopped
         });
         let health=tray_private_request(&owner,"GET",None).unwrap();
-        assert_eq!(health["service"],"superagent-tray");
-        assert_eq!(health["pid"],owner.pid);
-        assert_eq!(health["instanceId"],owner.instance_id);
+        assert_eq!(health["service"].as_str(),Some("superagent-tray"));
+        assert_eq!(health["pid"].as_u64(),Some(owner.pid as u64));
+        assert_eq!(health["instanceId"].as_str(),Some(owner.instance_id.as_str()));
         let mut wrong_token=owner.clone();
         wrong_token.token=private_random_hex();
         assert!(tray_private_request(&wrong_token,"GET",None).is_err());
