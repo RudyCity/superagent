@@ -1421,10 +1421,16 @@
     if (!id || !Array.isArray(mcpCache.requests)) return false;
     const target = mcpCache.requests.find((request) => request.requestId === id);
     if (!target) return false; // A resolved/expired request is not an active approval.
-    const tab = target.projectId === "mcp-connection" ? "connections" : "mcp";
-    if (state.activeTab !== tab) setActiveTab(tab);
-    for (const listId of ["access-mcp-pending-list", "access-mcp-connection-pending-list",
-      "access-mcp-history-list", "access-mcp-connection-history-list"]) {
+    // Historical mcp-connection Execute requests cannot be approved anymore.
+    // Route them to the explicit legacy denial panel in Project Access, never
+    // to OAuth connection sessions or a non-existent approval list.
+    const legacyConnectionRequest = target.projectId === "mcp-connection";
+    if (state.activeTab !== "mcp") setActiveTab("mcp");
+    if (legacyConnectionRequest) {
+      status("Permintaan izin koneksi lama tidak berlaku. Buka penolakan permintaan lama di Akses Proyek; buat grant baru pada proyek terdaftar jika diperlukan.", "warning");
+    }
+    for (const listId of ["access-mcp-pending-list", "access-mcp-legacy-list",
+      "access-mcp-history-list"]) {
       const root = $(listId);
       if (!root) continue;
       for (const entry of root.children) {
@@ -1451,7 +1457,7 @@
   }
 
   function humanMcpTarget(req) {
-    return req.projectId === "mcp-connection" ? "MCP Connection Controls" :
+    return req.projectId === "mcp-connection" ? "Permintaan lama (tidak berlaku)" :
       String(req.projectName || req.projectId || "Proyek");
   }
 
@@ -1931,6 +1937,7 @@
       // Failed refreshes never leave stale, actionable approval buttons on screen.
       renderMcpPending("access-mcp-pending-list", failures.requests ? null : projectPending, false);
       renderMcpHistory("access-mcp-history-list", failures.requests ? null : projectHistory);
+      renderLegacyMcpRequests(failures.requests ? null : allRequests);
       highlightMcpNotificationRequest();
       renderMcpConnectedClients(mcpCache.live);
       renderMcpRegisteredConnections(mcpCache.live);
@@ -1963,6 +1970,7 @@
       if (Object.keys(failures).length) {
         status("Ada data izin MCP yang gagal dimuat. Lihat pesan pada tab MCP.", "warning");
       }
+      if ($("access-mcp-tool-catalog")) void refreshMcpToolCatalog();
     })();
     try { return await mcpCache.refreshing; }
     finally {
