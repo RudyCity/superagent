@@ -154,6 +154,53 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       name:"superagent_git_action",arguments:{action:"status"},
     }},a.root,{registry:()=>a.p(),identity:a.identity})).toMatch(/recursive native file grants/);
   });
+  it("certifies only exact owner-bound URL-preserving MCP backend reload",()=>{
+    const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
+    const gate=(name:string,args:Record<string,unknown>)=>
+      registeredFileToolGate({name,args},a.root,opts);
+    const plan={action:"plan",service:"mcp",port:9227,targetAction:"reload"};
+    const reload={
+      action:"reload",service:"mcp",port:9227,confirm:true,
+      operationId:"2998430d-2125-4553-bc4a-67bafc26e935",
+      expectedOwnerPid:23052,
+      expectedPublicUrl:"https://owned-cloudflare.example/mcp",
+    };
+    expect(gate("superagent_manage_services",plan)).toBeNull();
+    expect(gate("superagent_manage_services",reload)).toBeNull();
+    expect(gate("superagent_tool_execute",{
+      name:"superagent_manage_services",arguments:plan,
+    })).toBeNull();
+    expect(gate("superagent_tool_execute",{
+      name:"superagent_manage_services",arguments:reload,
+    })).toBeNull();
+    for(const bad of [
+      {...plan,targetAction:"restart"},
+      {...plan,service:"core"},
+      {...plan,confirm:true},
+      {...plan,workspace:"/outside"},
+      {...reload,confirm:false},
+      {...reload,confirm:undefined},
+      {...reload,expectedOwnerPid:0},
+      {...reload,expectedPublicUrl:"http://example.com/mcp"},
+      {...reload,expectedPublicUrl:"https://example.com/mcp?token=secret"},
+      {...reload,expectedPublicUrl:"https://user:pass@example.com/mcp"},
+      {...reload,expectedPublicUrl:"https://example.com/mcp#fragment"},
+      {...reload,expectedPublicUrl:"https://example.com/evil"},
+      {...reload,operationId:"short"},
+      {...reload,expectedExecutablePath:"/outside"},
+      {...reload,service:"core"},
+      {...reload,action:"stop"},
+    ]){
+      expect(gate("superagent_manage_services",bad)).toMatch(/restricted/);
+    }
+    expect(gate("superagent_services_status",plan))
+      .toMatch(/read-only/);
+    // No generic mutations are certified, even with an otherwise valid
+    // owner PID and exact operation ID.
+    expect(gate("superagent_manage_services",{
+      ...reload,action:"restart",service:"tray",
+    })).toMatch(/restricted/);
+  });
   it("does not use permanent file policy as a catch-all blocker for non-file capabilities",()=>{
     const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
     const gate=(name:string,args:Record<string,unknown>={})=>
