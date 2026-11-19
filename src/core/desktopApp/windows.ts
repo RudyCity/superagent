@@ -171,7 +171,8 @@ export function createWindowsDesktopAppProvider(
         truncated?: boolean;
       };
       const programs = (Array.isArray(parsed.programs) ? parsed.programs : [])
-        .filter((item) => typeof item.name === "string" && item.name.length > 0 && item.name.length <= 256)
+        .filter((item) => typeof item.name === "string" && item.name.trim().length > 0 &&
+          item.name.length <= 256 && !/\$\{\{[^{}]+\}\}/.test(item.name))
         .map((item) => ({
           name: String(item.name),
           ...(typeof item.version === "string" && item.version.length <= 100 && item.version ? { version: item.version } : {}),
