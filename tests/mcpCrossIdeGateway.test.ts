@@ -7,7 +7,7 @@ import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.j
 import { MCP_GATEWAY_TOOL_NAMES } from "../src/core/mcp/mcpToolGateway.js";
 import { setYoloMode } from "../src/core/permissions.js";
 import { grantProjectAccess } from "../src/core/project/projectAccessPolicy.js";
-import { MCP_CONNECTION_PROJECT_ID } from "../src/core/project/projectAccessRequestStore.js";
+import { registerProject } from "../src/core/project/projectRegistry.js";
 
 async function call(server: ReturnType<typeof createSuperagentMcpServer>, name: string, args: Record<string, unknown>) {
   const handler = (server as any)._requestHandlers.get("tools/call");
@@ -28,9 +28,10 @@ beforeEach(() => {
   priorConfig = process.env.SUPERAGENT_CONFIG_DIR;
   isolatedConfig = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-browser-gateway-"));
   process.env.SUPERAGENT_CONFIG_DIR = isolatedConfig;
-  // Only a native operator-issued connection grant, never chat YOLO, may
-  // authorize dangerous MCP browser control. This fixture simulates approval.
-  grantProjectAccess(approvedIdentity(), MCP_CONNECTION_PROJECT_ID, ["execute"]);
+  // OAuth authorizes the connection; this fixture grants Execute only to a
+  // registered project, independently of chat YOLO.
+  registerProject({id:"browser-test-project",name:"Browser test project",type:"local",root:isolatedConfig});
+  grantProjectAccess(approvedIdentity(), "browser-test-project", ["execute"]);
 });
 afterEach(() => {
   setYoloMode(false);
@@ -42,7 +43,7 @@ afterEach(() => {
 describe("Cross-IDE gateway MCP exposure and direct bypass policy", () => {
   test("gateway discovery works with dangerous tool enabled, without caller-supplied agentId", async () => {
     setYoloMode(true);
-    const mcp = createSuperagentMcpServer({ toolExposure: "gateway", allowDangerous: true,
+    const mcp = createSuperagentMcpServer({ workspace:isolatedConfig, toolExposure: "gateway", allowDangerous: true,
       authMode: "oauth", getIdentity: approvedIdentity });
     try {
       const tools = await list(mcp);
@@ -60,7 +61,7 @@ describe("Cross-IDE gateway MCP exposure and direct bypass policy", () => {
   test("MCP-only enforcement blocks cached direct CDP/vision tool calls, but not gateway identity", async () => {
     setYoloMode(true);
     process.env.SUPERAGENT_CDP_GATEWAY_ONLY = "1";
-    const mcp = createSuperagentMcpServer({ toolExposure: "full", allowDangerous: true,
+    const mcp = createSuperagentMcpServer({ workspace:isolatedConfig, toolExposure: "full", allowDangerous: true,
       authMode: "oauth", getIdentity: approvedIdentity });
     try {
       const names = await list(mcp);
@@ -85,7 +86,7 @@ describe("Cross-IDE gateway MCP exposure and direct bypass policy", () => {
     });
     await new Promise<void>(resolve=>web.listen(0,"127.0.0.1",resolve));
     const port=(web.address() as {port:number}).port;
-    const mcp=createSuperagentMcpServer({toolExposure:"full",allowDangerous:true,
+    const mcp=createSuperagentMcpServer({workspace:isolatedConfig,toolExposure:"full",allowDangerous:true,
       authMode:"oauth",getIdentity:approvedIdentity});
     try{
       const identity=await call(mcp,"superagent_browser_gateway",{action:"identity"});
@@ -110,7 +111,7 @@ describe("Cross-IDE gateway MCP exposure and direct bypass policy", () => {
   });
   test("read-only OAuth identity cannot discover dangerous gateway tool", async () => {
     const mcp = createSuperagentMcpServer({
-      toolExposure: "full", allowDangerous: true, authMode: "oauth",
+      workspace:isolatedConfig,toolExposure: "full", allowDangerous: true, authMode: "oauth",
       getIdentity: () => ({ mode: "oauth", subject: "viewer", credentialHash: "a".repeat(64), scopes: ["mcp:tools:read"] }),
     });
     try {
