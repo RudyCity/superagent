@@ -41,6 +41,7 @@ import { PROVIDER_TEMPLATE_LABELS } from "./core/loginWizardLogic.js";
 import { isMuseRunnerActive } from "./core/remoteAgent/config.js";
 import { isMuseWatcherActive } from "./core/remoteAgent/museWatcher.js";
 import { getDashboardSuggestions } from "./utils/dashboardSuggestions.js";
+import { logCli, logInput, logDispatch, logHang } from "./core/utils/unifiedLogger.js";
 
 // Hook & Component Baru
 import { StatusBar } from "./components/status-bar.js";
@@ -393,14 +394,25 @@ export function App({
     }
   }, [activeWizard]);
 
-  // Ensure interactive TTY stdin is resumed on mount
+  // Diagnostic logging for CLI app lifecycle, focus switches, and processing state
   useEffect(() => {
-    if (process.stdin.isTTY) {
-      try {
-        process.stdin.resume();
-      } catch {}
-    }
+    logCli("App component mounted", {
+      isTTY: process.stdin.isTTY,
+      initialPromptLength: initialPrompt?.length ?? 0
+    });
+    return () => {
+      logCli("App component unmounting");
+    };
   }, []);
+
+  useEffect(() => {
+    logInput(`CLI focusMode changed to: ${focusMode}`);
+  }, [focusMode]);
+
+  useEffect(() => {
+    logDispatch(`Agent processing state changed: isProcessing=${isProcessing}`);
+  }, [isProcessing]);
+
 
   // Refresh active preset name whenever model changes OR wizard closes (e.g. after /model or /login).
   // Dual dependency covers: (1) model changed → activeModel differs, (2) same model but different
@@ -817,8 +829,19 @@ export function App({
   const handleSubmit = useCallback(
     async (value: string) => {
       const trimmed = value.trim();
+      logInput("handleSubmit invoked", {
+        rawLength: value.length,
+        trimmedLength: trimmed.length,
+        isProcessing,
+        hasActiveWizard: Boolean(activeWizard),
+        attachmentCount: attachments.length,
+        preview: trimmed.slice(0, 100)
+      });
 
       if (isProcessing && !activeWizard) {
+        logInput("Message submitted during isProcessing=true, showing submit queue dialog", {
+          preview: trimmed.slice(0, 100)
+        });
         if (!trimmed && attachments.length === 0) return;
 
         // While the AI is still processing, show a dialog (Queue / Insert / Back)
@@ -1743,6 +1766,7 @@ export function App({
   };
 
   const handleInputChange = useCallback((val: string) => {
+    const inputStart = performance.now();
     const sanitizedVal = stripSgrMouseSequences(val);
 
     const nextPasteState = updatePasteState(input, sanitizedVal, {
@@ -1767,6 +1791,14 @@ export function App({
       wizardOptions.length > 0
     ) {
       setWizardSelectedIndex(0);
+    }
+    const inputDurationMs = performance.now() - inputStart;
+    if (inputDurationMs > 30) {
+      logHang("handleInputChange slow execution", {
+        durationMs: Number(inputDurationMs.toFixed(2)),
+        valLength: val.length,
+        isPasted
+      });
     }
   }, [input, lastTabPrefix, activeWizard, wizardOptions, isPasted, pastePrefixLength, pasteSuffixLength]);
 
@@ -2179,9 +2211,9 @@ export function App({
             streamBufferRef.current += event.content;
           }
 
-          // Throttle state updates to at most once every 40ms to prevent Ink render overload.
+          // Throttle state updates to at most once every 65ms (~15 FPS) to prevent Ink render overload.
           const now = Date.now();
-          if (now - lastStreamUpdateRef.current > 40) {
+          if (now - lastStreamUpdateRef.current > 65) {
             setStreamDisplay(textStreamCleaner.clean(streamBufferRef.current));
             lastStreamUpdateRef.current = now;
             if (deferredStreamTimeoutRef.current) {
@@ -2195,7 +2227,7 @@ export function App({
                 setStreamDisplay(textStreamCleaner.clean(streamBufferRef.current));
                 lastStreamUpdateRef.current = Date.now();
                 deferredStreamTimeoutRef.current = null;
-              }, 40);
+              }, 65);
             }
           }
           break;
@@ -2208,7 +2240,7 @@ export function App({
           reasoningBufferRef.current += event.content;
           
           const now = Date.now();
-          if (now - lastReasoningUpdateRef.current > 40) {
+          if (now - lastReasoningUpdateRef.current > 65) {
             setReasoningDisplay(reasoningBufferRef.current);
             lastReasoningUpdateRef.current = now;
             if (deferredReasoningTimeoutRef.current) {
@@ -2221,7 +2253,7 @@ export function App({
                 setReasoningDisplay(reasoningBufferRef.current);
                 lastReasoningUpdateRef.current = Date.now();
                 deferredReasoningTimeoutRef.current = null;
-              }, 40);
+              }, 65);
             }
           }
           break;
@@ -3352,9 +3384,11 @@ export function App({
   }
 
   const wrappedLines = useMemo(() => {
-    return computeWrappedLines({
+    const memoStart = performance.now();
+    const chatWidth = Math.max(20, terminalWidth - 6);
+    const computed = computeWrappedLines({
       lines,
-      chatWidth: Math.max(20, terminalWidth - 6),
+      chatWidth,
       maxAssistantResponseLines: 12,
       expandedLines,
       expandedChildren,
@@ -3372,6 +3406,20 @@ export function App({
       activeToolName,
       activeToolDesc,
     });
+    const memoDurationMs = performance.now() - memoStart;
+    if (memoDurationMs > 45) {
+      logHang("App useMemo(wrappedLines) slow calculation across chatWidth", {
+        durationMs: Number(memoDurationMs.toFixed(2)),
+        chatWidth,
+        terminalWidth,
+        totalLines: lines.length,
+        wrappedLinesCount: computed.length,
+        isProcessing,
+        hasActiveToolOutput: Boolean(activeToolOutput),
+        activeToolOutputLength: activeToolOutput?.length ?? 0
+      });
+    }
+    return computed;
   }, [
     lines,
     terminalWidth,

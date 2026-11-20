@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import { useStdin } from "ink";
 import path from "path";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
 import { superagentInstances, subagentInstances, backgroundTasks } from "../core/tools/state.js";
@@ -51,6 +52,7 @@ export interface DashboardMouseContext {
 }
 
 export function useDashboardMouse(ctx: DashboardMouseContext) {
+  const { internal_eventEmitter } = useStdin();
   // Ink re-renders on every query/cursor change. Mouse handlers must not
   // re-register on each keystroke: the old effect toggled SGR tracking and
   // performed repeated stdout writes, degrading keyboard responsiveness.
@@ -64,7 +66,11 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
     const enableMouseTracking = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
     const disableMouseTracking = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 
-    const handleMouseInput = (data: Buffer) => {
+    const handleMouseInput = (data: Buffer | string) => {
+      const text = typeof data === "string" ? data : data.toString("utf8");
+      // Fast path: skip mouse processing for normal keyboard characters
+      if (!text.includes("\x1b[<") && !text.includes("[<")) return;
+
       // Always read the latest render state without reattaching the listener.
       const ctx = contextRef.current;
     
@@ -106,7 +112,6 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
         toggleGroupCollapse,
         logBoxStartRow = 6,
       } = ctx;
-      const text = data.toString("utf8");
       const matches = text.matchAll(/\x1b\[<(?<btn>\d+);(?<col>\d+);(?<row>\d+)(?<action>[Mm])/g);
 
       for (const match of matches) {
@@ -531,12 +536,12 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
     };
 
     process.stdout.write(enableMouseTracking);
-    process.stdin.on("data", handleMouseInput);
+    internal_eventEmitter?.on("input", handleMouseInput);
 
     // Last-resort cleanup: disable mouse tracking if process exits without React cleanup running
     const emergencyCleanup = () => {
       try {
-        process.stdin.off("data", handleMouseInput);
+        internal_eventEmitter?.off("input", handleMouseInput);
         process.stdout.write(disableMouseTracking);
         // Ink owns stdin raw mode. Do not switch the keyboard to canonical
         // input when an agent handles SIGINT without exiting the CLI.
@@ -546,9 +551,9 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
     process.once("exit", emergencyCleanup);
 
     return () => {
-      process.stdin.off("data", handleMouseInput);
+      internal_eventEmitter?.off("input", handleMouseInput);
       process.stdout.write(disableMouseTracking);
       process.off("exit", emergencyCleanup);
     };
-  }, []);
+  }, [internal_eventEmitter]);
 }

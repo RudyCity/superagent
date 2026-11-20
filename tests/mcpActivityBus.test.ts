@@ -4,6 +4,7 @@ import path from "path";
 import os from "os";
 import {
   formatMcpActivityForChat,
+  formatMcpTimestamp,
   emitMcpActivity,
   subscribeToMcpActivity,
   onMcpActivity,
@@ -61,6 +62,36 @@ describe("mcpActivityBus", () => {
     };
     const formattedDisconnect = formatMcpActivityForChat(disconnectEvt);
     expect(formattedDisconnect).toContain("[MCP] 🔌 Client Disconnected (Session: session-...)");
+  });
+
+  it("formats access time when timestamp is provided", () => {
+    const testDate = new Date(2026, 10, 20, 15, 31, 5);
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    const expectedTime = `${pad(testDate.getHours())}:${pad(testDate.getMinutes())}:${pad(testDate.getSeconds())}`;
+
+    const event: McpActivityEvent = {
+      type: "tool_call",
+      tool: "superagent_tool_search",
+      ok: true,
+      durationMs: 0,
+      timestamp: testDate.getTime(),
+    };
+    const formatted = formatMcpActivityForChat(event);
+    expect(formatted.startsWith(`[${expectedTime}] [MCP] ⚡ Tool Call: superagent_tool_search`)).toBe(true);
+  });
+
+  it("omits timestamp prefix when timestamp is missing or zero", () => {
+    const event: McpActivityEvent = {
+      type: "tool_call",
+      tool: "superagent_tool_search",
+      ok: true,
+      durationMs: 0,
+      timestamp: 0,
+    };
+    const formatted = formatMcpActivityForChat(event);
+    expect(formatted.startsWith("[MCP] ⚡ Tool Call: superagent_tool_search")).toBe(true);
+    expect(formatMcpTimestamp(undefined)).toBe("");
+    expect(formatMcpTimestamp(0)).toBe("");
   });
 
   it("broadcasts event to in-memory listeners and cleans up on unsubscribe", () => {

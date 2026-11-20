@@ -727,6 +727,49 @@ async fn lifecycle_console_request(request: Value) -> Result<Value, String> {
 }
 
 #[tauri::command]
+async fn drain_all_services(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Result<Value, String> {
+    if window.label() != "main" || !window.is_visible().unwrap_or(false) {
+        return Err("DRAIN_NATIVE_WINDOW_REQUIRED".into());
+    }
+    // 1. Give Core up to 1.5s to flush in-memory tasks gracefully if responsive
+    let _ = tokio::time::timeout(Duration::from_millis(1500), core_request(Method::POST, "/api/desktop/drain-all", None)).await;
+
+    // 2. Direct native shutdown of Core on 7888: terminates supervisor, workers, guardian, cleans up state files
+    let core_stop = stop_core_server_inner(7888).await;
+
+    // 3. Terminate any lingering background daemons/scripts on Windows
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("taskkill")
+            .args(&["/F", "/IM", "cloudflared.exe"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+
+        let ps_cmd = r#"Get-CimInstance Win32_Process | Where-Object { ($_.Name -like 'bun*' -or $_.Name -like 'node*') -and ($_.CommandLine -like '*--mcp*' -or $_.CommandLine -like '*senopati*' -or $_.CommandLine -like '*core boot*' -or $_.CommandLine -like '*core start*' -or $_.CommandLine -like '*--server*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"#;
+        let _ = std::process::Command::new("powershell")
+            .args(&["-NoProfile", "-Command", ps_cmd])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+
+    // 4. Emit desktop-server-stopped so Tray UI updates instantly
+    let _ = app.emit("desktop-server-stopped", 7888);
+
+    Ok(json!({
+        "success": true,
+        "message": "All background services, MCP servers, and Core have been completely stopped.",
+        "core": core_stop.ok()
+    }))
+}
+
+#[tauri::command]
 async fn service_action(
     kind: String,
     action: String,
@@ -3000,6 +3043,8 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
         // A managed MCP owner may take 60s for tunnel provisioning.
         // Never retry ambiguous create requests on timeout.
         Duration::from_secs(100)
+    } else if path == "/api/desktop/drain-all" {
+        Duration::from_secs(45)
     } else if path == "/api/desktop/lifecycle" {
         // Read-only navigation must not freeze the UI while the selected Core
         // is offline. Mutating commands retain the operation ID after timeout;
@@ -4448,6 +4493,7 @@ fn main() {
             set_yolo_mode,
             service_action,
             lifecycle_console_request,
+            drain_all_services,
             shutdown_manager::shutdown_manager_action,
             create_connection,
             regenerate_token,

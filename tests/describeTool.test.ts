@@ -163,12 +163,68 @@ describe("getToolDescription for describe_tool and list_tools", () => {
     expect(desc).toBe("Inspecting tool schema: run_background_process");
   });
 
-  it("formats list_tools description nicely", () => {
+  it("formats describe_tool with batch names and fallback when args are empty", () => {
+    const descBatch = getToolDescription({
+      id: "tc-batch",
+      name: "describe_tool",
+      args: { names: ["read", "write_to_file"] },
+    });
+    expect(descBatch).toBe("Inspecting tool schema: read, write_to_file");
+
+    const descEmpty = getToolDescription({
+      id: "tc-empty",
+      name: "describe_tool",
+      args: {},
+    });
+    expect(descEmpty).toBe("Inspecting tool schema: tools");
+    expect(descEmpty).not.toContain("(missing)");
+  });
+
+  it("formats list_tools description nicely with query", () => {
     const desc = getToolDescription({
       id: "tc-2",
       name: "list_tools",
       args: { query: "background" },
     });
     expect(desc).toBe("Listing tools matching \"background\"");
+  });
+
+  it("returns Listing available tools when list_tools has no query or is empty (never (missing))", () => {
+    const descEmpty = getToolDescription({
+      id: "tc-empty",
+      name: "list_tools",
+      args: {},
+    });
+    expect(descEmpty).toBe("Listing available tools");
+    expect(descEmpty).not.toContain("(missing)");
+
+    const descUndef = getToolDescription({
+      id: "tc-undef",
+      name: "list_tools",
+      args: { query: undefined },
+    });
+    expect(descUndef).toBe("Listing available tools");
+    expect(descUndef).not.toContain("(missing)");
+
+    const descBlank = getToolDescription({
+      id: "tc-blank",
+      name: "list_tools",
+      args: { query: "   " },
+    });
+    expect(descBlank).toBe("Listing available tools");
+
+    const descAlias = getToolDescription({
+      id: "tc-alias",
+      name: "get_tools",
+      args: {},
+    });
+    expect(descAlias).toBe("Listing available tools");
+
+    const descIntent = getToolDescription({
+      id: "tc-intent",
+      name: "list_tools",
+      args: { intent: "perbaiki" },
+    });
+    expect(descIntent).toBe("Listing tools matching \"perbaiki\"");
   });
 });

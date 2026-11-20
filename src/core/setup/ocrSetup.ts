@@ -86,21 +86,19 @@ export async function ensureUvInstalled(onProgress?: DownloadProgressCallback): 
 export async function isPythonInstalled(): Promise<boolean> {
   if (cachedPythonInstalled !== null) return cachedPythonInstalled;
   const sysCache = getSystemCheckCache();
-  if (sysCache?.python !== undefined) {
-    cachedPythonInstalled = sysCache.python;
-    return cachedPythonInstalled;
+  if (sysCache?.python === true) {
+    cachedPythonInstalled = true;
+    return true;
   }
   const isWin = process.platform === "win32";
-  try {
-    await execa(isWin ? "where.exe" : "which", ["python"], { windowsHide: true });
-    cachedPythonInstalled = true;
-  } catch {
+  const candidates = ["python", "python3", ...(isWin ? ["py"] : [])];
+  cachedPythonInstalled = false;
+  for (const cmd of candidates) {
     try {
-      await execa(isWin ? "where.exe" : "which", ["python3"], { windowsHide: true });
+      await execa(isWin ? "where.exe" : "which", [cmd], { windowsHide: true });
       cachedPythonInstalled = true;
-    } catch {
-      cachedPythonInstalled = false;
-    }
+      break;
+    } catch {}
   }
   updateSystemCheckCache({ python: cachedPythonInstalled });
   return cachedPythonInstalled;

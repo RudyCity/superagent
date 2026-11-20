@@ -134,7 +134,7 @@ import { ReservedProjectIdError } from "../project/projectSecurityResources.js";
 import type { ResolvedProjectTarget } from "../project/projectRouter.js";
 import { LocalProjectProvider } from "../project/providers/localProjectProvider.js";
 import type { ProjectProvider, ProjectProviderKind, ResolvedProjectContext } from "../project/providers/types.js";
-import { getProjectCapabilityForTool, hasProjectAccess, ProjectAccessPolicyStoreError } from "../project/projectAccessPolicy.js";
+import { getProjectCapabilityForTool, hasProjectAccess, listProjectAccess, ProjectAccessPolicyStoreError } from "../project/projectAccessPolicy.js";
 import { standaloneSshProjectProvider } from "./tools/standaloneSshProjectTools.js";
 
 const localProjectProvider = new LocalProjectProvider();
@@ -822,7 +822,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       // authenticated MCP principal\u0027s own project capability grant.
       // Only an identity-bound project grant authorizes project file/shell tools.
       // Being inside the initial workspace is not an implicit MCP approval.
-      if (!grantedProjectAccess && name !== "superagent_get_workspace") {
+      if (!grantedProjectAccess) {
         if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "capability_denied"; }
         const reason = name === "superagent_check_project_health"
           ? "[PROJECT_GRANT_MISSING] Project health check is not authorized for this project. The authenticated MCP identity needs the explicit 'read' capability or approval via superagent_request_project_access."
@@ -1485,6 +1485,43 @@ function extractMcpResultText(result: unknown): string {
       effectiveProjectId = selectedId!;
       auditContext.projectId = selectedId!;
       auditContext.requiredCapability = "execute";
+    }
+
+    // Default-deny for safe non-project tools:
+    // Sensitive/stateful safe tools require that the caller identity has at least one authorized project grant in Access Manager -> Akses Proyek.
+    // Discovery/request/diagnostic metadata tools remain accessible so unapproved clients can inspect and request access.
+    const PURE_METADATA_SAFE_TOOLS = new Set([
+      MCP_GATEWAY_TOOL_NAMES.search,
+      MCP_GATEWAY_TOOL_NAMES.describe,
+      MCP_GATEWAY_TOOL_NAMES.status,
+      MCP_GATEWAY_TOOL_NAMES.execute,
+      "superagent_server_health",
+      "superagent_lan_capabilities",
+      "superagent_process_pool_status",
+      "superagent_chrome_cdp_observe",
+    ]);
+    if (!isDangerous && !WORKSPACE_SCOPED_MCP_TOOLS.has(toolName)
+        && !PROJECT_REGISTRY_TOOL_NAMES.has(toolName)
+        && !PURE_METADATA_SAFE_TOOLS.has(toolName)) {
+      let callerGrants: any[] = [];
+      if (callerIdentity) {
+        try { callerGrants = listProjectAccess(callerIdentity); }
+        catch (error) {
+          if (error instanceof ProjectAccessPolicyStoreError) {
+            auditContext.authorizationDecision = "denied";
+            auditContext.errorCode = "policy_store_unavailable";
+            emitAudit({ tool: toolName, args: {}, ok: false, error: error.message, durationMs: 0 });
+            throw new McpError(ErrorCode.InvalidRequest, error.message);
+          }
+        }
+      }
+      if (callerGrants.length === 0) {
+        const reason = "[PROJECT_GRANT_MISSING] Default MCP access is restricted. Operation requires an authorized project in SuperAgent Tray > Akses Proyek. No project access has been granted for this identity.";
+        auditContext.authorizationDecision = "denied";
+        auditContext.errorCode = "capability_denied";
+        emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
+        throw new McpError(ErrorCode.InvalidRequest, reason);
+      }
     }
     if (toolName !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(toolName)
       && (WORKSPACE_SCOPED_MCP_TOOLS.has(toolName) || typeof rawArgs.projectId === "string"

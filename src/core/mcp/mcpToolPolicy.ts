@@ -71,6 +71,7 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   superagent_exec_command: "dangerous",
   superagent_write_file: "dangerous",
   superagent_write_files: "dangerous",
+  superagent_patch_file: "dangerous",
   superagent_unlock_file: "dangerous",
   superagent_interrupt: "dangerous",
   superagent_pause: "dangerous",

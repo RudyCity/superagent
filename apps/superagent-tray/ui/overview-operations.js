@@ -674,9 +674,42 @@
     } catch(err){notify(String(err?.message||err),"error");}
     finally{state.operationBusy=false;invalidatePlan();void refresh();}
   }
+  async function drainAll() {
+    if (state.operationBusy) return;
+    if (!window.confirm("Are you sure you want to stop and close ALL Superagent background daemons, MCP servers, and Core services?")) return;
+    state.operationBusy = true;
+    const btn1 = $("op-drain-all");
+    const btn2 = $("overview-action-drain-all");
+    if (btn1) { btn1.disabled = true; btn1.textContent = "Draining..."; }
+    if (btn2) { btn2.disabled = true; }
+    notify("Draining and stopping all background services, MCP servers, and Core...", "info");
+
+    try {
+      let res = null;
+      try {
+        res = await call("drain_all_services", {});
+      } catch (invokeErr) {
+        // Fallback to core /api/desktop/drain-all directly if available
+        const serverRes = await fetch("/api/desktop/drain-all", { method: "POST" }).catch(() => null);
+        if (serverRes && serverRes.ok) res = await serverRes.json();
+        else throw invokeErr;
+      }
+      notify("All background daemons, MCP servers, and Core have been completely stopped.", "info");
+      invalidatePlan();
+      void refresh();
+    } catch (err) {
+      notify("Drain error: " + String(err?.message || err), "error");
+    } finally {
+      state.operationBusy = false;
+      if (btn1) { btn1.disabled = false; btn1.textContent = "Drain All"; }
+      if (btn2) { btn2.disabled = false; }
+    }
+  }
   function bind(){
     $("op-refresh")?.addEventListener("click",()=>{void refresh();});
     $("op-check-versions")?.addEventListener("click",()=>{void checkPublishedVersions(true);});
+    $("op-drain-all")?.addEventListener("click",()=>{void drainAll();});
+    $("overview-action-drain-all")?.addEventListener("click",()=>{void drainAll();});
     $("op-client-filter")?.addEventListener("change",e=>{
       state.agentFilter=String(e.target.value||"all");
       renderConnectedAgents(state.agentDetails);

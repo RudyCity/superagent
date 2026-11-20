@@ -1,4 +1,5 @@
 import { useEffect, type MutableRefObject } from "react";
+import { useStdin } from "ink";
 import { planApprovalChromeHeight } from "../components/plan-approval-dialog.js";
 import fs from "fs";
 import path from "path";
@@ -111,6 +112,8 @@ export interface SingleAgentMouseContext {
 export function useMouseScroll(
   ctxRef: MutableRefObject<SingleAgentMouseContext | null>
 ) {
+  const { internal_eventEmitter } = useStdin();
+
   useEffect(() => {
     if (process.env.SUPERAGENT_CLI_DISABLE_MOUSE === "1") return;
     if (!process.stdin.isTTY) return;
@@ -119,11 +122,13 @@ export function useMouseScroll(
     const enableMouseTracking = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
     const disableMouseTracking = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 
-    const handleMouseInput = (data: Buffer) => {
+    const handleMouseInput = (data: Buffer | string) => {
       const ctx = ctxRef.current;
       if (!ctx) return;
 
-      const text = data.toString("utf8");
+      const text = typeof data === "string" ? data : data.toString("utf8");
+      // Fast path: skip mouse processing for normal keyboard characters
+      if (!text.includes("\x1b[<") && !text.includes("[<")) return;
 
       if (process.env.DEBUG_MOUSE === "true") {
         logMouseDebug(
@@ -425,12 +430,12 @@ export function useMouseScroll(
     };
 
     process.stdout.write(enableMouseTracking);
-    process.stdin.on("data", handleMouseInput);
+    internal_eventEmitter?.on("input", handleMouseInput);
 
     // Last-resort cleanup: disable mouse tracking if process exits without React cleanup running
     const emergencyCleanup = () => {
       try {
-        process.stdin.off("data", handleMouseInput);
+        internal_eventEmitter?.off("input", handleMouseInput);
         process.stdout.write(disableMouseTracking);
         // Ink owns stdin raw mode. Do not switch the keyboard to canonical
         // input when an agent handles SIGINT without exiting the CLI.
@@ -440,12 +445,12 @@ export function useMouseScroll(
     process.once("exit", emergencyCleanup);
 
     return () => {
-      process.stdin.off("data", handleMouseInput);
+      internal_eventEmitter?.off("input", handleMouseInput);
       process.stdout.write(disableMouseTracking);
       // Remove emergency handlers so they don't fire after normal cleanup
       process.off("exit", emergencyCleanup);
     };
-  }, []); // Empty deps - listener registered once, reads latest ctx from ref
+  }, [internal_eventEmitter]); // Re-register when internal_eventEmitter changes
 }
 
 function scrollSection(

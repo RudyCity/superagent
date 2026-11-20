@@ -8,6 +8,7 @@ import React, { useState, useEffect, memo } from "react";
 import { Box, Text } from "ink";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
 import { getTerminalTailLines } from "../utils/terminalStream.js";
+import { logHang } from "../core/utils/unifiedLogger.js";
 
 const LIVE_PULSE_COLORS = ["green", "greenBright", "cyan", "cyanBright", "green", "greenBright"];
 
@@ -40,7 +41,7 @@ export const LiveTerminalView = memo(function LiveTerminalView({
   useEffect(() => {
     const interval = setInterval(() => {
       setFrame((prev) => (prev + 1) % LIVE_PULSE_COLORS.length);
-    }, 180);
+    }, 240);
     return () => clearInterval(interval);
   }, []);
 
@@ -56,6 +57,7 @@ export const LiveTerminalView = memo(function LiveTerminalView({
   const liveColor = LIVE_PULSE_COLORS[frame % LIVE_PULSE_COLORS.length];
 
   // Compute tail lines with carriage-return normalization via terminalStream
+  const wrapStart = performance.now();
   const tailLines = getTerminalTailLines(activeToolOutput, maxLines);
 
   // Wrap each line to fit viewport
@@ -68,6 +70,15 @@ export const LiveTerminalView = memo(function LiveTerminalView({
     }
   }
   const displayLines = wrappedLines.slice(-maxLines);
+  const wrapDurationMs = performance.now() - wrapStart;
+  if (wrapDurationMs > 30) {
+    logHang("LiveTerminalView slow wrapping across viewportWidth", {
+      durationMs: Number(wrapDurationMs.toFixed(2)),
+      viewportWidth,
+      activeToolOutputLength: activeToolOutput?.length ?? 0,
+      tailLinesCount: tailLines.length
+    });
+  }
   const hasOutput = displayLines.length > 0;
 
   return (

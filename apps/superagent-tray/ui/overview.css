@@ -704,6 +704,22 @@
   line-height: 1.3;
 }
 
+.overview-launch-btn.overview-launch-danger {
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.overview-launch-btn.overview-launch-danger:hover {
+  background: var(--danger-muted, rgba(239, 68, 68, 0.12));
+  border-color: rgba(239, 68, 68, 0.45);
+  box-shadow: 0 4px 12px -2px rgba(239, 68, 68, 0.25);
+}
+
+.overview-launch-btn.overview-launch-danger:hover .overview-launch-icon-wrap {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #ef4444;
+}
+
 /* Diagnostics & Meta Strip */
 .overview-meta-card {
   background: var(--bg-surface-raised);

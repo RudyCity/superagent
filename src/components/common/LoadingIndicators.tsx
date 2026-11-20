@@ -23,7 +23,7 @@ export function LoadingIndicator({ text }: { text?: string } = {}) {
   useEffect(() => {
     const interval = setInterval(() => {
       setFrame((prev) => (prev + 1) % 6);
-    }, 120);
+    }, 240);
     return () => clearInterval(interval);
   }, []);
 
@@ -61,7 +61,7 @@ export function ToolLoadingIndicator({
   useEffect(() => {
     const interval = setInterval(() => {
       setFrame((prev) => (prev + 1) % 6);
-    }, 120);
+    }, 240);
     return () => clearInterval(interval);
   }, []);
 
@@ -141,7 +141,7 @@ export function ProcessingIndicator({ scrollOffset }: { scrollOffset: number }) 
   useEffect(() => {
     const interval = setInterval(() => {
       setFrame((prev) => (prev + 1) % 6);
-    }, 150);
+    }, 240);
     return () => clearInterval(interval);
   }, []);
 
@@ -166,7 +166,7 @@ export function ThinkingSpinner({ type = "orchestrating" }: { type?: "orchestrat
   useEffect(() => {
     const timer = setInterval(() => {
       setFrame((prev) => (prev + 1) % 6);
-    }, 150);
+    }, 240);
     return () => clearInterval(timer);
   }, []);
 
@@ -214,7 +214,7 @@ export function SessionSpinner() {
   useEffect(() => {
     const timer = setInterval(() => {
       setFrame((prev) => (prev + 1) % 6);
-    }, 120);
+    }, 240);
     return () => clearInterval(timer);
   }, []);
 

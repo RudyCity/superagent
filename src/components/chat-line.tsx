@@ -923,9 +923,9 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       );
     }
     case "system": {
-      const isMcp = line.content.startsWith("[MCP]");
+      const isMcp = line.content.startsWith("[MCP]") || /^\[\d{2}:\d{2}:\d{2}\]\s*\[MCP\]/.test(line.content);
       if (isMcp) {
-        const firstLine = line.content.split("\n")[0].replace(/^\[MCP\]\s*/, "");
+        const firstLine = line.content.split("\n")[0].replace(/^(\[\d{2}:\d{2}:\d{2}\]\s*)?\[MCP\]\s*/, "");
         const isError = line.content.includes("❌") || line.content.includes("✗ Failed");
         const headerColor = isError ? "red" : "magenta";
         const tagText = isError ? "🔌 MCP_TOOL_FAILED" : "🔌 MCP_ACTIVITY";

@@ -23,6 +23,7 @@ import chalk from "chalk";
 import type { ImageAttachment } from "../utils/imageUtils.js";
 import { isImageFilePath } from "../utils/imageUtils.js";
 import { getPasteSplit } from "../utils/text.js";
+import { logInput, logHang } from "../core/utils/unifiedLogger.js";
 
 export interface ChatTextInputRef {
   setCursorOffset: (offset: number) => void;
@@ -54,10 +55,8 @@ type Props = {
   onCursorOffsetChange?: (offset: number) => void;
 };
 
-const BLINK_ON = "\x1b[5m";
-const BLINK_OFF = "\x1b[25m";
 function blinkInverse(text: string): string {
-  return `${BLINK_ON}\x1b[7m${text}\x1b[27m${BLINK_OFF}`;
+  return `\x1b[7m${text}\x1b[27m`;
 }
 
 export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTextInput({
@@ -121,7 +120,7 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
         lastSentValueRef.current = val;
         onChange(val);
         debounceTimerRef.current = null;
-      }, 20);
+      }, 30);
     }
   };
 
@@ -159,6 +158,9 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
     const currentVal = originalValue || "";
     const len = currentVal.length;
     const gainedFocus = focus && !prevFocusRef.current;
+    if (focus !== prevFocusRef.current) {
+      logInput(`ChatTextInput focus changed: ${prevFocusRef.current} -> ${focus}`);
+    }
     prevFocusRef.current = focus;
 
     if (currentVal !== lastSentValueRef.current) {
@@ -296,6 +298,20 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
 
   useInput(
     (input, key) => {
+      const keyStart = performance.now();
+      const checkKeyLatency = (action: string) => {
+        const durationMs = performance.now() - keyStart;
+        if (durationMs > 30) {
+          logHang("ChatTextInput slow keystroke handling", {
+            action,
+            durationMs: Number(durationMs.toFixed(2)),
+            key: input || (key.return ? "enter" : key.backspace ? "backspace" : key.escape ? "escape" : "nav"),
+            inputLength: localValue.length,
+            cursorOffset
+          });
+        }
+      };
+
       const isInternalCtrl = key.ctrl && (
         input === "v" ||
         input === "w" ||
@@ -338,6 +354,7 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
           onChange("");
         }
         onEscapeKey?.();
+        checkKeyLatency("escape_pressed");
         return;
       }
 
@@ -347,6 +364,10 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
       }
 
       if (key.return) {
+        logInput("ChatTextInput Enter pressed", {
+          length: localValue.length,
+          preview: localValue.slice(0, 80)
+        });
         if (debounceTimerRef.current) {
           clearTimeout(debounceTimerRef.current);
           debounceTimerRef.current = null;
@@ -354,6 +375,7 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
         lastSentValueRef.current = localValue;
         onChange(localValue);
         onSubmit?.(localValue);
+        checkKeyLatency("return_submitted");
         return;
       }
 
@@ -503,6 +525,7 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
       if (nextValue !== localValue) {
         handleChange(nextValue);
       }
+      checkKeyLatency("input_processed");
     },
     { isActive: focus }
   );

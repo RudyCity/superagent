@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { getGlobalConfigDir } from "../config/paths.js";
 
-export type LogCategory = "SQL" | "SUPERAGENT-SERVER" | "TLINE-BACKEND" | "TLINE-UI" | "REMOTE-AGENT";
+export type LogCategory = "SQL" | "SUPERAGENT-SERVER" | "TLINE-BACKEND" | "TLINE-UI" | "REMOTE-AGENT" | "CLI" | "STARTUP" | "INPUT" | "DISPATCH" | "HANG" | "PERF";
 
 // Diagnostic logging must never block the event loop: writes are queued as
 // fire-and-forget promises, serialized per file to preserve ordering. The
@@ -10,6 +10,7 @@ export type LogCategory = "SQL" | "SUPERAGENT-SERVER" | "TLINE-BACKEND" | "TLINE
 // Trade-off: the very last lines may be lost on an abrupt process exit,
 // which is acceptable for diagnostic logs.
 let dirEnsured = false;
+let logsDirEnsured = false;
 const writeBuffers = new Map<string, string[]>();
 const isWriting = new Set<string>();
 
@@ -59,5 +60,41 @@ export function logE2E(category: LogCategory, message: string, meta?: any): void
 
     enqueueAppend(logPath, line);
     enqueueAppend(superagentLogPath, line);
+
+    if (category === "CLI" || category === "STARTUP" || category === "INPUT" || category === "DISPATCH" || category === "HANG" || category === "PERF") {
+      const logsDir = path.join(dir, "logs");
+      if (!logsDirEnsured) {
+        if (!fs.existsSync(logsDir)) {
+          fs.mkdirSync(logsDir, { recursive: true });
+        }
+        logsDirEnsured = true;
+      }
+      const cliDebugLogPath = path.join(logsDir, "cli-debug.log");
+      enqueueAppend(cliDebugLogPath, line);
+    }
   } catch {}
+}
+
+export function logCli(message: string, meta?: any): void {
+  logE2E("CLI", message, meta);
+}
+
+export function logStartup(message: string, meta?: any): void {
+  logE2E("STARTUP", message, meta);
+}
+
+export function logInput(message: string, meta?: any): void {
+  logE2E("INPUT", message, meta);
+}
+
+export function logDispatch(message: string, meta?: any): void {
+  logE2E("DISPATCH", message, meta);
+}
+
+export function logHang(message: string, meta?: any): void {
+  logE2E("HANG", message, meta);
+}
+
+export function logPerf(message: string, meta?: any): void {
+  logE2E("PERF", message, meta);
 }

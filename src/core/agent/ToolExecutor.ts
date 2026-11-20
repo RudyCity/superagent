@@ -199,9 +199,13 @@ export class ToolExecutor {
       const description = getToolDescription(tc);
       agent.onEvent({ type: "tool_start", toolCall: tc, description });
 
-      // Full YOLO never bypasses host-owned permanent file restrictions.
-      const registeredFileBlock = registeredFileToolGate(tc,
-        agent.worktreePath || agent.workingDirectory);
+      // Superagent CLI is controlled by YOLO mode (Full, Scoped, or interactive prompt approvals).
+      // When YOLO is active, tool execution is governed by YOLO policies and YOLO blocklist,
+      // bypassing desktop Access Manager / host permanent file policy.
+      // MCP connections independently enforce permanent file policy in superagentMcpServer.
+      const registeredFileBlock = isAgentYoloMode(agent)
+        ? null
+        : registeredFileToolGate(tc, agent.worktreePath || agent.workingDirectory);
       if (registeredFileBlock) {
         const blocked: ToolResult = {
           toolCallId: tc.id, name: tc.name,

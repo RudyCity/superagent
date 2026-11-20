@@ -1111,6 +1111,7 @@
                   <button type="button" id="op-lifecycle-prepare" class="button ghost">Prepare plan</button>
                   <button type="button" id="op-lifecycle-execute" class="button primary" disabled>Confirm &amp; execute</button>
                   <button type="button" id="op-shutdown-open" class="button ghost">Shutdown Manager</button>
+                  <button type="button" id="op-drain-all" class="button danger" title="One-click drain and stop all background services, Core, tunnels, and daemons">Drain All</button>
                 </div>
                 <p id="op-feedback" class="op-note" role="status" aria-live="polite">No lifecycle operation requested.</p>
               </section>
@@ -1221,6 +1222,17 @@
                     </div>
                     <span class="overview-launch-name">Plan Core Restart</span>
                     <span class="overview-launch-desc">Owner-bound plan required</span>
+                  </button>
+
+                  <button type="button" id="overview-action-drain-all" class="overview-launch-btn overview-launch-danger" title="Drain and stop all Superagent background services">
+                    <div class="overview-launch-icon-wrap" style="color: #ef4444;">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+                      </svg>
+                    </div>
+                    <span class="overview-launch-name" style="color: #f87171;">Drain All</span>
+                    <span class="overview-launch-desc">Stop all daemons &amp; services</span>
                   </button>
                 </div>
               </section>

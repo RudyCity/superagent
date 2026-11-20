@@ -1344,19 +1344,29 @@ export function getToolDescription(
       if (action === "health") return `Checking workspace chain health metrics`;
       return `Managing workspace chain (${action})`;
     }
-    case "describe_tool": {
-      const toolTarget = s(
+    case "describe_tool":
+    case "describe_tools":
+    case "get_tool":
+    case "tools_describe": {
+      const rawTarget =
         args.tool ??
-          args.name ??
-          args.tool_name ??
-          (Array.isArray(args.names) ? args.names.join(", ") : args.names) ??
-          (Array.isArray(args.tools) ? args.tools.join(", ") : args.tools)
-      );
-      return `Inspecting tool schema: ${toolTarget || "tools"}`;
+        args.name ??
+        args.tool_name ??
+        (Array.isArray(args.names) ? args.names.join(", ") : args.names) ??
+        (Array.isArray(args.tools) ? args.tools.join(", ") : args.tools);
+      const toolTarget =
+        rawTarget !== undefined && rawTarget !== null && String(rawTarget).trim().length > 0 && String(rawTarget).trim() !== "(missing)"
+          ? String(rawTarget).trim()
+          : "tools";
+      return `Inspecting tool schema: ${toolTarget}`;
     }
-    case "list_tools": {
-      const q = s(args.query ?? args.q ?? args.filter);
-      return q ? `Listing tools matching "${q}"` : `Listing available tools`;
+    case "list_tools":
+    case "get_tools":
+    case "tools_list": {
+      const rawQuery = args.query ?? args.q ?? args.filter ?? args.intent;
+      const q =
+        rawQuery !== undefined && rawQuery !== null ? String(rawQuery).trim() : "";
+      return q && q !== "(missing)" ? `Listing tools matching "${q}"` : `Listing available tools`;
     }
     case "inspect_port":
       return `Inspecting TCP port: ${s(args.port ?? args.portNumber)}`;
@@ -1389,19 +1399,25 @@ export async function executeToolCall(
   signal?: AbortSignal,
   cachedActiveTools?: any[]
 ): Promise<ToolResult> {
-  // Enforcement also applies to direct callers bypassing ToolExecutor.
-  const { registeredFileToolGate } = await import("./tools/registeredFileToolGate.js");
-  const hostFileBlock = registeredFileToolGate(toolCall, cwd);
-  if (hostFileBlock) {
-    return { toolCallId: toolCall.id, name: toolCall.name,
-      result: "Access denied by permanent host file policy: " + hostFileBlock, isError: true };
+  const currentAgent = agentLocalStorage.getStore();
+  const isAgentYolo = currentAgent ? (!currentAgent.disableAmbientYoloMode && isYoloMode()) : isYoloMode();
+
+  // Superagent CLI is controlled by YOLO mode (Full, Scoped, or interactive prompt approvals).
+  // When YOLO mode is active, execution is governed by YOLO policies and YOLO blocklist,
+  // bypassing desktop Access Manager / host permanent file policy.
+  if (!isAgentYolo) {
+    const { registeredFileToolGate } = await import("./tools/registeredFileToolGate.js");
+    const hostFileBlock = registeredFileToolGate(toolCall, cwd);
+    if (hostFileBlock) {
+      return { toolCallId: toolCall.id, name: toolCall.name,
+        result: "Access denied by permanent host file policy: " + hostFileBlock, isError: true };
+    }
   }
   const { blockedYoloToolCall } = await import("./yoloBlocklist.js");
   const blockedRoot = blockedYoloToolCall(toolCall.args, cwd);
   if (blockedRoot) return { toolCallId: toolCall.id, name: toolCall.name, result: `Access denied by YOLO blocklist: ${blockedRoot}`, isError: true };
   const { getToolByName, canonicalizeToolName } = await getToolsModule();
   const registeredTool = getToolByName(toolCall.name);
-  const currentAgent = agentLocalStorage.getStore();
   let activeTools: any[] | undefined = cachedActiveTools;
   if (currentAgent) {
     try {

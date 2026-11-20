@@ -11,6 +11,7 @@ import type { ChatLine } from "../core/slash-commands.js";
 import type { ChatLinePosition } from "../hooks/useMouseScroll.js";
 import { getSettings } from "../core/config.js";
 import { LiveTerminalView } from "./live-terminal-view.js";
+import { logHang, logPerf } from "../core/utils/unifiedLogger.js";
 
 export interface WrappedChatLine {
   node: React.ReactNode;
@@ -1181,6 +1182,7 @@ export function computeWrappedLines({
   activeToolName?: string;
   activeToolDesc?: string;
 }): WrappedChatLine[] {
+  const startTime = performance.now();
   const result: WrappedChatLine[] = [];
 
   if (lines.length === 0) {
@@ -1353,6 +1355,19 @@ export function computeWrappedLines({
       );
       result.push({ node: liveNode, lineIndex: -1, type: "tool_start" });
     }
+  }
+
+  const durationMs = performance.now() - startTime;
+  if (durationMs > 45) {
+    logHang("computeWrappedLines slow calculation across chatWidth", {
+      durationMs: Number(durationMs.toFixed(2)),
+      chatWidth,
+      totalLines: lines.length,
+      resultCount: result.length,
+      hasActiveToolOutput: Boolean(activeToolOutput),
+      activeToolOutputLength: activeToolOutput?.length ?? 0,
+      activeToolName,
+    });
   }
 
   return result;

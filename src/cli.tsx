@@ -374,6 +374,8 @@ Commands:
   session           Manage conversation sessions (list, export, clear --empty, import)
   memory            Review RMemory retention (sweep [--apply])
   daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
+  drain all         Gracefully drain and stop all background services, Core, tunnels, and daemons
+  stop all          Alias for drain all
   core              Manage supervised API core (start, recover, status, restart, rollback, drain)
   transport         Run independent loopback T-Line transport host (start, status)
   channel-host      Run independent Muse/Telegram channel owner (serve, status)
@@ -412,6 +414,8 @@ Examples:
   superagent login add openrouter sk-or-v1-...
   superagent preset list
   superagent preset use dev
+  superagent drain all
+  superagent stop all
   superagent daemon list
   superagent daemon add --name nightly --cron "0 2 * * *" --prompt "Clean cache"
   superagent tunnel list
@@ -434,6 +438,16 @@ Examples:
   superagent --server 7888 --client-mode tline
 `);
   process.exit(0);
+}
+
+const cmdFirst = process.argv[2]?.toLowerCase();
+if (cmdFirst === "drain" || cmdFirst === "stop") {
+  const target = process.argv[3]?.toLowerCase();
+  if (target === "all" || target === "--all" || !target) {
+    const { runUnifiedDrainCli } = await import("./core/runtime/unifiedDrain.js");
+    await runUnifiedDrainCli(process.argv.slice(3));
+    process.exit(0);
+  }
 }
 
 const daemonIndex = process.argv.findIndex(arg => arg === "daemon" || arg === "--daemon");

@@ -12,6 +12,7 @@ import { backgroundTasks, isTaskInWorkspace, subagentInstances, superagentInstan
 import { killProcessTree } from "./core/tools/shellTools.js";
 import { closeMcpServers } from "./core/mcp/McpManager.js";
 import type { Agent as AgentType } from "./core/agent.js";
+import { logCli } from "./core/utils/unifiedLogger.js";
 
 function cleanupBackgroundTasks() {
   try {
@@ -93,6 +94,15 @@ function abortAllAgents() {
 let sigintCount = 0;
 
 export async function runCli() {
+  logCli("Superagent CLI runCli starting", {
+    pid: process.pid,
+    ppid: process.ppid,
+    nodeVersion: process.version,
+    platform: process.platform,
+    argv: process.argv,
+    cwd: process.cwd(),
+    isTTY: process.stdin.isTTY
+  });
   // Check for -w / --workspace flag
   const workspaceIndex = process.argv.findIndex(arg => arg === "--workspace" || arg === "-w");
   let workspaceVal: string | undefined = undefined;
@@ -250,6 +260,7 @@ export async function runCli() {
     process.exit(1);
   });
   process.on("uncaughtException", (err) => {
+    logCli("FATAL ERROR uncaughtException", { error: String(err), stack: err?.stack });
     restoreTerminal();
     cleanupBackgroundTasks();
     try {
@@ -259,6 +270,7 @@ export async function runCli() {
     process.exit(1);
   });
   process.on("unhandledRejection", (reason) => {
+    logCli("FATAL ERROR unhandledRejection", { reason: String(reason) });
     restoreTerminal();
     cleanupBackgroundTasks();
     try {
@@ -533,6 +545,7 @@ export async function runCli() {
 
     // Run startup checks with progress bar UI
     const runStartupChecks = async (): Promise<void> => {
+      logCli("Launching StartupChecker UI");
       const React = (await import("react")).default;
       const { render } = await import("ink");
       const { StartupChecker } = await import("./components/startup-checker.js");
@@ -540,8 +553,9 @@ export async function runCli() {
         const { unmount } = render(
           React.createElement(StartupChecker, {
             onComplete: () => {
+              logCli("StartupChecker completed, unmounting component");
               unmount();
-              resolve();
+              setTimeout(resolve, 50);
             }
           })
         );
@@ -602,12 +616,6 @@ export async function runCli() {
     let sessionPath = "";
     console.clear();
     hideCursor();
-
-    if (process.stdin.isTTY) {
-      try {
-        process.stdin.resume();
-      } catch {}
-    }
 
     if (isMulti) {
       const React = (await import("react")).default;

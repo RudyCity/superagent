@@ -85,9 +85,24 @@ function resolveWorkspaceByPid(pid: number): string | undefined {
 }
 
 /**
+ * Format a millisecond timestamp to local HH:mm:ss string.
+ */
+export function formatMcpTimestamp(timestamp?: number): string {
+  if (!timestamp || typeof timestamp !== "number" || isNaN(timestamp) || timestamp <= 0) {
+    return "";
+  }
+  const d = new Date(timestamp);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/**
  * Format an MCP activity event into a clear, structured chat sheet string.
  */
 export function formatMcpActivityForChat(event: McpActivityEvent): string {
+  const timeStr = formatMcpTimestamp(event.timestamp);
+  const timePrefix = timeStr ? `[${timeStr}] ` : "";
+
   switch (event.type) {
     case "tool_call": {
       const tool = event.tool || "unknown_tool";
@@ -97,7 +112,7 @@ export function formatMcpActivityForChat(event: McpActivityEvent): string {
       const argsStr = event.args ? summarizeArgs(event.args, 250) : "{}";
       const projectStr = event.workspace ? ` [${path.basename(event.workspace)}]` : "";
       const lines = [
-        `[MCP] ${event.ok ? "⚡" : "❌"} Tool Call: ${tool}${projectStr} [${statusIcon} ${statusText}${durationStr}]`,
+        `${timePrefix}[MCP] ${event.ok ? "⚡" : "❌"} Tool Call: ${tool}${projectStr} [${statusIcon} ${statusText}${durationStr}]`,
         `Arguments: ${argsStr}`,
       ];
       if (!event.ok && event.error) {
@@ -112,20 +127,20 @@ export function formatMcpActivityForChat(event: McpActivityEvent): string {
     case "client_connect": {
       const sessionPart = event.sessionId ? ` (Session: ${event.sessionId.slice(0, 8)}...)` : "";
       const clientPart = event.clientId ? `\nIdentity: ${event.clientId}` : "";
-      return `[MCP] 🔗 Client Connected${sessionPart}${clientPart}`;
+      return `${timePrefix}[MCP] 🔗 Client Connected${sessionPart}${clientPart}`;
     }
     case "client_disconnect": {
       const sessionPart = event.sessionId ? ` (Session: ${event.sessionId.slice(0, 8)}...)` : "";
-      return `[MCP] 🔌 Client Disconnected${sessionPart}`;
+      return `${timePrefix}[MCP] 🔌 Client Disconnected${sessionPart}`;
     }
     case "tool_list": {
-      return `[MCP] 📋 Tools Discovery: ${event.output || "Available tools advertised to client"}`;
+      return `${timePrefix}[MCP] 📋 Tools Discovery: ${event.output || "Available tools advertised to client"}`;
     }
     case "auth": {
-      return `[MCP] 🛡️ OAuth Authorized: ${event.output || `Client ${event.clientId || "unknown"}`}`;
+      return `${timePrefix}[MCP] 🛡️ OAuth Authorized: ${event.output || `Client ${event.clientId || "unknown"}`}`;
     }
     default:
-      return `[MCP] Activity: ${event.output || event.type}`;
+      return `${timePrefix}[MCP] Activity: ${event.output || event.type}`;
   }
 }
 
@@ -174,6 +189,7 @@ export function emitMcpActivity(event: McpActivityEvent): void {
     outputMeta: outputMeta ?? event.outputMeta,
     error: boundedError,
     args: boundedArgs,
+    timestamp: event.timestamp || Date.now(),
   };
   const chatLine = formatMcpActivityForChat(eventWithWs);
 

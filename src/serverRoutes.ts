@@ -1265,6 +1265,20 @@ export async function handleServerRoute(
     return true;
   }
 
+  // One-click unified drain for SuperAgent Tray & local Desktop UI:
+  // Drains in-memory subagents, daemon scheduler, MCP servers, Cloudflare tunnels, Muse watchers, and Core.
+  if (pathname === "/api/desktop/drain-all" && req.method === "POST") {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const { drainAllServices } = await import("./core/runtime/unifiedDrain.js");
+      const report = await drainAllServices();
+      sendJSON(res, 200, { success: true, ...report });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err?.message || String(err) });
+    }
+    return true;
+  }
+
   // Authenticated, read-only service health for the local Tauri runtime panel.
   // The server's existing /api bearer gate applies; never return remote URLs,
   // bot identifiers, MCP tool definitions or protected transport credentials.

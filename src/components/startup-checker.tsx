@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Box, Text } from "ink";
+import React, { useState, useEffect, useRef } from "react";
+import { Box, Text, useInput } from "ink";
 import { 
   ensureRgInstalled, 
   ensureCurlInstalled, 
@@ -32,6 +32,7 @@ import { runRmemorySetup } from "../core/rmemorySetup.js";
 import { getSettings } from "../core/config/jsonConfig.js";
 import { registerProgressCallback } from "../core/tools/state.js";
 import { checkNativeDependencies } from "../core/runtime/nativeDependencies.js";
+import { logStartup } from "../core/utils/unifiedLogger.js";
 
 interface TaskState {
   id: string;
@@ -49,6 +50,19 @@ interface StartupCheckerProps {
 export function StartupChecker({ onComplete }: StartupCheckerProps) {
   const [tasks, setTasks] = useState<Record<string, TaskState>>({});
   const [spinnerIndex, setSpinnerIndex] = useState(0);
+  const completedRef = useRef(false);
+
+  // Allow manual skip via Esc or 's'
+  useInput((input, key) => {
+    if (key.escape || input === "s" || input === "S") {
+      if (!completedRef.current) {
+        completedRef.current = true;
+        logStartup("StartupChecker manually skipped by user", { key: input || "Escape" });
+        registerProgressCallback(() => {});
+        onComplete();
+      }
+    }
+  });
 
   // Spinner animation
   useEffect(() => {
@@ -100,11 +114,38 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
     // Run the checks and downloads
     async function runInitialization() {
       let anyDownloadOccurred = false;
+      const startTime = Date.now();
+      logStartup("StartupChecker starting dependency checks", {
+        taskCount: Object.keys(initialTasks).length,
+        isWin,
+        tasks: Object.keys(initialTasks)
+      });
+
+      const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
+        let timer: any;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            logStartup(`Task timed out: [${label}] after ${Math.round(timeoutMs / 1000)}s`);
+            reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s`));
+          }, timeoutMs);
+        });
+        try {
+          const res = await Promise.race([promise, timeoutPromise]);
+          clearTimeout(timer);
+          return res;
+        } catch (err) {
+          clearTimeout(timer);
+          throw err;
+        }
+      };
 
       // Helper to update a task's state
       const updateTask = (id: string, updates: Partial<TaskState>) => {
         if (updates.status === "downloading" || updates.status === "extracting") {
           anyDownloadOccurred = true;
+        }
+        if (updates.status) {
+          logStartup(`Startup task [${id}] status: ${updates.status}`, { id, ...updates });
         }
         setTasks((prev) => {
           if (!prev[id]) return prev;
@@ -151,7 +192,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
           updateTask("ripgrep", { status: "ready" });
         } else {
           updateTask("ripgrep", { status: "downloading", progress: 0 });
-          await ensureRgInstalled((downloaded, total, stage) => {
+          await withTimeout(ensureRgInstalled((downloaded, total, stage) => {
             if (stage === "downloading") {
               const progress = total > 0 ? (downloaded / total) * 100 : 0;
               updateTask("ripgrep", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
@@ -160,7 +201,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
             } else if (stage === "done") {
               updateTask("ripgrep", { status: "ready" });
             }
-          }).catch(() => updateTask("ripgrep", { status: "failed" }));
+          }), 25000, "ripgrep").catch(() => updateTask("ripgrep", { status: "failed" }));
         }
       };
 
@@ -173,7 +214,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
           updateTask("curl", { status: "ready" });
         } else {
           updateTask("curl", { status: "downloading", progress: 0 });
-          await ensureCurlInstalled((downloaded, total, stage) => {
+          await withTimeout(ensureCurlInstalled((downloaded, total, stage) => {
             if (stage === "downloading") {
               const progress = total > 0 ? (downloaded / total) * 100 : 0;
               updateTask("curl", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
@@ -182,7 +223,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
             } else if (stage === "done") {
               updateTask("curl", { status: "ready" });
             }
-          }).catch(() => updateTask("curl", { status: "failed" }));
+          }), 25000, "curl").catch(() => updateTask("curl", { status: "failed" }));
         }
       };
 
@@ -194,7 +235,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
           updateTask("androidCli", { status: "ready" });
         } else {
           updateTask("androidCli", { status: "downloading", progress: 0 });
-          await ensureAndroidCliInstalled((downloaded, total, stage) => {
+          await withTimeout(ensureAndroidCliInstalled((downloaded, total, stage) => {
             if (stage === "downloading") {
               const progress = total > 0 ? (downloaded / total) * 100 : 0;
               updateTask("androidCli", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
@@ -203,7 +244,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
             } else if (stage === "done") {
               updateTask("androidCli", { status: "ready" });
             }
-          }).catch(() => updateTask("androidCli", { status: "failed" }));
+          }), 25000, "androidCli").catch(() => updateTask("androidCli", { status: "failed" }));
         }
       };
 
@@ -215,7 +256,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
           updateTask("uv", { status: "ready" });
         } else {
           updateTask("uv", { status: "downloading", progress: 0 });
-          await ensureUvInstalled((downloaded, total, stage) => {
+          await withTimeout(ensureUvInstalled((downloaded, total, stage) => {
             if (stage === "downloading") {
               const progress = total > 0 ? (downloaded / total) * 100 : 0;
               updateTask("uv", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
@@ -224,7 +265,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
             } else if (stage === "done") {
               updateTask("uv", { status: "ready" });
             }
-          }).catch(() => updateTask("uv", { status: "failed" }));
+          }), 25000, "uv").catch(() => updateTask("uv", { status: "failed" }));
         }
       };
 
@@ -236,14 +277,15 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
           updateTask("python", { status: "ready" });
         } else {
           updateTask("python", { status: "downloading", progress: 0 });
-          await ensurePythonInstalled((downloaded, total, stage) => {
+          await withTimeout(ensurePythonInstalled((downloaded, total, stage) => {
             if (stage === "downloading") {
+              updateTask("python", { status: "downloading" });
             } else if (stage === "extracting") {
               updateTask("python", { status: "extracting" });
             } else if (stage === "done") {
               updateTask("python", { status: "ready" });
             }
-          }).catch(() => updateTask("python", { status: "failed" }));
+          }), 30000, "python").catch(() => updateTask("python", { status: "failed" }));
         }
       };
 
@@ -266,7 +308,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
           updateTask("officeCli", { status: "ready" });
         } else {
           updateTask("officeCli", { status: "downloading", progress: 0 });
-          await ensureOfficeCliInstalled((downloaded, total, stage) => {
+          await withTimeout(ensureOfficeCliInstalled((downloaded, total, stage) => {
             if (stage === "downloading") {
               const progress = total > 0 ? (downloaded / total) * 100 : 0;
               updateTask("officeCli", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
@@ -275,7 +317,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
             } else if (stage === "done") {
               updateTask("officeCli", { status: "ready" });
             }
-          }).catch(() => updateTask("officeCli", { status: "failed" }));
+          }), 25000, "officeCli").catch(() => updateTask("officeCli", { status: "failed" }));
         }
       };
 
@@ -287,7 +329,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
           updateTask("rmemory", { status: "ready" });
         } else {
           updateTask("rmemory", { status: "downloading", progress: 0 });
-          await ensureRmemoryInstalled((downloaded, total, stage) => {
+          await withTimeout(ensureRmemoryInstalled((downloaded, total, stage) => {
             if (stage === "downloading") {
               const progress = total > 0 ? (downloaded / total) * 100 : 0;
               updateTask("rmemory", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
@@ -296,7 +338,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
             } else if (stage === "done") {
               updateTask("rmemory", { status: "ready" });
             }
-          }).catch(() => updateTask("rmemory", { status: "failed" }));
+          }), 25000, "rmemory").catch(() => updateTask("rmemory", { status: "failed" }));
         }
       };
 
@@ -322,13 +364,13 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
           updateTask("tunnelClient", { status: "ready" });
         } else {
           updateTask("tunnelClient", { status: "downloading", progress: 0 });
-          await ensureTunnelClientInstalled((downloaded, total, stage) => {
+          await withTimeout(ensureTunnelClientInstalled((downloaded, total, stage) => {
             if (stage === "downloading") {
               updateTask("tunnelClient", { status: "downloading" });
             } else if (stage === "done") {
               updateTask("tunnelClient", { status: "ready" });
             }
-          }).catch(() => {});
+          }), 25000, "tunnelClient").catch(() => {});
           const installed = await isTunnelClientAvailable();
           updateTask("tunnelClient", { status: installed ? "ready" : "skipped" });
         }
@@ -365,7 +407,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
           } else {
             updateTask("embeddingModel", { status: "checking" });
             try {
-              await preloadLocalEmbeddingModel();
+              await withTimeout(preloadLocalEmbeddingModel(), 30000, "embeddingModel");
               updateTask("embeddingModel", { status: "ready" });
             } catch {
               updateTask("embeddingModel", { status: "failed" });
@@ -375,7 +417,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
       };
 
       // Execute all checks in parallel!
-      await Promise.all([
+      await Promise.allSettled([
         checkFfmpeg(),
         checkRg(),
         ...(isWin ? [checkCurl()] : []),
@@ -394,11 +436,22 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
       // Clean up global progress callback
       registerProgressCallback(() => {});
 
+      const durationMs = Date.now() - startTime;
+      logStartup("StartupChecker finished all dependency checks", {
+        durationMs,
+        completedTasks,
+        totalTasks,
+        anyDownloadOccurred
+      });
+
+      if (completedRef.current) return;
+      completedRef.current = true;
+
       // If downloads occurred, wait briefly for visual confirmation; otherwise complete immediately
       if (anyDownloadOccurred) {
         setTimeout(() => {
           onComplete();
-        }, 300);
+        }, 400);
       } else {
         onComplete();
       }
@@ -415,7 +468,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
 
   const taskList = Object.values(tasks);
   const totalTasks = taskList.length;
-  const completedTasks = taskList.filter((t) => t.status === "ready" || t.status === "skipped" || t.status === "missing").length;
+  const completedTasks = taskList.filter((t) => t.status === "ready" || t.status === "skipped" || t.status === "missing" || t.status === "failed").length;
 
   return (
     <Box flexDirection="column" paddingX={2} marginY={1}>
@@ -483,6 +536,15 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
           </Box>
         );
       })}
+
+      {/* ══ HINT LINE ══ */}
+      <Box marginTop={1} flexDirection="row">
+        <Text color="gray">Press </Text>
+        <Text color="yellow" bold>[Esc]</Text>
+        <Text color="gray"> or </Text>
+        <Text color="yellow" bold>[s]</Text>
+        <Text color="gray"> to skip remaining downloads & enter terminal</Text>
+      </Box>
     </Box>
   );
 }

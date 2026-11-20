@@ -135,19 +135,19 @@ describe("MCP authorization is independent from chat YOLO", () => {
     const server = makeServer();
     try {
       await expect(call(server, "superagent_delegate_send_message", {}))
-        .rejects.toThrow(/MCP_APPROVAL_REQUIRED.*Approval pending: req_/);
-      const pending = listProjectAccessRequests({status: "pending", projectId: MCP_CONNECTION_PROJECT_ID});
+        .rejects.toThrow(/PROJECT_GRANT_MISSING.*Approval pending: req_/);
+      const pending = listProjectAccessRequests({status: "pending", projectId: "mcp-test-project"});
       expect(pending).toHaveLength(1);
       expect(pending[0].capabilities).toEqual(["execute"]);
       expect(pending[0].subject).toBe(identity().subject);
-      expect(hasProjectAccess(identity(), MCP_CONNECTION_PROJECT_ID, "execute")).toBe(false);
+      expect(hasProjectAccess(identity(), "mcp-test-project", "execute")).toBe(false);
       // Repeated denies must reuse the same request, not flood the Tray inbox.
       await expect(call(server, "superagent_delegate_send_message", {}))
-        .rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
-      expect(listProjectAccessRequests({status: "pending", projectId: MCP_CONNECTION_PROJECT_ID})
+        .rejects.toThrow(/PROJECT_GRANT_MISSING/);
+      expect(listProjectAccessRequests({status: "pending", projectId: "mcp-test-project"})
         .map(request => request.requestId)).toEqual([pending[0].requestId]);
-      grantProjectAccess(identity(), MCP_CONNECTION_PROJECT_ID, ["execute"]);
-      expect(hasProjectAccess(identity(), MCP_CONNECTION_PROJECT_ID, "execute")).toBe(true);
+      grantProjectAccess(identity(), "mcp-test-project", ["execute"]);
+      expect(hasProjectAccess(identity(), "mcp-test-project", "execute")).toBe(true);
     } finally { await server.close(); }
   });
 
