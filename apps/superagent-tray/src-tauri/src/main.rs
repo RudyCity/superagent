@@ -3413,6 +3413,11 @@ async fn mcp_project_access_action(
                 entry.get("identityHandle").and_then(Value::as_str) == Some(identity_handle.as_str())
             ).ok_or("Selected MCP identity is no longer verified")?;
             let subject = clean(identity.get("subject").and_then(Value::as_str).unwrap_or("Unknown agent"));
+            let agent_display = match identity.get("ownerConnectionName").and_then(Value::as_str)
+                .map(str::trim).filter(|s| !s.is_empty()) {
+                Some(conn_name) => format!("{} ({})", subject, clean(conn_name)),
+                None => subject,
+            };
             let registry = core_request(Method::GET, "/api/desktop/access/projects", None).await?;
             let projects = registry.get("projects").and_then(Value::as_array)
                 .ok_or("Unable to verify registered project targets")?;
@@ -3422,7 +3427,7 @@ async fn mcp_project_access_action(
             let target = format!("{} ({})", clean(project.get("name").and_then(Value::as_str).unwrap_or(&project_id)),
                 clean(project.get("target").and_then(Value::as_str).unwrap_or("")));
             format!("APPROVE MCP ACCESS?\n\nAgent: {}\nIdentity: {}\nTarget: {}\nCapabilities: {}\n\nExecute/Git may run commands with OS-user privileges. This is independent from Chat Agent YOLO. Permissions remain active until revoked.",
-                subject, identity_handle, target, caps.join(", "))
+                agent_display, identity_handle, target, caps.join(", "))
         } else {
             let request_id = text_field("requestId", 96)?;
             let inventory = core_request(Method::GET, "/api/desktop/access/requests", None).await?;
@@ -4174,6 +4179,7 @@ fn main() {
             let sep2 = PredefinedMenuItem::separator(app)?;
             let exit_superagent = MenuItem::with_id(app, "exit_superagent", "⏻ Shutdown Manager · Exit App", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Tray Only · Keep Services Running", true, None::<&str>)?;
+            let restart_tray = MenuItem::with_id(app, "restart_tray", "🔄 Restart Tray", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[
                 &status_item,
                 &version_item,
@@ -4196,6 +4202,7 @@ fn main() {
                 &settings,
                 &sep2,
                 &exit_superagent,
+                &restart_tray,
                 &quit,
             ])?;
             TrayIconBuilder::new()
@@ -4307,6 +4314,11 @@ fn main() {
                         let _ = app.emit("desktop-open-settings", ());
                     }
                     "exit_superagent" => shutdown_manager::open(app),
+                    "restart_tray" => {
+                        if let Err(err) = tray_lifecycle::request_tray_restart(app) {
+                            eprintln!("[tray] Failed to restart Tray: {err}");
+                        }
+                    }
                     "quit" => {
                         if shutdown_manager::is_running() {
                             shutdown_manager::open(app);
@@ -4337,9 +4349,22 @@ fn main() {
                 let mut health_log = ProjectionLogState::default();
                 let mut lan_log = ProjectionLogState::default();
                 let mut lan_previous = HashMap::<String, bool>::new();
+                let mut daemon_autostart_attempted = false;
                 loop {
-                    // No auto-start: SuperAgent Core and daemon scheduling
-                    // remain user-owned. This loop only displays completed runs.
+                    // Auto-start scheduler when stopped so scheduled reminders fire automatically.
+                    if !daemon_autostart_attempted {
+                        if let Ok(status) = core_request(Method::GET, "/api/daemon/status", None).await {
+                            let running = status.get("running").and_then(Value::as_bool).unwrap_or(false);
+                            if !running {
+                                match core_request(Method::POST, "/api/daemon/start", Some(json!({}))).await {
+                                    Ok(_) => daemon_autostart_attempted = true,
+                                    Err(err) => eprintln!("[tray] Auto-start scheduler failed: {err}"),
+                                }
+                            } else {
+                                daemon_autostart_attempted = true;
+                            }
+                        }
+                    }
                     let preferences = config_dir()
                         .ok()
                         .map(|dir| tray_settings::load_or_default(&dir))

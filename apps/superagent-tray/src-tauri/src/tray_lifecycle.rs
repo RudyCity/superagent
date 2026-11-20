@@ -79,6 +79,21 @@ fn cleanup_if_owned() {
 }
 pub fn cleanup(){cleanup_if_owned();}
 
+pub fn request_tray_restart(app: &tauri::AppHandle) -> Result<(), String> {
+    let exe = std::env::current_exe()
+        .and_then(fs::canonicalize)
+        .map_err(|e| format!("Failed to resolve Tray executable: {e}"))?;
+    let mut cmd = std::process::Command::new(&exe);
+    if let Some(dir) = OWNED.get().and_then(|(path, _)| path.parent()) {
+        cmd.arg("--tray-config-dir").arg(dir);
+    }
+    cmd.spawn()
+        .map_err(|e| format!("Failed to spawn new Tray instance: {e}"))?;
+    cleanup_if_owned();
+    app.exit(0);
+    Ok(())
+}
+
 fn reply(stream:&mut TcpStream,code:u16,body:&str){
     let reason=match code {200=>"OK",400=>"Bad Request",401=>"Unauthorized",
         404=>"Not Found",409=>"Conflict",413=>"Payload Too Large",_=>"Error"};

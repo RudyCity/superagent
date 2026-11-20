@@ -34,14 +34,6 @@
   font-variant-numeric: tabular-nums;
   border: 2px solid #0b1324;
 }
-#tray-notification-bell .notification-action-count {
-  top: auto;
-  bottom: 1px;
-  right: auto;
-  left: 1px;
-  background: var(--notif-warning);
-  color: #201a08;
-}
 #tray-notification-bell .notification-count[hidden],
 #nav-notifications-count[hidden],
 .notification-popover[hidden],
@@ -113,6 +105,67 @@
   color: var(--notif-muted);
   background: var(--notif-surface);
   border-bottom: 1px solid var(--notif-edge);
+}
+.notification-popover-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--notif-surface);
+  border-bottom: 1px solid var(--notif-edge);
+}
+.notification-popover-tab {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--notif-muted);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background var(--transition-fast, 150ms ease), color var(--transition-fast, 150ms ease), border-color var(--transition-fast, 150ms ease);
+}
+.notification-popover-tab:hover {
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--notif-text);
+}
+.notification-popover-tab.active {
+  background: var(--notif-surface-elevated);
+  color: var(--notif-text);
+  border-color: var(--notif-edge-strong);
+}
+.notification-popover-tab:focus-visible {
+  outline: 2px solid var(--border-focus, #3b82f6);
+  outline-offset: 2px;
+}
+.notification-popover-tab-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill, 9999px);
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--notif-text);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.notification-popover-tab[data-notification-popover-tab="action"].active .notification-popover-tab-count {
+  background: rgba(245, 158, 11, 0.18);
+  color: var(--notif-warning);
+}
+.notification-popover-tab[data-notification-popover-tab="information"].active .notification-popover-tab-count {
+  background: rgba(56, 189, 248, 0.18);
+  color: var(--notif-info);
 }
 .notification-popover-list {
   overflow-y: auto;

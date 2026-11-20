@@ -311,11 +311,11 @@
     if (tabAll) tabAll.textContent = "Semua (" + allRules.length + ")";
     if (tabDesktop) tabDesktop.textContent = "Desktop (" + desktopCount + ")";
     if (tabFile) tabFile.textContent = "File & Folder (" + fileCount + ")";
-    // Advisory inventory only: a matching host rule is never a project grant
-    // and project capabilities never bypass this independent host gate.
+    // Akses proyek mengizinkan seluruh operasi dalam ruang lingkup proyek sesuai capability;
+    // aturan aktif berfungsi sebagai lapisan kontrol kedua untuk aplikasi dan path file/folder.
     for (const id of ["access-host-file-rule-count", "access-project-host-file-rule-count"]) {
       const summary = $(id);
-      if (summary) summary.textContent = fileCount + " aturan file/folder host tercatat (bukan izin proyek).";
+      if (summary) summary.textContent = fileCount + " aturan aktif file/folder tercatat (lapisan kontrol kedua).";
     }
 
     const query = (state.ruleSearch || "").trim().toLowerCase();
@@ -879,9 +879,9 @@
     const hostBoundary = make("div", "access-mcp-grant-form");
     hostBoundary.id = "access-project-host-boundary";
     hostBoundary.append(
-      make("strong", "", "Batas terpisah: Aplikasi & File"),
+      make("strong", "", "Lapisan kedua: Aturan Aktif (Aplikasi & File)"),
       make("p", "access-hint",
-        "Izin proyek menentukan apa yang boleh dicoba agent pada proyek tersebut. Aturan file/folder Core dan izin desktop host membatasi apa yang benar-benar boleh diakses. Keduanya tidak saling menggantikan. Tool yang belum tersertifikasi tetap ditolak."),
+        "Akses Proyek mengizinkan operasi di dalam ruang lingkup proyek sesuai capability yang diberikan. Aturan Aktif bertindak sebagai lapisan perlindungan kedua untuk menentukan aplikasi serta file/folder (termasuk di luar proyek) yang diizinkan atau diblokir."),
     );
     const projectHostCount = make("p", "access-hint", "Memeriksa aturan host file/folder…");
     projectHostCount.id = "access-project-host-file-rule-count";
@@ -1072,8 +1072,8 @@
 
     // Section 2: Direct Grant Form
     const grantSection = make("section", "access-editor access-mcp-card");
-    const grantTitle = make("h3", "", "Berikan Izin Proyek ke Agent MCP");
-    const grantDesc = make("p", "access-hint", "Pilih identitas dan proyek terdaftar yang aktif. Operasi host non-proyek memerlukan Execute pada proyek lokal aktif; tab Koneksi MCP hanya mengurus autentikasi/sesi. Semua operasi tetap tunduk pada kebijakan file host dan persetujuan native.");
+    const grantTitle = make("h3", "", "Berikan Akses Proyek ke Agent MCP");
+    const grantDesc = make("p", "access-hint", "Default tidak ada akses di luar izin yang diberikan. Akses Proyek mengizinkan akses keseluruhan di dalam ruang lingkup proyek sesuai capability yang dipilih; Aturan Aktif bertindak sebagai perlindungan kedua untuk menentukan aplikasi serta file/folder (termasuk di luar proyek) yang dapat diakses.");
 
     const grantForm = make("div", "access-mcp-grant-form");
     grantForm.id = "access-mcp-direct-grant-form";
@@ -1226,15 +1226,15 @@
     if (tool.approvalKind === "read_only")
       return "Tidak memerlukan grant proyek untuk metadata ini; OAuth dan pembatas host tetap berlaku.";
     const messages = {
-      granted: "Capability proyek tercatat. Ini bukan jaminan tool dapat dijalankan.",
-      missing: "Capability proyek belum diberikan kepada identitas yang dipilih.",
-      choose_identity_project: "Pilih identitas MCP dan proyek untuk memeriksa grant.",
+      granted: "Akses proyek aktif untuk scope proyek sesuai capability; tetap tunduk pada Aturan Aktif bila menyasar aplikasi/file di luar proyek.",
+      missing: "Akses proyek belum diberikan kepada identitas yang dipilih (default ditolak).",
+      choose_identity_project: "Pilih identitas MCP dan proyek untuk memeriksa Akses Proyek.",
       identity_unavailable: "Identitas tidak ditemukan/terverifikasi; sambungkan kembali MCP.",
       project_unavailable: "Proyek tidak tersedia, dinonaktifkan, atau bukan target lokal yang sesuai.",
       policy_unavailable: "Registry izin proyek tidak dapat diperiksa; gagal tertutup.",
-      action_dependent: "Capability bervariasi menurut tindakan; pilih tindakan sebelum meninjau izin.",
+      action_dependent: "Capability bervariasi menurut tindakan; pilih tindakan sebelum meninjau Akses Proyek.",
     };
-    return messages[tool.grantState] || "Izin proyek perlu diperiksa ulang saat eksekusi.";
+    return messages[tool.grantState] || "Izin proyek dan Aturan Aktif diperiksa saat eksekusi.";
   }
 
   function reviewToolCapability(tool, capability) {
@@ -1321,9 +1321,9 @@
       const oauth = make("p", "access-hint", "OAuth: " +
         (Array.isArray(tool.oauthScopesRequired) ? tool.oauthScopesRequired.join(" + ") : "perlu verifikasi"));
       const host = make("p", "access-hint", tool.hostBlocked
-        ? "Diblokir oleh host file policy v2: " + tool.hostRequirement +
-          " Persetujuan proyek tidak dapat menghapus blokir sertifikasi."
-        : "Host: " + tool.hostRequirement);
+        ? "Tunduk pada Aturan Aktif / policy: " + tool.hostRequirement +
+          " Pastikan grant proyek dan aturan aktif sesuai untuk scope target."
+        : "Aturan aktif: " + tool.hostRequirement);
       const buttons = make("div", "access-mcp-tool-actions");
       if (tool.approvalKind === "project") {
         let actionSelect = null;
@@ -1340,8 +1340,8 @@
             const cap = tool.capabilitiesByAction[action];
             const state = tool.actionGrantStates?.[action] || tool.grantState;
             grant.textContent = "Git " + action + " memerlukan " + cap + ". " +
-              (state === "granted" ? "Grant proyek tercatat, namun tetap perlu pemeriksaan host dan native." :
-                state === "missing" ? "Grant proyek untuk tindakan ini belum diberikan." :
+              (state === "granted" ? "Akses proyek aktif dalam scope proyek; Aturan Aktif berlaku sebagai perlindungan kedua." :
+                state === "missing" ? "Akses proyek untuk tindakan ini belum diberikan (default ditolak)." :
                   toolGrantMessage(tool));
           };
           actionSelect.addEventListener("change", showAction);

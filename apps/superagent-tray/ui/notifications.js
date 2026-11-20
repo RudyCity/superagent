@@ -23,7 +23,7 @@
   });
   const state = {
     items: [], history: [], digest: null, prefs: null, sourceLevels: {},
-    unreadCount: 0, filter: "all", source: "all", device: "all", period: "all",
+    unreadCount: 0, filter: "all", popoverTab: "action", source: "all", device: "all", period: "all",
     grouped: false, search: "", open: false, busy: false, error: "", securitySync: "unknown", prefsDirty: false, evictedCount: 0,
   };
   // A click must not lose its read receipt just because a refresh or native
@@ -491,12 +491,6 @@
     const count = state.unreadCount;
     const counts = countsSnapshot();
     const visibleItems = selected();
-    const actionBadge = $("tray-notification-action-count");
-    if (actionBadge) {
-      actionBadge.hidden = counts.action === 0;
-      actionBadge.textContent = String(counts.action > 99 ? "99+" : counts.action);
-      actionBadge.setAttribute("aria-label", counts.action + " actions required");
-    }
     for (const el of [$("tray-notification-count"), $("nav-notifications-count")]) {
       if (!el) continue;
       el.hidden = count === 0;
@@ -513,12 +507,27 @@
     const popoverSummary = $("tray-notification-category-summary");
     if (popoverSummary) popoverSummary.textContent =
       counts.action + " need action · " + counts.information + " information";
+    const activePopoverTab = state.popoverTab === "information" ? "information" : "action";
+    const actionTabCount = $("tray-notification-popover-count-action");
+    if (actionTabCount) actionTabCount.textContent = String(counts.action > 99 ? "99+" : counts.action);
+    const infoTabCount = $("tray-notification-popover-count-information");
+    if (infoTabCount) infoTabCount.textContent = String(counts.information > 99 ? "99+" : counts.information);
+    document.querySelectorAll("[data-notification-popover-tab]").forEach((tabBtn) => {
+      const isActive = tabBtn.dataset.notificationPopoverTab === activePopoverTab;
+      tabBtn.classList.toggle("active", isActive);
+      tabBtn.setAttribute("aria-selected", String(isActive));
+    });
     const recent = $("tray-notification-recent");
     if (recent) {
       recent.replaceChildren();
+      const tabItems = prioritized().filter((n) => kindOf(n) === activePopoverTab);
       if (state.error) recent.append(empty(state.error));
       else if (!active().length) recent.append(empty("You're all caught up. No current notifications."));
-      else prioritized().slice(0, 5).forEach((n) => recent.append(noteCard(n, true)));
+      else if (!tabItems.length) {
+        recent.append(empty(activePopoverTab === "action"
+          ? "No notifications require action right now."
+          : "No information notifications right now."));
+      } else tabItems.slice(0, 5).forEach((n) => recent.append(noteCard(n, true)));
     }
     const inbox = $("notification-inbox-list");
     if (inbox) {
@@ -784,6 +793,14 @@
     $("tray-notification-popover")?.addEventListener("click", (event) => {
       if (event.target?.closest?.("[data-notification-close]")) close();
     });
+    document.querySelectorAll("[data-notification-popover-tab]").forEach((tabBtn) =>
+      tabBtn.addEventListener("click", () => {
+        const nextTab = tabBtn.dataset.notificationPopoverTab;
+        if (nextTab === "action" || nextTab === "information") {
+          state.popoverTab = nextTab;
+          render();
+        }
+      }));
     $("tray-notification-view-all")?.addEventListener("click", () => {
       close(); window.navigateToPage?.("notifications");
     });
