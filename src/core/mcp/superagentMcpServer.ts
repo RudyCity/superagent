@@ -75,6 +75,10 @@ import {
   handleUnlockFile,
   UNLOCK_FILE_MCP_TOOL_DEF,
 } from "./tools/workspaceTools.js";
+import {
+  PATCH_LARGE_FILE_MCP_TOOL_DEF,
+  handlePatchFile,
+} from "./tools/largeFilePatchTool.js";
 import { handleManageWorktrees } from "./tools/worktreeTools.js";
 import { handleGetWorkspace, handleGetCurrentTask } from "./tools/workspaceStatusTools.js";
 import { handleGetPlanAndTasks } from "./tools/taskChecklistMcpTools.js";
@@ -421,6 +425,7 @@ export const MCP_TOOL_DEFINITIONS = [
       },
     },
     UNLOCK_FILE_MCP_TOOL_DEF,
+    PATCH_LARGE_FILE_MCP_TOOL_DEF,
     {
       name: "superagent_list_files",
       description: "List files and directories in the workspace or a specific subfolder.",
@@ -1015,6 +1020,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           return await handleWriteFile(args);
         case "superagent_write_files":
           return await handleWriteFiles(args);
+        case "superagent_patch_file":
+          return await handlePatchFile(args);
         case "superagent_unlock_file":
           return await handleUnlockFile(args);
         case "superagent_list_files":

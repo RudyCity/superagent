@@ -16,6 +16,7 @@ import { certifiedExplicitGrepSearchArgs } from "./filePolicyArgumentCertificati
 export { certifiedExplicitGrepSearchArgs } from "./filePolicyArgumentCertification.js";
 import { evaluatePersistentAccess, type ExecutableIdentity, type FileOperation, type PersistentAccessPolicy }
   from "../desktopUi/persistentAccessPolicy.js";
+import { formatUncertifiedFilePolicyMessage } from "./uncertifiedPolicySuggestion.js";
 
 type Args = Record<string,unknown>;
 export type FileToolCall = { name:string; args?:Args };
@@ -27,7 +28,7 @@ const READ_TOOLS = new Set(["read","read_file","view_file","view","superagent_re
 const WRITE_TOOLS = new Set(["write","write_to_file","write_file","superagent_write_files",
   "superagent_write_file","edit","replace_file_content","multi_replace_file_content",
   "superagent_replace_file_content"]);
-const PATCH_TOOLS = new Set(["apply_patch","superagent_apply_patch"]);
+const PATCH_TOOLS = new Set(["apply_patch","superagent_apply_patch","superagent_patch_file"]);
 /**
  * Explicit-source document/media readers: only named input files are inspected.
  * Do not include render, edit, sign, media_plan or outputs that can touch
@@ -931,7 +932,7 @@ export function registeredFileToolGate(
     WRITE_TOOLS.has(call.name)?["read","write"]:
     PATCH_TOOLS.has(call.name)?["read","write","delete"]:[];
   if(!operations.length&&!explicitEffects)
-    return "Tool is not certified for permanent file access restrictions.";
+    return formatUncertifiedFilePolicyMessage(call.name, call.args);
   const args=call.args??{};
   const legacyEntries=mediaPlanPaths ?? (explicitEffects?null:pathsIn(args));
   if(!explicitEffects&&!legacyEntries)

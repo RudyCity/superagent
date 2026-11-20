@@ -85,6 +85,7 @@ export function certifiedDelegateWebAction(call:BrowserCall):boolean{
      return exactWith("sessionToken")&&leased();
    case "snapshot":
    case "read_page":
+   case "extract_links":
      return exactWith("sessionToken")&&leased();
    case "navigate": {
      if(!exactWith("sessionToken","expectedRevision","url")||
