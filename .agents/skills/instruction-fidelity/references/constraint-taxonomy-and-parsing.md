@@ -67,21 +67,31 @@ Every software instruction received from a user or parent coordinator contains r
 
 ---
 
-## 2. Intent Deconstruction Protocol
+## 2. Intent Deconstruction & Confirmation Protocol
 
-Before calling any write tool or executing code modifications, execute this 3-step intent deconstruction:
+Before calling any write tool or executing code modifications, execute this 4-step intent deconstruction and confirmation process:
 
 ```mermaid
 flowchart TD
-    A["Raw User Prompt"] --> B["Step 1: Intent Classification"]
-    B --> C["Step 2: Constraint Extraction Matrix"]
-    C --> D["Step 3: Blast Radius Assessment"]
-    D --> E{"Blast Radius > Threshold?"}
-    E -- Yes --> F["Formulate Clarification / Conservative Boundary"]
-    E -- No --> G["Populate Task Execution Ledger"]
+    A["Raw User Prompt"] --> B["Step 1: Mandatory Intent Confirmation<br>(Articulate / Confirm Maksud Prompt)"]
+    B --> C["Step 2: Intent Classification"]
+    C --> D["Step 3: Constraint Extraction Matrix"]
+    D --> E["Step 4: Blast Radius Assessment"]
+    E --> F{"Blast Radius High or Ambiguous?"}
+    F -- Yes --> G["Interactive Confirmation Gate (Ask User)"]
+    F -- No --> H["Populate Task Execution Ledger & Execute"]
 ```
 
-### Step 1: Intent Classification
+### Step 1: Mandatory Interactive Approval Gate (Model 1: Konfirmasi Maksud & Tunggu Persetujuan)
+
+On **EVERY** new prompt received from the user, the agent is strictly prohibited from immediately executing tools, making changes, or modifying files. The agent must execute the Model 1 interactive gate:
+1. **Articulate Understood Goal**: Provide a clear, direct 1–2 sentence summary of what the user wants to achieve.
+2. **Define Perceived Scope**: Outline the exact files, modules, components, or tasks that need to be touched.
+3. **Present Concrete Action Plan**: Enumerate the specific, step-by-step tasks to be executed.
+4. **Mandatory Interactive Stop**: Stop the turn immediately and request explicit user confirmation: *"Apakah maksud yang saya tangkap dan rencana tindakan di atas sudah sesuai? Silakan balas dengan 'Lanjut' untuk mengeksekusi."*
+5. **Wait for Approval**: Proceed to preflight and tool execution ONLY after the user explicitly replies with approval (e.g. "Lanjut", "Ok", "Proceed").
+
+### Step 2: Intent Classification
 
 Identify the primary action archetype of the request:
 1. **Creation / Scaffolding**: Building a new feature, module, or skill from scratch.
@@ -90,7 +100,7 @@ Identify the primary action archetype of the request:
 4. **Investigation / Audit / Research**: Exploring codebase, finding root causes, or assessing health without modifying files.
 5. **Delegation / Orchestration**: Coordinating multi-tier agents, subagents, or external CLI bridges.
 
-### Step 2: Constraint Extraction Matrix
+### Step 3: Constraint Extraction Matrix
 
 Construct the operational matrix in working memory (or in scratch notes for complex tasks):
 
@@ -102,7 +112,7 @@ Construct the operational matrix in working memory (or in scratch notes for comp
 | **Environment ($C^{env}$)** | OS, shell syntax, active branches, package managers | Windows PowerShell (`;` separator), Bun test runner |
 | **Verification Gate ($V$)** | Exact commands proving completion | `bun test tests/bridge.test.ts` |
 
-### Step 3: Blast Radius Assessment
+### Step 4: Blast Radius Assessment
 
 Assess the blast radius of the requested changes before touching files:
 

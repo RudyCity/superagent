@@ -8,7 +8,7 @@ This reference documents the psychological and cognitive rationalization pattern
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                       THE TEN AI RATIONALIZATION TRAPS                      │
+│                      THE ELEVEN AI RATIONALIZATION TRAPS                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  1. The "Helpful Cleaner"       ──► Drive-by formatting & refactoring       │
 │  2. The "Premature Victor"      ──► Declaring done without running tests    │
@@ -20,6 +20,7 @@ This reference documents the psychological and cognitive rationalization pattern
 │  8. The "Blind Looper"          ──► Retrying same failing action repeatedly │
 │  9. The "Phantom Bug Fixer"     ──► Wrapping crashes in empty catch blocks  │
 │  10. The "Speculative Guesser"  ──► Editing code without reading files      │
+│  11. The "Unconfirmed Assumer"  ──► Executing without confirming user intent│
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -135,15 +136,27 @@ This reference documents the psychological and cognitive rationalization pattern
 
 ---
 
+### Trap 11: The "Unconfirmed Assumer" (Bypassing the Interactive Approval Gate)
+- **Rationalization**: *"I already understand what the user wants, so I will immediately call tools and make edits in the same turn without stopping to confirm or wait for their approval."*
+- **Damage Caused**:
+  - Direct breach of the Model 1 interactive contract and user trust.
+  - If the agent misinterprets subtle requirements, destructive or erroneous edits occur before the user can intervene.
+- **Tripwire Warning**: Invoking write/edit tools on a new user prompt without first stopping to present the intent and action plan and waiting for user approval.
+- **Antidote**:
+  - **Mandatory Interactive Approval Gate (Model 1)**: For every new user prompt, explain the understood intent, scope, and plan, then stop and wait for explicit confirmation ("Lanjut" / approval) before invoking tools.
+
+---
+
 ## 2. Pre-Turn Cognitive Circuit Breakers
 
-Before outputting your final response or claiming completion, test yourself against these 5 circuit breaker questions:
+Before outputting your final response or claiming completion, test yourself against these 6 circuit breaker questions:
 
 ```markdown
-1. [ ] Did I run a live verification command (build, test, CLI run, DOM check) and confirm zero errors?
-2. [ ] Did I review `git diff` to ensure zero collateral edits or drive-by formatting were introduced?
-3. [ ] Are there ANY remaining `TODO`s, placeholders, or handoffs back to the user?
-4. [ ] Did I account for EVERY explicit positive constraint, negative constraint, and deliverable?
-5. [ ] Did I cite real terminal outputs and provide clickable file links in my final summary?
+1. [ ] Did I enforce Model 1 (articulate intent & plan, and wait for user approval before modifying code)?
+2. [ ] Did I run a live verification command (build, test, CLI run, DOM check) and confirm zero errors?
+3. [ ] Did I review `git diff` to ensure zero collateral edits or drive-by formatting were introduced?
+4. [ ] Are there ANY remaining `TODO`s, placeholders, or handoffs back to the user?
+5. [ ] Did I account for EVERY explicit positive constraint, negative constraint, and deliverable?
+6. [ ] Did I cite real terminal outputs and provide clickable file links in my final summary?
 ```
 If the answer to any question is **"No"**, pause immediately and resolve the deficiency before responding to the user.

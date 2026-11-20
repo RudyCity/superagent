@@ -1,8 +1,8 @@
 ---
 name: instruction-fidelity
-description: Universal execution discipline that ensures AI agents faithfully execute legitimate user instructions from request to verified completion across any workspace, stack, or agent architecture. Use for every implementation, fix, refactor, audit, or delegation to prevent scope drift, planning-only stalls, silent omissions, unrequested changes, or unverified completion claims.
+description: Universal execution discipline that ensures AI agents faithfully execute legitimate user instructions from request to verified completion across any workspace, stack, or agent architecture. Enforces mandatory user intent confirmation on every prompt, prevents scope drift, planning-only stalls, silent omissions, unrequested changes, or unverified completion claims.
 when_to_use: mandatory for all tasks, implementation, bug fixing, refactoring, code reviews, audits, architectural changes, subagent delegation, and CLI bridge workflows
-version: 2.0.0
+version: 2.1.0
 ---
 
 # Instruction Fidelity: The Universal Execution Discipline
@@ -11,25 +11,27 @@ Instruction Fidelity is the **non-negotiable execution contract** governing all 
 
 ---
 
-## The Five Iron Laws of Instruction Fidelity
+## The Six Iron Laws of Instruction Fidelity
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                 THE FIVE IRON LAWS OF INSTRUCTION FIDELITY                  │
+│                  THE SIX IRON LAWS OF INSTRUCTION FIDELITY                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  1. ZERO UNREQUESTED SCOPE CREEP  ──► Minimal blast radius; no drive-by fixes│
-│  2. ZERO SILENT OMISSIONS         ──► Every constraint & deliverable tracked│
-│  3. NEGATIVE CONSTRAINTS ARE ABSOLUTE ──► Never violate forbidden boundaries│
-│  4. EVIDENCE-GATED COMPLETION     ──► No claim of done without live output  │
-│  5. LOSSLESS DELEGATION CASCADE   ──► Parents inspect delegates' raw proofs │
+│  1. MANDATORY INTENT CONFIRMATION ──► Confirm & articulate intent on prompt │
+│  2. ZERO UNREQUESTED SCOPE CREEP  ──► Minimal blast radius; no drive-by fixes│
+│  3. ZERO SILENT OMISSIONS         ──► Every constraint & deliverable tracked│
+│  4. NEGATIVE CONSTRAINTS ABSOLUTE ──► Never violate forbidden boundaries    │
+│  5. EVIDENCE-GATED COMPLETION     ──► No claim of done without live output  │
+│  6. LOSSLESS DELEGATION CASCADE   ──► Parents inspect delegates' raw proofs │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-1. **Zero Unrequested Scope Creep**: Modify *only* what is necessary to fulfill the authorized request. Never perform drive-by reformatting, reorder imports, update unrequested dependencies, or touch concurrent work.
-2. **Zero Silent Omissions**: Every explicit requirement, constraint, edge case, and deliverable must be tracked and addressed. Placeholders (`TODO`, `// implement here`, `...`), stubs, and punting tasks back to the user are strictly banned.
-3. **Negative Constraints Are Absolute Invariants**: Explicit restrictions ("do not touch X", "do not add dependencies", "preserve existing API signature") carry equal or greater weight than positive goals. Achieving a positive goal by violating a negative constraint is an instant failure.
-4. **Evidence-Gated Completion**: An explanation of why code should work is never proof that it does work. Every requirement must be verified with observable terminal evidence (exit code 0, passing test output, clean build, live CLI run, or DOM inspection) before reporting completion.
-5. **Lossless Delegation Cascade**: When delegating to subagents, swarms, or CLI bridges, never dilute constraints. Inspect the delegate's raw command outputs and git diff before accepting their work.
+1. **Mandatory Interactive Approval Gate (Model 1 - Konfirmasi Maksud & Tunggu Persetujuan)**: On **every new user prompt**, the agent is **STRICTLY FORBIDDEN from immediately invoking write/edit tools or modifying files**. The agent MUST first articulate the understood intent, scope, and concrete step-by-step plan, then **STOP and wait for user confirmation ("Lanjut" / approval / corrections)** before executing actions. Never proceed blindly on silent assumptions or jump to actions without first establishing mutual alignment with the user.
+2. **Zero Unrequested Scope Creep**: Modify *only* what is necessary to fulfill the authorized request. Never perform drive-by reformatting, reorder imports, update unrequested dependencies, or touch concurrent work.
+3. **Zero Silent Omissions**: Every explicit requirement, constraint, edge case, and deliverable must be tracked and addressed. Placeholders (`TODO`, `// implement here`, `...`), stubs, and punting tasks back to the user are strictly banned.
+4. **Negative Constraints Are Absolute Invariants**: Explicit restrictions ("do not touch X", "do not add dependencies", "preserve existing API signature") carry equal or greater weight than positive goals. Achieving a positive goal by violating a negative constraint is an instant failure.
+5. **Evidence-Gated Completion**: An explanation of why code should work is never proof that it does work. Every requirement must be verified with observable terminal evidence (exit code 0, passing test output, clean build, live CLI run, or DOM inspection) before reporting completion.
+6. **Lossless Delegation Cascade**: When delegating to subagents, swarms, or CLI bridges, never dilute constraints. Inspect the delegate's raw command outputs and git diff before accepting their work.
 
 ---
 
@@ -39,7 +41,7 @@ Every task must progress systematically through the 5-phase fidelity loop:
 
 ```mermaid
 flowchart LR
-    P1["Phase 1: Understand<br>(Intent & Constraints)"] --> P2["Phase 2: Preflight<br>(Git Check & Seams)"]
+    P1["Phase 1: Ingest & Confirm<br>(Confirm Intent & Scope)"] --> P2["Phase 2: Preflight<br>(Git Check & Seams)"]
     P2 --> P3["Phase 3: Execute<br>(Surgical Edits)"]
     P3 --> P4["Phase 4: Verify<br>(Live Proof & Diff)"]
     P4 --> P5["Phase 5: Report<br>(Ledger & Evidence)"]
@@ -48,19 +50,33 @@ flowchart LR
 
 ---
 
-### Phase 1: Ingestion & Intent Deconstruction
+### Phase 1: Ingestion, Intent Deconstruction & Mandatory Interactive Approval Gate
 
-1. **Extract the Core Contract**:
+1. **Mandatory Interactive Approval Gate (Model 1: Berhenti & Tunggu Persetujuan User)**:
+   - **Non-Negotiable Core Law**: Pada **SETIAP prompt baru dari user**, agen **DILARANG LANGSUNG MEMANGGIL WRITE/EDIT TOOLS ATAU MENGUBAH FILE**.
+   - **Struktur Deklarasi Konfirmasi Wajib (Intent & Action Plan)**:
+     Sebelum tindakan apapun diambil, agen wajib menyajikan deklarasi terstruktur di awal turn:
+     - **🎯 Understood Core Intent (Maksud Utama)**: Ringkasan jelas 1–2 kalimat mengenai apa yang sebenarnya ingin dicapai user.
+     - **📦 Scope & Target Files (Ruang Lingkup)**: Daftar persis file, modul, fungsi, atau aset yang akan dibuat, diubah, atau dianalisis.
+     - **📋 Step-by-Step Action Plan (Rencana Aksi Konkrit)**: Rencana langkah kerja terperinci yang akan dieksekusi.
+     - **🛡️ Identified Constraints (Batasan & Parameter)**: Batasan negatif ($C^-$), konvensi sintaks (PowerShell `;`), dsb.
+   - **Gerbang Penahan Interaktif (Stop & Wait Protocol)**:
+     - Agen **WAJIB BERHENTI** di akhir respons dan secara eksplisit meminta konfirmasi user:
+       > *"Apakah maksud yang saya tangkap dan rencana tindakan di atas sudah sesuai? Silakan balas dengan 'Lanjut' untuk mengeksekusi, atau berikan koreksi jika ada penyesuaian."*
+     - Agen **TIDAK BOLEH** memanggil tool modifikasi file, eksekusi kode, atau git mutation sampai user membalas dengan persetujuan eksplisit (misalnya "Lanjut", "Ya", "Proceed", atau instruksi penyesuaian).
+   - **Setelah Persetujuan Diberikan**:
+     - Baru pada giliran berikutnya agen melanjutkan ke Phase 2 (Preflight), Phase 3 (Execution), Phase 4 (Verification), dan Phase 5 (Report).
+2. **Extract the Core Contract**:
    - Primary Objective ($O$): Single-sentence definition of the desired outcome.
    - Deliverables ($D_1 \dots D_n$): Concrete files, functions, or assets to be created or modified.
    - Positive Constraints ($C^+$): Explicit patterns, naming, and libraries requested.
    - Negative Constraints ($C^-$): Explicitly forbidden actions, untouchable files, and behavioral limits.
    - Environmental Invariants ($C^{env}$): OS platform, shell syntax (e.g. PowerShell `;` vs bash `&&`), runtime (`bun`, `node`, `python`).
-2. **The Ambiguity Protocol**:
+3. **The Ambiguity Protocol**:
    - Check existing codebase patterns and precedents first.
    - If ambiguity is internal and low-blast-radius, select the most conservative, minimal, non-destructive implementation.
    - If ambiguity has high blast radius (potential data loss, breaking public API, auth changes), ask for explicit user clarification before modifying state.
-3. *Deep Dive Reference*: See [constraint-taxonomy-and-parsing.md](references/constraint-taxonomy-and-parsing.md).
+4. *Deep Dive Reference*: See [constraint-taxonomy-and-parsing.md](references/constraint-taxonomy-and-parsing.md).
 
 ---
 
@@ -184,7 +200,9 @@ When delegating tasks across agent tiers (Master Agent → Superagent → Subage
 
 ## Anti-Drift Checklist (Pre-Flight & Post-Flight)
 
-### Before Modifying Code:
+### Before Calling Tools or Modifying Code:
+- [ ] **Did I explicitly articulate the understood intent, target scope, and concrete action plan at the start of the turn?**
+- [ ] **Did I stop and wait for the user's explicit confirmation ("Lanjut" / approval) before invoking tools or editing files?**
 - [ ] Have I parsed all positive ($C^+$), negative ($C^-$), and environmental ($C^{env}$) constraints?
 - [ ] Did I run `git status` to detect concurrent agent activity and protect existing changes?
 - [ ] Have I read all target files and understood existing patterns before writing edits?
