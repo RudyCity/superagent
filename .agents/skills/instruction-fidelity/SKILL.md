@@ -148,8 +148,12 @@ flowchart LR
 3. **Display Changed Files with Clickable Links**:
    - List all created, modified, or deleted files using clickable markdown links with forward slashes:
      `[filename.ts](file:///absolute/path/to/filename.ts)`.
-4. **Project Completion Conclusion**:
-   - Provide a concise summary of outcomes, key changes, verification results, and recommended next steps.
+4. **Project Completion Conclusion & Mandatory Classified Next Steps**:
+   - Provide a concise summary of outcomes, key changes, and empirical verification results.
+   - **Mandatory 3-Tier Recommendations**: Every completion report MUST conclude with actionable next steps categorized into three explicit tiers:
+     - 🔴 **1. Must-Have (Prioritas Kritis)**: Urgent/critical fixes, blockers, data integrity checks, or mandatory follow-ups before use.
+     - 🟡 **2. Good-to-Have (Sangat Dianjurkan)**: Quality improvements, regression coverage, optimizations, or workflow automation.
+     - 🟢 **3. Nice-to-Have (Penyempurnaan Lanjutan)**: Optional polish, extended documentation, future enhancements, or cosmetic touches.
 
 ---
 
@@ -213,4 +217,5 @@ When delegating tasks across agent tiers (Master Agent → Superagent → Subage
 - [ ] Did I review `git diff` to ensure zero unintended changes or drive-by formatting edits?
 - [ ] Are all placeholders (`TODO`, `...`, stubs) eliminated and 100% of deliverables implemented?
 - [ ] Have I documented real terminal output evidence in the task summary?
+- [ ] **Did I include categorized next-step recommendations (1. Must-Have, 2. Good-to-Have, 3. Nice-to-Have) in the final summary?**
 - [ ] Did I list all changed files using clickable file links?

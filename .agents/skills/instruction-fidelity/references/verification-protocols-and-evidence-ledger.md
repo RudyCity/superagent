@@ -155,3 +155,23 @@ When presenting verification evidence in the final response:
    - [`src/core/context.ts`](file:///d:/path/to/src/core/context.ts): Added retry logic to `fetchContext` (Lines 45-62).
    - [`tests/core/context.test.ts`](file:///d:/path/to/tests/core/context.test.ts): Added 2 unit tests covering backoff timeouts.
    ```
+
+---
+
+## 4. Final Summary & Classified Next-Step Recommendations
+
+Every task completion report must conclude with a structured "Saran Langkah Berikutnya" (Actionable Next Steps) block categorized into three explicit tiers:
+
+```markdown
+### 📋 Saran Langkah Berikutnya (Actionable Next Steps)
+
+#### 🔴 1. Must-Have (Prioritas Kritis)
+- Critical blockers, security validations, regression bug fixes, or essential follow-ups before the code is deployed or relied upon.
+
+#### 🟡 2. Good-to-Have (Sangat Dianjurkan)
+- Performance optimizations, automated CI checks, test coverage expansion, or DX improvements.
+
+#### 🟢 3. Nice-to-Have (Penyempurnaan Lanjutan)
+- Optional refactorings, cosmetic enhancements, future roadmap features, or extended documentation.
+```
+This ensures the user has immediate, unambiguous visibility into what requires urgent attention versus what can be scheduled or skipped.
