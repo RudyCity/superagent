@@ -14,6 +14,12 @@ import { getRootConfigDir } from "../config/paths.js";
 import { coreCheckpointPath, readCoreCheckpoint } from "./coreSupervisorCheckpoint.js";
 import { requestCoreSupervisor } from "./coreSupervisor.js";
 import { auditCoreMcpOwnership, readListenerOwners } from "./coreMcpOwnershipAudit.js";
+import {
+  startManagedGuardianControlServer,
+  readManagedGuardianOwner,
+  isProcessAlive,
+  type ManagedGuardianOwner,
+} from "./managedGuardianServer.js";
 
 export type CoreGuardianPolicy = { maxRecoveries: number; windowMs: number; backoffMs: number };
 export const DEFAULT_CORE_GUARDIAN_POLICY: CoreGuardianPolicy = {
@@ -97,6 +103,7 @@ export async function runCoreGuardian(options: {
   entry?: string;
   signal?: AbortSignal;
   adoptRunning?: boolean;
+  enableManaged?: boolean;
 }): Promise<{ reason: "stopped" | "refused" | "budget_exhausted"; recoveries: number }> {
   const { port } = options;
   const clientMode = options.clientMode ?? "tline";
@@ -172,11 +179,14 @@ export async function runCoreGuardian(options: {
       try { fs.rmSync(tmp, { force: true }); } catch {}
     }
   };
+  const internalController = new AbortController();
   let stopping = Boolean(options.signal?.aborted);
   const onStop = () => { stopping = true; };
-  options.signal?.addEventListener("abort", onStop);
-  process.once("SIGINT", onStop);
-  process.once("SIGTERM", onStop);
+  const onAbort = () => { stopping = true; internalController.abort(); };
+  options.signal?.addEventListener("abort", onAbort);
+  internalController.signal.addEventListener("abort", onStop);
+  process.once("SIGINT", onAbort);
+  process.once("SIGTERM", onAbort);
 
   const spawnChild = (action: "start" | "recover") => {
     const child = spawn(process.execPath, [entry, "core", action, "--port", String(port),
@@ -193,6 +203,7 @@ export async function runCoreGuardian(options: {
   let verifiedInitialOwner = false;
   let recoveries = 0;
   let ownedPid = adoptedStatus?.supervisorPid ?? 0;
+  let managedServer: { owner: ManagedGuardianOwner; close: () => Promise<void> } | undefined;
 
   try {
     if (adoptedStatus) {
@@ -214,6 +225,16 @@ export async function runCoreGuardian(options: {
       } catch (error) {
         console.warn("[Core guardian] Initial Core process could not be verified: " + String(error));
         return { reason: "refused", recoveries };
+      }
+    }
+
+    const existingOwner = readManagedGuardianOwner(port);
+    const existingOwnerAlive = existingOwner ? isProcessAlive(existingOwner.pid) && existingOwner.pid !== process.pid : false;
+    if (options.enableManaged !== false && !existingOwnerAlive) {
+      try {
+        managedServer = await startManagedGuardianControlServer({ port, controller: internalController });
+      } catch (error) {
+        console.warn("[Core guardian] Managed control endpoint could not be started: " + String(error));
       }
     }
 
@@ -297,9 +318,13 @@ export async function runCoreGuardian(options: {
     }
     return { reason: "stopped", recoveries };
   } finally {
-    options.signal?.removeEventListener("abort", onStop);
-    process.off("SIGINT", onStop);
-    process.off("SIGTERM", onStop);
+    if (managedServer) {
+      await managedServer.close().catch(() => {});
+    }
+    options.signal?.removeEventListener("abort", onAbort);
+    internalController.signal.removeEventListener("abort", onStop);
+    process.off("SIGINT", onAbort);
+    process.off("SIGTERM", onAbort);
     try {
       if (fs.readFileSync(leaseFile, "utf8") === JSON.stringify(lease)) {
         fs.rmSync(leaseFile);

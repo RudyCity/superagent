@@ -1133,7 +1133,7 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core recover [--port 7888] [--client-mode tline|chrome-extension]");
     console.log("superagent core recycle-plan [--port 7888]  # read-only plan for a verified legacy direct Core");
     console.log("superagent core recycle [--port 7888] --approve RECYCLE_LEGACY_CORE  # guarded graceful migration to supervised Core");
-    console.log("superagent core guard [--port 7888] [--client-mode tline|chrome-extension] [--adopt-running] [--stop-on-stdin]  # opt-in owned Core crash recovery");
+    console.log("superagent core guard [--port 7888] [--client-mode tline|chrome-extension] [--adopt-running] [--stop-on-stdin] [--unmanaged]  # opt-in owned Core crash recovery");
     console.log("superagent core guard-status [--port 7888]  # conservative guardian registration and verified Core identity");
     console.log("superagent core boot [--port 7888] [--client-mode tline|chrome-extension]  # safe logon/bootstrap, never resets dead worker state");
     console.log("superagent core boot-audit [--port 7888]  # read-only cold-reboot and unfinished chat-turn assessment");
@@ -1340,7 +1340,7 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     const result = await runCoreBoot({ port, clientMode: mode });
     // start/recover binds a long-lived process: keep it running just as the
     // standalone core start/recover commands do. Already-running is a no-op.
-    if (result === "recovered") await new Promise<void>(() => {});
+    if (result === "recovered" || result === "started" || result === "cold_started") await new Promise<void>(() => {});
     return;
   }
   if (action === "guard-status") {
@@ -1381,6 +1381,7 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
       clientMode: mode,
       signal: controller?.signal,
       adoptRunning: argv.includes("--adopt-running"),
+      enableManaged: !argv.includes("--unmanaged"),
     });
     console.log("Core guardian stopped: " + result.reason + " | checkpoint recoveries: " + result.recoveries);
     if (result.reason !== "stopped") throw new Error("Core guardian requires operator review: " + result.reason);
