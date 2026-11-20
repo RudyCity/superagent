@@ -32,6 +32,7 @@ describe("narrow direct Delegate web workflow",()=>{
     expect(certified({...base,command:"session_participants",sessionToken:token})).toBe(true);
     expect(certified({...base,command:"snapshot",sessionToken:token})).toBe(true);
     expect(certified({...base,command:"read_page",sessionToken:token})).toBe(true);
+    expect(certified({...base,command:"extract_links",sessionToken:token})).toBe(true);
     expect(certified({...base,command:"navigate",sessionToken:token,expectedRevision:0,url:"https://example.org/path"})).toBe(true);
     expect(certified({...base,command:"click",sessionToken:token,expectedRevision:0,selector:"#submit"})).toBe(true);
     expect(certified({...base,command:"type",sessionToken:token,expectedRevision:1,index:2,text:"hello"})).toBe(true);
@@ -115,8 +116,10 @@ describe("narrow direct Delegate web workflow",()=>{
     expect(gate("superagent_tool_execute",{name:"superagent_chrome_cdp_web",arguments:valid})).toBeNull();
     expect(gate("superagent_tool_execute",{name:"superagent_chrome_cdp_web",
       arguments:{...valid,command:"evaluate",payload:"alert(1)"}})).toMatch(/not certified/);
-    expect(gate("superagent_chrome_cdp_web",{...valid,files:["/private/.env"]})).toMatch(/not certified/);
-    expect(gate("superagent_chrome_cdp_web",{...valid,transport:"managed"})).toMatch(/not certified/);
+    expect(gate("superagent_tool_execute",{name:"superagent_chrome_cdp_web",
+      arguments:{...valid,files:["/private/.env"]}})).toMatch(/not certified/);
+    expect(gate("superagent_tool_execute",{name:"superagent_chrome_cdp_web",
+      arguments:{...valid,transport:"managed"}})).toMatch(/not certified/);
     expect(gate("superagent_chrome_cdp",{...valid,command:"upload_file"})).toMatch(/not certified/);
   });
 

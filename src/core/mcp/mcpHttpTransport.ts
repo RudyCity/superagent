@@ -817,6 +817,8 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           sessionHash: (identity as McpIdentity).credentialHash.slice(0, 16),
         };
         const sessionAudit = (info: McpAuditInfo) => audit({ ...info, sessionHash: sessionCtx.sessionHash });
+        // Bind Delegate-CDP actor identity to the verified credential so multi-turn
+        // Streamable HTTP reconnects retain ownership of claimed browser tabs.
         const newServer = createSuperagentMcpServer({
           toolExposure: opts.toolExposure,
           allowedTools,
@@ -825,6 +827,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           allowDangerous: opts.allowDangerous,
           lockSafeTools: Boolean(opts.lockSafeTools),
           getIdentity: () => identity,
+          delegatePrincipalSessionId: deriveStatelessDelegatePrincipalSessionId(identity as McpIdentity),
           workspace: process.cwd(),
         } as McpServerOptions);
         await newServer.connect(newTransport);

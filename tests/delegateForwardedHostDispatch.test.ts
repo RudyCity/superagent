@@ -262,13 +262,27 @@ describe("Core Delegate forwarded host dispatch signed identity boundary", () =>
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it("surfaces only an allowlisted public-web denial code without leaking the target", async () => {
+  it("surfaces only an allowlisted public-web or structured Delegate denial code without leaking the target", async () => {
     vi.spyOn(delegateObservation, "safeDelegateChromeObservation")
       .mockResolvedValue("control_chrome_cdp failed: DELEGATE_WEB_TARGET_NOT_PUBLIC_HTTP http://localhost:5173/private");
     const reply = await call(signed("superagent_chrome_cdp", base));
     expect(reply.status).toBe(409);
     expect(reply.payload).toEqual({ success: false, error: "DELEGATE_WEB_TARGET_NOT_PUBLIC_HTTP" });
     expect(JSON.stringify(reply.payload)).not.toContain("localhost");
+
+    vi.spyOn(controlChromeCdpTool, "execute")
+      .mockResolvedValue("control_chrome_cdp failed: DELEGATE_CDP_OWNER_REQUIRED: secret-token=ABC https://private.example/tab");
+    const cdpReply = await call(signed("superagent_chrome_cdp", {
+      command: "release_target",
+      transport: "delegate",
+      delegateClientId: client,
+      targetId: "delegate:" + client + ":37",
+      sessionToken: "valid-lease-capability-token-1234",
+    }));
+    expect(cdpReply.status).toBe(409);
+    expect(cdpReply.payload).toEqual({ success: false, error: "DELEGATE_CDP_OWNER_REQUIRED" });
+    expect(JSON.stringify(cdpReply.payload)).not.toContain("ABC");
+    expect(JSON.stringify(cdpReply.payload)).not.toContain("private.example");
   });
 
   it("never returns tool errors containing secrets, tokens, URLs or private messages", async () => {

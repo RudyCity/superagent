@@ -201,6 +201,7 @@ export async function startReloadableMcpTunnelOwner(
     generation.sessions.delete(sessionId);
     sessions.delete(sessionId);
     sessionRegisteredAt.delete(sessionId);
+    if (generation.inFlight === 0) sessionInFlight.delete(sessionId);
     return true;
   }
   function rememberSession(sessionId: string, generation: BackendGeneration): void {
@@ -250,6 +251,10 @@ export async function startReloadableMcpTunnelOwner(
     });
     for (const id of orphaned) {
       if (forgetSession(id, gen)) staleAffinityReclaimed++;
+    }
+    if (gen !== current && gen.retireAt !== null && gen.inFlight === 0 &&
+        gen.sessions.size === 0) {
+      retireOld();
     }
     if (gen === current) void recoverBackendFromMemoryTrend(gen);
   }
@@ -317,10 +322,13 @@ export async function startReloadableMcpTunnelOwner(
     } finally { rotatingBootstrap = false; }
   }
   function retireOld(): void {
+    const now = Date.now();
     for (const gen of generations) {
       if (gen === current || gen.retireAt === null) continue;
-      if (gen.sessions.size === 0 && gen.inFlight === 0 ||
-          Date.now() >= gen.retireAt && gen.inFlight === 0) {
+      const idleAfterTransition = gen.inFlight === 0 &&
+        (gen.sessions.size === 0 || now >= gen.retireAt);
+      const deadlineReached = now >= gen.retireAt && gen.inFlight === 0;
+      if (idleAfterTransition || deadlineReached) {
         for (const id of [...gen.sessions]) forgetSession(id, gen);
         generations.delete(gen);
         try { gen.child.kill("SIGTERM"); } catch {}
@@ -368,7 +376,7 @@ export async function startReloadableMcpTunnelOwner(
         try { next.child.kill("SIGTERM"); } catch {}
         throw new Error("MCP_AUTO_RECOVERY_OAUTH_NOT_PERSISTENT");
       }
-      failed.retireAt = Date.now() + OLD_GENERATION_TTL;
+      failed.retireAt = Date.now() + Math.min(OLD_GENERATION_TTL, 30_000);
       current = next;
       reloadCount++;
       lastReloadAt = Date.now();
@@ -498,7 +506,7 @@ export async function startReloadableMcpTunnelOwner(
         // A crashed generation cannot serve its old sessions.
         for (const id of [...previous.sessions]) forgetSession(id, previous);
       }
-      previous.retireAt = Date.now() + OLD_GENERATION_TTL;
+      previous.retireAt = Date.now() + Math.min(OLD_GENERATION_TTL, 30_000);
       current = next;
       if (selected) {
         activeBackendEntry = selected.entry;
@@ -602,7 +610,11 @@ export async function startReloadableMcpTunnelOwner(
         rejectedTotal: currentStats
           ? currentStats.rejectedGlobal + currentStats.rejectedPrincipal : null,
         affinityDrift: backendActiveSessions !== null
-          ? Math.max(0, activeSessionCount() - backendActiveSessions) : null,
+          ? [...generations].reduce((drift, gen) => {
+              const workerCount = gen.lastHealth?.sessionStats.activeSessions ?? 0;
+              return drift + Math.max(0, gen.sessions.size - workerCount);
+            }, 0)
+          : null,
         staleAffinityReclaimed,
       },
       memoryTelemetry: {
@@ -755,7 +767,11 @@ export async function startReloadableMcpTunnelOwner(
     // OAuth pairing never goes to a retired generation, even when the
     // request presents an MCP session ID from that old generation.
     const oauthPairingRoute = pathname === "/oauth/authorize";
-    const target = (!oauthPairingRoute && sessionId && sessions.get(sessionId)) || current;
+    const mappedSession = !oauthPairingRoute && sessionId ? sessions.get(sessionId) : undefined;
+    if (mappedSession && mappedSession !== current && !mappedSession.alive) {
+      if (forgetSession(sessionId, mappedSession)) staleAffinityReclaimed++;
+    }
+    const target = (mappedSession?.alive ? mappedSession : undefined) || current;
     if (!target?.alive) {
       res.writeHead(503, {"Cache-Control":"no-store"});
       res.end(JSON.stringify({error:"MCP backend unavailable"})); return;

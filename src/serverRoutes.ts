@@ -315,8 +315,11 @@ export async function handleServerRoute(
           return;
         }
         if (browserTool) {
-          const { handleControlChromeCdp, handleControlChromeVision } =
-            await import("./core/mcp/tools/chromeMcpTools.js");
+          const [{ handleControlChromeCdp, handleControlChromeVision }, { sanitizeDelegateBrowserDispatchError }] =
+            await Promise.all([
+              import("./core/mcp/tools/chromeMcpTools.js"),
+              import("./core/browserTransport/delegateDispatchError.js"),
+            ]);
           const response = name === "superagent_chrome_cdp"
             ? await handleControlChromeCdp(args, { hostOwned: true })
             : await handleControlChromeVision(args, { hostOwned: true });
@@ -324,7 +327,7 @@ export async function handleServerRoute(
           const result = response.content.map(item => item.type === "text" ? item.text : "").join("\n");
           sendJSON(res, failed ? 409 : 200, {
             success: !failed,
-            ...(failed ? { error: result.match(/\b(DELEGATE_WEB_TARGET_NOT_PUBLIC_HTTP|DELEGATE_WEB_TARGET_NOT_VISIBLE|DELEGATE_WEB_TARGET_INVALID|DELEGATE_WEB_VERIFIED_PRINCIPAL_REQUIRED|DELEGATE_WEB_ARGUMENTS_NOT_CERTIFIED)\b/)?.[1] || "DELEGATE_MCP_TOOL_FAILED" } : { result }),
+            ...(failed ? { error: sanitizeDelegateBrowserDispatchError(result) } : { result }),
           });
           return;
         }
@@ -1552,11 +1555,28 @@ export async function handleServerRoute(
     try {
       const { listSanitizedMcpIdentities } = await import("./core/mcp/mcpIdentityPresence.js");
       const { listRequestedMcpIdentityCandidates } = await import("./core/project/projectAccessRequestStore.js");
+      const { listLastObservedMcpConnections } = await import("./core/mcp/mcpConnectedClientRegistry.js");
+      const { inspectServices } = await import("./core/runtime/serviceManager.js");
+      const nameByHandle = new Map<string, string>();
+      try {
+        const observedMcp = (await inspectServices("mcp"))[0];
+        if (observedMcp && Number.isSafeInteger(observedMcp.port)) {
+          for (const conn of listLastObservedMcpConnections(observedMcp.port!)) {
+            if (conn.ownerConnectionName && !nameByHandle.has(conn.connectionHandle)) {
+              nameByHandle.set(conn.connectionHandle, conn.ownerConnectionName);
+            }
+          }
+        }
+      } catch { /* fallback without connection names */ }
       const present = listSanitizedMcpIdentities();
       const requested = listRequestedMcpIdentityCandidates();
       const seen = new Set(present.map(identity => identity.identityHandle));
-      sendJSON(res, 200, { success: true,
-        identities: [...present, ...requested.filter(identity => !seen.has(identity.identityHandle))] });
+      const merged = [...present, ...requested.filter(identity => !seen.has(identity.identityHandle))]
+        .map(identity => ({
+          ...identity,
+          ownerConnectionName: nameByHandle.get(identity.identityHandle) ?? null,
+        }));
+      sendJSON(res, 200, { success: true, identities: merged });
     } catch (err: any) {
       sendJSON(res, 500, { success: false, error: err.message || "Failed to list identities" });
     }

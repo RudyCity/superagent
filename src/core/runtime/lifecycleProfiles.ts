@@ -27,8 +27,8 @@ const dependencies:Record<ManagedServiceName,ManagedServiceName[]>={
   process_supervisor:[],
 };
 const allowedActions:Record<ManagedServiceName,string[]>={
-  core:["status","restart","rollback","drain","recycle"],
-  mcp:["status","reload"],
+  core:["status","start","restart","rollback","drain","recycle"],
+  mcp:["status","reload","restart"],
   transport:["status","start","stop","restart"],
   channel_host:["status","start","stop","restart"],
   muse:["status","start","stop","restart"],
@@ -36,10 +36,10 @@ const allowedActions:Record<ManagedServiceName,string[]>={
   vision:["status","start","stop","restart"],
   guardian:["status","start","stop","restart"],
   daemon:["status","start","stop","restart"],
-  tray:["status","start","stop","restart","upgrade","rollback"],
-  rest_tunnel:["status","stop"],
-  muse_tunnel:["status","stop"],
-  process_supervisor:["status"],
+  tray:["status","start","stop","restart","upgrade","rollback","recycle"],
+  rest_tunnel:["status","stop","start"],
+  muse_tunnel:["status","stop","start"],
+  process_supervisor:["status","doctor"],
 };
 const names=new Set(MANAGED_SERVICE_NAMES);
 const autoRecoverSupported=new Set<ManagedServiceName>([

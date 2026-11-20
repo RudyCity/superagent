@@ -344,7 +344,7 @@ export const CHROME_MCP_TOOL_DEFS = [
       properties: {
         command: { type: "string", enum: [
           "claim_target","release_target","heartbeat_session","session_participants",
-          "navigate","click","type","snapshot","read_page",
+          "navigate","click","type","snapshot","read_page","extract_links",
         ] },
         transport: { type: "string", enum: ["delegate"] },
         delegateClientId: { type: "string", minLength: 8, maxLength: 80 },
