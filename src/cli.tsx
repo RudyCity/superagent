@@ -355,6 +355,30 @@ if (
   await new Promise(() => {});
 }
 
+if (
+  process.argv.includes("--acp") ||
+  process.argv.includes("--acp-server") ||
+  process.argv[2] === "acp"
+) {
+  const path = await import("path");
+  const fs = await import("fs");
+  const workspaceIndex = process.argv.findIndex((arg) => arg === "--workspace" || arg === "-w");
+  let workspaceVal: string | undefined = undefined;
+  if (workspaceIndex !== -1 && workspaceIndex + 1 < process.argv.length) {
+    workspaceVal = process.argv[workspaceIndex + 1];
+  }
+  const resolvedWs = workspaceVal ? path.resolve(workspaceVal) : process.cwd();
+  if (workspaceVal && fs.existsSync(resolvedWs)) {
+    try {
+      process.chdir(resolvedWs);
+    } catch {}
+  }
+  const { startSuperagentAcpServer } = await import("./core/channels/acp/acpRuntime.js");
+  await startSuperagentAcpServer({ workspace: resolvedWs });
+  // Keep process alive while Stdio transport runs
+  await new Promise(() => {});
+}
+
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
   const { getSuperAgentVersion } = await import("./core/config/paths.js");
   console.log(getSuperAgentVersion());
@@ -398,6 +422,7 @@ Options:
   -y, --yolo              Enable Scoped YOLO mode (auto-approve within project & 1 parent level above)
   --yolo-full             Enable Full YOLO mode (auto-approve system-wide, unrestricted)
   --mcp, --mcp-server     Start Superagent as an MCP (Model Context Protocol) server
+  --acp, --acp-server     Start Superagent as an ACP (Agent Client Protocol) server for T-Line/IDEs
   -q, --quick             Fast startup path, bypass interactive progress UI
   --skip-startup-check    Alias for --quick
   -s, --server [P]        Start API server (default port: 7888)
@@ -428,6 +453,7 @@ Examples:
   superagent --multi --preset dev "build authentication module"
   superagent -ws root@192.168.1.100:/home/app
   superagent --mcp
+  superagent --acp                        # start ACP stdio server for T-Line / Zed
   superagent mcp register
   superagent session list -w ./my-project
   superagent memory sweep                 # preview only
