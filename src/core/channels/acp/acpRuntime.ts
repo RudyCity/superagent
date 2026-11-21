@@ -9,6 +9,7 @@ import type { Readable, Writable } from "node:stream";
 import { AcpServer } from "./acpServer.js";
 import type { SessionPromptParams } from "./types.js";
 import { Agent, type AgentEvent } from "../../agent.js";
+import { getSystemPrompt } from "../../config/base.js";
 
 export interface AcpRuntimeOptions {
   workspace?: string;
@@ -163,11 +164,13 @@ export class AcpRuntime {
 
     const onQuestion = async () => "";
 
+    const acpSystemPrompt = getSystemPrompt("acp");
+
     return new Agent(
       onEvent,
       onPermission,
       onQuestion,
-      undefined,
+      acpSystemPrompt,
       undefined,
       workspacePath
     );

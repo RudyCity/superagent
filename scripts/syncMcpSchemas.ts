@@ -12,6 +12,7 @@ import { PROJECT_MCP_TOOL_DEFS } from "../src/core/mcp/tools/projectTools.js";
 import { CORE_LIFECYCLE_MCP_TOOL_DEFS } from "../src/core/mcp/tools/coreLifecycleMcpTools.js";
 import { SERVICE_MANAGER_MCP_TOOL_DEFS } from "../src/core/mcp/tools/serviceManagerMcpTools.js";
 import { DELEGATE_MCP_TOOL_DEFS } from "../src/core/mcp/tools/delegateMcpTools.js";
+import { getSuperagentMcpInstructions } from "../src/core/mcp/resourcesAndPrompts.js";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = path.join(repo, "dist", "mcp");
@@ -59,6 +60,14 @@ function syncInto(dir: string, create: boolean): number {
 
 const local = syncInto(distDir, true);
 const antigravity = syncInto(antigravityDir, false);
+
+if (fs.existsSync(antigravityDir)) {
+  const instructionsTarget = path.join(antigravityDir, "instructions.md");
+  const instructionsContent = getSuperagentMcpInstructions() + "\n";
+  if (!fs.existsSync(instructionsTarget) || fs.readFileSync(instructionsTarget, "utf8") !== instructionsContent) {
+    fs.writeFileSync(instructionsTarget, instructionsContent, "utf8");
+  }
+}
 
 const srcFonts = path.join(repo, "src", "core", "motion", "assets", "fonts");
 const distFonts = path.join(repo, "dist", "core", "motion", "assets", "fonts");
