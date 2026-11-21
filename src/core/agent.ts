@@ -125,6 +125,14 @@ export class Agent {
   public workspaceCache: any = null;
   private workspaceCacheNeedsUpdate: boolean = true;
   public disableWorkspaceDiscovery: boolean = !!process.env.VITEST;
+  public activeEngine: string = "superagent";
+
+  public setExecutionEngine(engine: string): void {
+    if (typeof engine === "string" && engine.trim()) {
+      this.activeEngine = engine.trim();
+    }
+  }
+
   public conversation: Conversation;
   private customSystemPrompt?: string;
   /** Custom tool list for this agent (tier-specific). Undefined = use allTools. */

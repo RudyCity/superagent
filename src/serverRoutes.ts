@@ -4208,7 +4208,7 @@ export async function handleServerRoute(
       sendJSON(res, oversized ? 413 : 400, { error: oversized ? "Chat payload exceeds 32 MiB" : "Invalid chat request body" });
       return true;
     }
-    const { message, sessionId: reqSessionId } = body;
+    const { message, sessionId: reqSessionId, engine: reqEngine } = body;
     if (resolveClientMode(req) === "chrome-extension" &&
         (typeof reqSessionId !== "string" || !reqSessionId.trim())) {
       sendJSON(res, 400, { error: "Chat requires an explicit sessionId." });
@@ -4219,6 +4219,10 @@ export async function handleServerRoute(
     if (!session) {
       sendJSON(res, 400, { error: "Session not initialized" });
       return true;
+    }
+
+    if (reqEngine && typeof reqEngine === "string" && typeof session.agent?.setExecutionEngine === "function") {
+      session.agent.setExecutionEngine(reqEngine);
     }
 
     if (!(typeof message === "string" ? message.trim().length > 0 :

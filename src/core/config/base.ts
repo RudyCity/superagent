@@ -1,6 +1,6 @@
 import { loadAgentSkills } from "./skills.js";
 import { resolveWindowsShell } from "../tools/helpers.js";
-import { GENERAL_ASSISTANT_IDENTITY } from "../assistantIdentity.js";
+import { GENERAL_ASSISTANT_IDENTITY, resolveAssistantIdentity } from "../assistantIdentity.js";
 import { BROWSER_TRANSPORT_RULE, MEDIA_CORE_RULE } from "../agent/TaskPromptModules.js";
 
 export type Provider =
@@ -127,7 +127,15 @@ export function getConfig(): Config {
 }
 
 
-export function getSystemPrompt(): string {
+export function getSystemPrompt(presetNameOrEngine?: string): string {
+  let activePresetOrEngine = presetNameOrEngine;
+  if (!activePresetOrEngine) {
+    try {
+      const activePreset = getActivePreset<any>("single");
+      activePresetOrEngine = activePreset?.name || activePreset?.id || "";
+    } catch {}
+  }
+  const roleIdentity = resolveAssistantIdentity(activePresetOrEngine);
   let shellPrompt = "";
   if (process.platform === "win32") {
     const resolved = resolveWindowsShell();
@@ -142,7 +150,7 @@ export function getSystemPrompt(): string {
   shellPrompt += `\n- Worktrees: 'git_worktree' (list/add/remove/prune).`;
 
   const basePrompt = `# ROLE
-${GENERAL_ASSISTANT_IDENTITY}
+${roleIdentity}
 - EXECUTION_MANDATE: Act promptly with authorized tools for executable requests. For conversation, questions, writing, and brainstorming, answer directly without forced tool calls.
 - ACTION_OVER_TALK: Perform requested authorized actions when tools can help; verify outcomes and be candid about limitations.
 - ONLINE_WORKFLOWS: Perform requested online actions with authorized browser tools when possible; respect required approvals, access, and user interaction.

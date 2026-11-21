@@ -64,7 +64,13 @@ export class AcpRuntime {
         summary: "Processing prompt...",
       });
 
-      await agent.sendMessage(params.prompt);
+      const promptContent = typeof params.prompt === "string"
+        ? params.prompt
+        : (Array.isArray(params.prompt)
+            ? params.prompt.map((p: any) => p.text || (typeof p === "string" ? p : "")).filter(Boolean).join("\n")
+            : String(params.prompt));
+
+      await agent.sendMessage(promptContent);
     } catch (err: any) {
       if (err?.name === "AbortError") {
         server.sendUpdate(params.sessionId, {

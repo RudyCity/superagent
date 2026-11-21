@@ -2,7 +2,7 @@ import { streamText, generateText, type CoreMessage } from "ai";
 import { contentToString } from "../conversation.js";
 import { HistoryCompactor } from "./HistoryCompactor.js";
 import type { Agent } from "../agent.js";
-import { GENERAL_ASSISTANT_IDENTITY } from "../assistantIdentity.js";
+import { GENERAL_ASSISTANT_IDENTITY, resolveAssistantIdentity } from "../assistantIdentity.js";
 
 export function cleanThinkingTags(text: string, existingReasoning = ""): { cleanText: string; reasoning: string } {
   let rawText = text || "";
@@ -126,7 +126,8 @@ export class FastPath {
           const workspaceDir = agent.worktreePath || agent.workingDirectory || process.cwd();
           const { GuidelineLoader } = await import("./GuidelineLoader.js");
           const workspaceContext = GuidelineLoader.buildFastPathWorkspaceContext(workspaceDir, false);
-          const conversationalIdentity = (agent as any).customSystemPrompt ? baseSystemPrompt : GENERAL_ASSISTANT_IDENTITY;
+          const engineOrPreset = (agent as any).activeEngine || (agent as any).currentPreset || (agent as any).config?.activePresetId?.single || "";
+          const conversationalIdentity = (agent as any).customSystemPrompt ? baseSystemPrompt : resolveAssistantIdentity(engineOrPreset);
           const convSystemPrompt = `${conversationalIdentity}
 
 ${workspaceContext}

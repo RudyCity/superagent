@@ -100,7 +100,7 @@ export interface AcpAgentInfo {
 }
 
 export interface InitializeParams {
-  protocolVersion: string;
+  protocolVersion: string | number;
   clientInfo: AcpClientInfo;
   capabilities: AcpClientCapabilities;
   workspace: {
@@ -137,7 +137,7 @@ export interface SessionNewResult {
 
 export interface SessionPromptParams {
   sessionId: string;
-  prompt: string;
+  prompt: string | Array<{ type: string; text?: string; [key: string]: any }>;
   attachments?: Array<{
     type: "file" | "image" | "url";
     path?: string;
