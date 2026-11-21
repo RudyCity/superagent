@@ -13,11 +13,13 @@ export interface DrainStepResult {
   name: string;
   ok: boolean;
   message: string;
+  durationMs?: number;
 }
 
 export interface UnifiedDrainReport {
   ok: boolean;
   timestamp: number;
+  durationMs?: number;
   steps: DrainStepResult[];
 }
 
@@ -25,10 +27,12 @@ export async function drainAllServices(options?: {
   corePort?: number;
   timeoutMs?: number;
 }): Promise<UnifiedDrainReport> {
+  const overallStart = Date.now();
   const steps: DrainStepResult[] = [];
   const corePort = options?.corePort || 7888;
 
   // 1. In-memory Subagents & Active Remote Tasks
+  const step1Start = Date.now();
   try {
     const { subagentInstances, notifySubagentsChanged } = await import("../tools/state.js");
     let abortedCount = 0;
@@ -56,16 +60,19 @@ export async function drainAllServices(options?: {
       message: abortedCount > 0
         ? `Aborted ${abortedCount} active task(s)/subagent(s).`
         : "No active tasks or subagents running.",
+      durationMs: Date.now() - step1Start,
     });
   } catch (error) {
     steps.push({
       name: "Subagents & Active Tasks",
       ok: false,
       message: `Failed to abort subagents: ${error instanceof Error ? error.message : String(error)}`,
+      durationMs: Date.now() - step1Start,
     });
   }
 
   // 2. Background Daemon & Cron Scheduler
+  const step2Start = Date.now();
   try {
     const { daemonScheduler } = await import("../daemon/daemonScheduler.js");
     const status = daemonScheduler.getStatus();
@@ -76,16 +83,19 @@ export async function drainAllServices(options?: {
       message: status.running
         ? `Scheduler stopped (cancelled ${stopped.cancelledRuns} active run(s)).`
         : "Daemon scheduler was already inactive.",
+      durationMs: Date.now() - step2Start,
     });
   } catch (error) {
     steps.push({
       name: "Daemon Cron Scheduler",
       ok: false,
       message: `Failed to stop daemon scheduler: ${error instanceof Error ? error.message : String(error)}`,
+      durationMs: Date.now() - step2Start,
     });
   }
 
   // 3. MCP Client Servers & Tunnels
+  const step3Start = Date.now();
   const handledMcpPorts = new Set<number>();
   try {
     const { closeMcpServers } = await import("../mcp/McpManager.js");
@@ -119,16 +129,19 @@ export async function drainAllServices(options?: {
       name: "MCP Clients & Tunnels",
       ok: true,
       message: `Disconnected client connections; stopped ${mcpStoppedCount} active MCP tunnel owner(s).`,
+      durationMs: Date.now() - step3Start,
     });
   } catch (error) {
     steps.push({
       name: "MCP Clients & Tunnels",
       ok: false,
       message: `MCP shutdown error: ${error instanceof Error ? error.message : String(error)}`,
+      durationMs: Date.now() - step3Start,
     });
   }
 
   // 4. Cloudflare Quick Tunnels
+  const step4Start = Date.now();
   try {
     const { listActiveTunnels, stopQuickTunnel } = await import("../remoteAgent/cloudflareTunnel.js");
     const tunnels = listActiveTunnels();
@@ -148,16 +161,19 @@ export async function drainAllServices(options?: {
       message: tunnelsClosed > 0
         ? `Stopped ${tunnelsClosed} active Cloudflare quick tunnel(s).`
         : "No active Cloudflare quick tunnels found.",
+      durationMs: Date.now() - step4Start,
     });
   } catch (error) {
     steps.push({
       name: "Cloudflare Quick Tunnels",
       ok: false,
       message: `Failed to stop Cloudflare tunnels: ${error instanceof Error ? error.message : String(error)}`,
+      durationMs: Date.now() - step4Start,
     });
   }
 
   // 5. Muse & Telegram Fallback Watchers
+  const step5Start = Date.now();
   try {
     const { stopOwnedMuseTunnel } = await import("../remoteAgent/museWatcherTunnel.js");
     const { stopAllMuseWatchers } = await import("../remoteAgent/museWatcher.js");
@@ -174,16 +190,19 @@ export async function drainAllServices(options?: {
       name: "Muse & Telegram Watchers",
       ok: true,
       message: `Stopped ${watcherCount} local watcher(s) and associated WebSocket tunnels.`,
+      durationMs: Date.now() - step5Start,
     });
   } catch (error) {
     steps.push({
       name: "Muse & Telegram Watchers",
       ok: false,
       message: `Failed to stop Muse watchers: ${error instanceof Error ? error.message : String(error)}`,
+      durationMs: Date.now() - step5Start,
     });
   }
 
   // 6. Supervised Core API (Stop supervisor and all workers completely)
+  const step6Start = Date.now();
   try {
     const fs = await import("fs");
     const path = await import("path");
@@ -255,16 +274,19 @@ export async function drainAllServices(options?: {
       message: stoppedPids.length > 0
         ? `Core on port ${corePort} stopped (terminated PID(s): ${stoppedPids.join(", ")}). Port freed.`
         : `Port ${corePort}: Core was already inactive or stopped.`,
+      durationMs: Date.now() - step6Start,
     });
   } catch (error) {
     steps.push({
       name: "Supervised Core API",
       ok: false,
       message: `Core stop error: ${error instanceof Error ? error.message : String(error)}`,
+      durationMs: Date.now() - step6Start,
     });
   }
 
   // 7. Lingering Superagent Daemons & MCP Processes
+  const step7Start = Date.now();
   try {
     const { execa } = await import("execa");
     const stoppedDaemons: number[] = [];
@@ -300,16 +322,19 @@ export async function drainAllServices(options?: {
       message: stoppedDaemons.length > 0
         ? `Terminated ${stoppedDaemons.length} lingering daemon/MCP process(es): ${stoppedDaemons.join(", ")}.`
         : "No lingering background daemons or MCP processes found.",
+      durationMs: Date.now() - step7Start,
     });
   } catch (error) {
     steps.push({
       name: "Superagent Background Daemons",
       ok: false,
       message: `Failed to terminate background daemons: ${error instanceof Error ? error.message : String(error)}`,
+      durationMs: Date.now() - step7Start,
     });
   }
 
   // 8. Cleanup Lingering Cloudflare Child Processes (Windows / POSIX)
+  const step8Start = Date.now();
   try {
     const { execa } = await import("execa");
     if (process.platform === "win32") {
@@ -319,6 +344,7 @@ export async function drainAllServices(options?: {
           name: "Cloudflare Daemon Processes",
           ok: true,
           message: "Terminated lingering cloudflared processes.",
+          durationMs: Date.now() - step8Start,
         });
       } catch {
         // Not running or already exited
@@ -326,15 +352,28 @@ export async function drainAllServices(options?: {
           name: "Cloudflare Daemon Processes",
           ok: true,
           message: "No lingering cloudflared processes found.",
+          durationMs: Date.now() - step8Start,
         });
       }
     }
   } catch {}
 
   const allOk = steps.every((s) => s.ok);
+  const totalDurationMs = Date.now() - overallStart;
+
+  try {
+    const { logE2E } = await import("../utils/unifiedLogger.js");
+    logE2E("PERF", `[unifiedDrain] Completed teardown in ${totalDurationMs}ms (allOk=${allOk})`, {
+      corePort,
+      durationMs: totalDurationMs,
+      steps: steps.map((s) => ({ name: s.name, ok: s.ok, durationMs: s.durationMs })),
+    });
+  } catch {}
+
   return {
     ok: allOk,
     timestamp: Date.now(),
+    durationMs: totalDurationMs,
     steps,
   };
 }
@@ -355,14 +394,15 @@ export async function runUnifiedDrainCli(args: string[] = []): Promise<void> {
 
   for (const step of report.steps) {
     const icon = step.ok ? "✓" : "✗";
-    console.log(`  [${icon}] ${step.name.padEnd(28)}: ${step.message}`);
+    const dur = step.durationMs !== undefined ? ` (${step.durationMs}ms)` : "";
+    console.log(`  [${icon}] ${step.name.padEnd(28)}: ${step.message}${dur}`);
   }
 
   console.log("═════════════════════════════════════════════════════════════════════════════");
   if (report.ok) {
-    console.log("  ✓ All background services and daemons have been successfully drained.");
+    console.log(`  ✓ All background services and daemons drained successfully in ${report.durationMs ?? 0}ms.`);
   } else {
-    console.log("  ! Drain finished with warnings on some services. Review the checklist above.");
+    console.log(`  ! Drain finished with warnings on some services (${report.durationMs ?? 0}ms). Review the checklist above.`);
   }
   console.log("═════════════════════════════════════════════════════════════════════════════");
 }

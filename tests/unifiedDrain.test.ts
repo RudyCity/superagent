@@ -8,6 +8,8 @@ describe("Unified Drain All Services", () => {
     expect(report).toBeDefined();
     expect(typeof report.ok).toBe("boolean");
     expect(typeof report.timestamp).toBe("number");
+    expect(typeof report.durationMs).toBe("number");
+    expect(report.durationMs).toBeGreaterThanOrEqual(0);
     expect(Array.isArray(report.steps)).toBe(true);
     expect(report.steps.length).toBeGreaterThanOrEqual(5);
 
@@ -23,6 +25,8 @@ describe("Unified Drain All Services", () => {
       expect(typeof step.name).toBe("string");
       expect(typeof step.ok).toBe("boolean");
       expect(typeof step.message).toBe("string");
+      expect(typeof step.durationMs).toBe("number");
+      expect(step.durationMs).toBeGreaterThanOrEqual(0);
     }
   });
 });
