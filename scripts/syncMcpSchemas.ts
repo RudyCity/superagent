@@ -1,5 +1,5 @@
 /**
- * Sync public Chrome MCP tool schemas after compilation.
+ * Sync public Chrome and Dynamic Gateway MCP tool schemas after compilation.
  * Path arguments are handled as paths, never interpolated into shell commands.
  */
 import fs from "node:fs";
@@ -7,18 +7,32 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { CHROME_MCP_TOOL_DEFS } from "../src/core/mcp/tools/chromeMcpTools.js";
+import { MCP_GATEWAY_TOOL_DEFS } from "../src/core/mcp/mcpToolGateway.js";
+import { PROJECT_MCP_TOOL_DEFS } from "../src/core/mcp/tools/projectTools.js";
+import { CORE_LIFECYCLE_MCP_TOOL_DEFS } from "../src/core/mcp/tools/coreLifecycleMcpTools.js";
+import { SERVICE_MANAGER_MCP_TOOL_DEFS } from "../src/core/mcp/tools/serviceManagerMcpTools.js";
+import { DELEGATE_MCP_TOOL_DEFS } from "../src/core/mcp/tools/delegateMcpTools.js";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = path.join(repo, "dist", "mcp");
 const home = process.env.USERPROFILE || os.homedir();
 const antigravityDir = path.join(home, ".gemini", "antigravity", "mcp", "superagent");
 
+const ALL_SYNC_TOOL_DEFS = [
+  ...MCP_GATEWAY_TOOL_DEFS,
+  ...CHROME_MCP_TOOL_DEFS,
+  ...PROJECT_MCP_TOOL_DEFS,
+  ...CORE_LIFECYCLE_MCP_TOOL_DEFS,
+  ...SERVICE_MANAGER_MCP_TOOL_DEFS,
+  ...DELEGATE_MCP_TOOL_DEFS,
+];
+
 function syncInto(dir: string, create: boolean): number {
   if (!create && !fs.existsSync(dir)) return 0;
   if (create) fs.mkdirSync(dir, { recursive: true });
   let count = 0;
   const valid = new Set<string>();
-  for (const tool of CHROME_MCP_TOOL_DEFS) {
+  for (const tool of ALL_SYNC_TOOL_DEFS) {
     // Keep the exact MCP registration schema (not a handwritten command enum).
     const target = path.join(dir, tool.name + ".json");
     valid.add(tool.name + ".json");
