@@ -72,6 +72,7 @@ describe("MCP gateway Streamable HTTP integration", () => {
       const advertised = tools.map((tool) => tool.name);
       expect(advertised).toEqual(expect.arrayContaining(Object.values(MCP_GATEWAY_TOOL_NAMES)));
       expect(advertised).toContain("superagent_get_workspace");
+      expect(advertised).not.toContain("superagent_delegate_list_chats");
       expect(advertised.every((name) => Object.values(MCP_GATEWAY_TOOL_NAMES).includes(name as any)
         || MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES.includes(name as any)
         || MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES.includes(name as any)

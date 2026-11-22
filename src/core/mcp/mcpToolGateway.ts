@@ -32,10 +32,9 @@ export const MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES = Object.freeze([
 ] as const);
 
 // Stable, explicit MCP entrypoints for a connected Chrome Delegate profile.
-// Most operations stay dynamic via tool_search/tool_describe/tool_execute.
-// A small set of common read-only calls is advertised eagerly; all mutations
-// (including sync_history, which updates app-owned SQLite) remain discoverable
-// on demand and always use the normal MCP authorization and host policy checks.
+// All operations stay dynamic via tool_search/tool_describe/tool_execute.
+// Delegate tools are kept in discovery only (not eagerly advertised in the main
+// catalog) to keep the initial tool list lean and prevent context window bloat.
 export const MCP_GATEWAY_DELEGATE_TOOL_NAMES = Object.freeze([
   "superagent_delegate_read_chat",
   "superagent_delegate_list_chats",
@@ -52,15 +51,7 @@ export const MCP_GATEWAY_DELEGATE_TOOL_NAMES = Object.freeze([
   "superagent_delegate_stop_generation",
 ] as const);
 
-export const MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES = Object.freeze([
-  "superagent_delegate_read_chat",
-  "superagent_delegate_list_chats",
-  "superagent_delegate_read_chat_full",
-  "superagent_delegate_search_history",
-  "superagent_delegate_search_index",
-  "superagent_delegate_doctor",
-  "superagent_delegate_inspect_chat_config",
-] as const);
+export const MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES = Object.freeze([] as readonly string[]);
 
 export const MCP_GATEWAY_TOOL_DEFS = [
   {

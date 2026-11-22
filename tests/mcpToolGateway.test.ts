@@ -26,6 +26,16 @@ const list = async (server: ReturnType<typeof createSuperagentMcpServer>) => {
 
 const parseResult = (result: any) => JSON.parse(result.content.find((entry: any) => entry.type === "text").text);
 
+const safeDelegateTools = [
+  "superagent_delegate_read_chat",
+  "superagent_delegate_list_chats",
+  "superagent_delegate_read_chat_full",
+  "superagent_delegate_search_history",
+  "superagent_delegate_search_index",
+  "superagent_delegate_doctor",
+  "superagent_delegate_inspect_chat_config",
+];
+
 afterEach(() => setYoloMode(false));
 
 describe("static MCP gateway catalog", () => {
@@ -55,18 +65,10 @@ describe("static MCP gateway catalog", () => {
       "superagent_check_project_health",
       "superagent_list_project_access",
     ]));
-    const safeDelegateTools = [
-      "superagent_delegate_read_chat",
-      "superagent_delegate_list_chats",
-      "superagent_delegate_read_chat_full",
-      "superagent_delegate_search_history",
-      "superagent_delegate_search_index",
-      "superagent_delegate_doctor",
-      "superagent_delegate_inspect_chat_config",
-    ];
-    for (const toolName of safeDelegateTools) expect(advertised).toContain(toolName);
+    // Delegate tools are now discovery-only, so they must NOT be eagerly advertised in the main catalog
+    for (const toolName of safeDelegateTools) expect(advertised).not.toContain(toolName);
     for (const toolName of MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES) {
-      if (!safeDelegateTools.includes(toolName)) expect(advertised).not.toContain(toolName);
+      expect(advertised).not.toContain(toolName);
     }
     expect(advertised).not.toContain("superagent_switch_workspace");
     expect(advertised).not.toContain("superagent_register_project");
@@ -119,8 +121,8 @@ describe("static MCP gateway catalog", () => {
     });
     const writerTools = (await list(server)).map((tool) => tool.name);
     expect(writerTools).toContain("superagent_switch_workspace");
-    for (const toolName of MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES) {
-      expect(writerTools).toContain(toolName);
+    for (const toolName of safeDelegateTools) {
+      expect(writerTools).not.toContain(toolName);
     }
     expect(writerTools).not.toContain("superagent_register_project");
     expect(writerTools).not.toContain("superagent_import_discovered_project");
