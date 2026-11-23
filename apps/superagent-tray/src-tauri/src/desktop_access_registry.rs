@@ -877,6 +877,319 @@ pub(crate) fn clear_permanent_access_audit_log(
     }
     Ok(true)
 }
+const PENDING_RULE_REQUESTS_FILENAME: &str = "pending-active-rule-requests.json";
+const MAX_PENDING_RULE_REQUESTS: usize = 128;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingActiveRuleRequest {
+    pub id: String,
+    pub source_name: String,
+    pub kind: String,
+    pub effect: String,
+    pub target_path: String,
+    pub recursive: bool,
+    pub operations: Vec<String>,
+    pub reason: String,
+    pub created_at: u64,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decided_at: Option<u64>,
+}
+
+fn pending_rule_requests_path(dir: &Path) -> PathBuf {
+    dir.join(PENDING_RULE_REQUESTS_FILENAME)
+}
+
+pub(crate) fn load_pending_rule_requests(dir: &Path) -> Result<Vec<PendingActiveRuleRequest>, String> {
+    let target = pending_rule_requests_path(dir);
+    let metadata = match fs::symlink_metadata(&target) {
+        Ok(value) => value,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(_) => return Err("Cannot inspect pending active rule requests".into()),
+    };
+    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > MAX_REGISTRY_BYTES {
+        return Err("Unsafe pending active rule requests store".into());
+    }
+    let bytes = fs::read(&target).map_err(|_| "Pending active rule requests unreadable")?;
+    let items: Vec<PendingActiveRuleRequest> = serde_json::from_slice(&bytes)
+        .map_err(|_| "Pending active rule requests JSON invalid")?;
+    Ok(items)
+}
+
+pub(crate) fn save_pending_rule_requests(dir: &Path, items: &[PendingActiveRuleRequest]) -> Result<(), String> {
+    fs::create_dir_all(dir).map_err(|_| "Cannot create config directory")?;
+    let target = pending_rule_requests_path(dir);
+    if let Ok(meta) = fs::symlink_metadata(&target) {
+        if !meta.is_file() || meta.file_type().is_symlink() {
+            return Err("Unsafe pending active rule requests destination".into());
+        }
+    }
+    let trimmed: Vec<PendingActiveRuleRequest> = items.iter().take(MAX_PENDING_RULE_REQUESTS).cloned().collect();
+    let bytes = serde_json::to_vec_pretty(&trimmed).map_err(|_| "Cannot encode pending active rule requests")?;
+    if bytes.len() as u64 > MAX_REGISTRY_BYTES {
+        return Err("Pending active rule requests store too large".into());
+    }
+    let tmp = dir.join(format!("pending-active-rule-requests-{}.tmp", uuid::Uuid::new_v4()));
+    {
+        let mut file = OpenOptions::new().create_new(true).write(true).open(&tmp)
+            .map_err(|_| "Cannot create pending rule requests transaction")?;
+        if file.write_all(&bytes).and_then(|_| file.sync_all()).is_err() {
+            let _ = fs::remove_file(&tmp);
+            return Err("Cannot commit pending rule requests transaction".into());
+        }
+    }
+    if fs::rename(&tmp, &target).is_err() {
+        let _ = fs::remove_file(&tmp);
+        return Err("Cannot replace pending rule requests atomically".into());
+    }
+    Ok(())
+}
+
+pub(crate) fn enqueue_active_rule_request(
+    dir: &Path,
+    mut req: PendingActiveRuleRequest,
+) -> Result<PendingActiveRuleRequest, String> {
+    let mut items = load_pending_rule_requests(dir)?;
+    if let Some(existing) = items.iter().find(|item| {
+        item.status == "pending"
+            && item.kind == req.kind
+            && item.effect == req.effect
+            && item.recursive == req.recursive
+            && item.target_path.eq_ignore_ascii_case(&req.target_path)
+            && item.operations == req.operations
+    }) {
+        return Ok(existing.clone());
+    }
+    if req.id.is_empty() {
+        req.id = format!("rule_req_{}", uuid::Uuid::new_v4().simple());
+    }
+    req.status = "pending".into();
+    req.decided_at = None;
+    items.insert(0, req.clone());
+    save_pending_rule_requests(dir, &items)?;
+    Ok(req)
+}
+
+#[tauri::command]
+pub(crate) fn get_pending_active_rule_requests(
+    window: tauri::WebviewWindow,
+) -> Result<Vec<PendingActiveRuleRequest>, String> {
+    focused(&window, false)?;
+    let dir = super::config_dir()?;
+    load_pending_rule_requests(&dir)
+}
+
+#[tauri::command]
+pub(crate) fn submit_active_rule_request(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    source_name: String,
+    kind: String,
+    effect: String,
+    target_path: String,
+    recursive: bool,
+    operations: Vec<String>,
+    reason: String,
+) -> Result<PendingActiveRuleRequest, String> {
+    focused(&window, false)?;
+    let clean_source = source_name.trim();
+    let clean_target = target_path.trim();
+    let clean_reason = reason.trim();
+    if clean_source.is_empty() || clean_source.len() > 120 || clean_source.chars().any(char::is_control) {
+        return Err("Invalid source name".into());
+    }
+    if !["file", "desktop"].contains(&kind.as_str()) {
+        return Err("Rule request kind must be file or desktop".into());
+    }
+    if !["allow", "deny"].contains(&effect.as_str()) {
+        return Err("Rule request effect must be allow or deny".into());
+    }
+    if !descriptor(clean_target, 2048) {
+        return Err("Invalid target path or executable".into());
+    }
+    let allowed_ops: &[&str] = if kind == "file" {
+        &["read", "write", "delete"]
+    } else {
+        &["view", "input"]
+    };
+    if operations.is_empty()
+        || operations.len() > allowed_ops.len()
+        || operations.iter().any(|op| !allowed_ops.contains(&op.as_str()))
+    {
+        return Err("Invalid rule request operations".into());
+    }
+    if clean_reason.len() > 500 || clean_reason.chars().any(char::is_control) {
+        return Err("Invalid reason".into());
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let dir = super::config_dir()?;
+    let created = enqueue_active_rule_request(
+        &dir,
+        PendingActiveRuleRequest {
+            id: format!("rule_req_{}", uuid::Uuid::new_v4().simple()),
+            source_name: clean_source.to_string(),
+            kind,
+            effect,
+            target_path: clean_target.to_string(),
+            recursive,
+            operations,
+            reason: if clean_reason.is_empty() {
+                "Permintaan aturan aktif baru untuk host.".into()
+            } else {
+                clean_reason.to_string()
+            },
+            created_at: now,
+            status: "pending".into(),
+            decided_at: None,
+        },
+    )?;
+
+    let incident_id = format!("mcp-pending:requests:rule:{}", created.id);
+    let body = format!(
+        "{} meminta aturan {} ({}) untuk {}. Tinjau di Pusat Permintaan.",
+        created.source_name,
+        created.kind,
+        created.operations.join(", "),
+        created.target_path
+    );
+    let _ = super::record_operational_incident(
+        &app,
+        "security",
+        "critical",
+        &incident_id,
+        "Permintaan Aturan Aktif",
+        &body,
+    );
+    let _ = tauri::Emitter::emit(&app, "access-manager://requests-updated", ());
+    Ok(created)
+}
+
+#[tauri::command]
+pub(crate) async fn approve_pending_active_rule_request(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    request_id: String,
+    operations: Option<Vec<String>>,
+) -> Result<Value, String> {
+    focused(&window, true)?;
+    let dir = super::config_dir()?;
+    let mut items = load_pending_rule_requests(&dir)?;
+    let idx = items
+        .iter()
+        .position(|item| item.id == request_id && item.status == "pending")
+        .ok_or("Pending active rule request not found or already decided")?;
+    let req = items[idx].clone();
+    let final_ops = operations.unwrap_or_else(|| req.operations.clone());
+    if final_ops.is_empty() {
+        return Err("Select at least one operation".into());
+    }
+
+    let policy = if req.kind == "file" {
+        register_permanent_access_rule(
+            app.clone(),
+            window,
+            0,
+            String::new(),
+            req.effect.clone(),
+            "file".into(),
+            final_ops.clone(),
+            false,
+            None,
+            None,
+            Some(req.target_path.clone()),
+            Some(req.recursive),
+            None,
+        )
+        .await?
+    } else {
+        register_permanent_access_rule(
+            app.clone(),
+            window,
+            0,
+            String::new(),
+            req.effect.clone(),
+            "desktop".into(),
+            final_ops.clone(),
+            false,
+            None,
+            None,
+            None,
+            None,
+            Some(req.target_path.clone()),
+        )
+        .await?
+    };
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    items[idx].status = "approved".into();
+    items[idx].operations = final_ops;
+    items[idx].decided_at = Some(now);
+    save_pending_rule_requests(&dir, &items)?;
+
+    let incident_id = format!("mcp-pending:requests:rule:{}", req.id);
+    if super::tray_notification_center::resolve(&dir, &incident_id).unwrap_or(false) {
+        let _ = tauri::Emitter::emit(&app, "tray-notifications-changed", ());
+    }
+    let _ = tauri::Emitter::emit(&app, "access-manager://requests-updated", ());
+
+    Ok(serde_json::json!({
+        "registry": policy,
+        "requests": items,
+    }))
+}
+
+#[tauri::command]
+pub(crate) fn deny_pending_active_rule_request(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    request_id: String,
+) -> Result<Vec<PendingActiveRuleRequest>, String> {
+    focused(&window, true)?;
+    let dir = super::config_dir()?;
+    let mut items = load_pending_rule_requests(&dir)?;
+    let idx = items
+        .iter()
+        .position(|item| item.id == request_id && item.status == "pending")
+        .ok_or("Pending active rule request not found or already decided")?;
+    let req = items[idx].clone();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    items[idx].status = "denied".into();
+    items[idx].decided_at = Some(now);
+    save_pending_rule_requests(&dir, &items)?;
+
+    let _ = record_audit_entry(
+        &dir,
+        &AccessAuditEntry {
+            id: uuid::Uuid::new_v4().simple().to_string(),
+            timestamp: now,
+            kind: req.kind.clone(),
+            application: req.source_name,
+            executable_path: req.target_path.clone(),
+            operation: req.operations.join(", "),
+            target: req.target_path,
+            effect: "deny".into(),
+            rule_id: Some(req.id.clone()),
+        },
+    );
+
+    let incident_id = format!("mcp-pending:requests:rule:{}", req.id);
+    if super::tray_notification_center::resolve(&dir, &incident_id).unwrap_or(false) {
+        let _ = tauri::Emitter::emit(&app, "tray-notifications-changed", ());
+    }
+    let _ = tauri::Emitter::emit(&app, "access-manager://requests-updated", ());
+    Ok(items)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1027,6 +1340,35 @@ mod tests {
         assert!(!name.is_empty());
         assert_eq!(identity.executable_path.to_lowercase(), path_str.to_lowercase());
         assert_eq!(identity.sha256.len(), 64);
+    }
+    #[test]
+    fn pending_active_rule_requests_enqueue_deduplicate_and_persist() {
+        let root = std::env::temp_dir().join(format!("pending-rule-req-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let first = enqueue_active_rule_request(
+            &root,
+            PendingActiveRuleRequest {
+                id: String::new(),
+                source_name: "Gemini MCP".into(),
+                kind: "file".into(),
+                effect: "allow".into(),
+                target_path: r"D:\Project\Sample".into(),
+                recursive: true,
+                operations: vec!["read".into(), "write".into()],
+                reason: "Butuh baca dan tulis workspace".into(),
+                created_at: 1700000000000,
+                status: "pending".into(),
+                decided_at: None,
+            },
+        )
+        .unwrap();
+        assert!(first.id.starts_with("rule_req_"));
+        let dup = enqueue_active_rule_request(&root, first.clone()).unwrap();
+        assert_eq!(dup.id, first.id);
+        let loaded = load_pending_rule_requests(&root).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].target_path, r"D:\Project\Sample");
+        let _ = fs::remove_dir_all(root);
     }
     #[test]
     fn installed_app_discovery_returns_structured_entries() {

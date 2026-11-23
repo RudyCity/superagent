@@ -42,6 +42,7 @@ mod release_updates;
 mod tray_notification_center;
 mod tray_navigation_receipt;
 mod tray_os_action;
+mod notifications;
 
 #[cfg(test)]
 #[path = "../../../../tests/tray_core_startup.rs"]
@@ -169,6 +170,11 @@ fn tray_window_action(
                 .map_err(|_| "Cannot drag Tray window")?;
         }
         "close" => window.close().map_err(|_| "Cannot close Tray window")?,
+        "hide" => window.hide().map_err(|_| "Cannot hide Tray window")?,
+        "quit-app" => {
+            tray_lifecycle::cleanup();
+            std::process::exit(0);
+        }
         "reload" => {
             let _ = window.eval("window.location.reload()");
         }
@@ -4519,6 +4525,12 @@ fn main() {
             desktop_access_registry::revoke_permanent_access_rule,
             desktop_access_registry::get_permanent_access_audit_log,
             desktop_access_registry::clear_permanent_access_audit_log,
+            desktop_access_registry::get_pending_active_rule_requests,
+            desktop_access_registry::submit_active_rule_request,
+            desktop_access_registry::approve_pending_active_rule_request,
+            desktop_access_registry::deny_pending_active_rule_request,
+            notifications::notify_access_request,
+            notifications::open_request_center,
             get_named_tunnel_settings,
             set_named_tunnel_settings,
             get_named_tunnel_connector_status,

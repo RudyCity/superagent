@@ -150,8 +150,11 @@
   });
   closeButton.addEventListener("click", () => {
     pendingDrag = null;
-    // This triggers Rust WindowEvent::CloseRequested: hide-to-tray when on,
-    // otherwise exit ONLY Tray, never stop Core/tunnels/Muse.
+    if (typeof window.__superagentOpenCloseModal === "function") {
+      window.__superagentOpenCloseModal();
+      return;
+    }
+    // Fallback: triggers Rust WindowEvent::CloseRequested
     void controlWindow("close");
   });
 

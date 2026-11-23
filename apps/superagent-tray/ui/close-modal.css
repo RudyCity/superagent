@@ -1,0 +1,282 @@
+/* ==========================================================================
+   SuperAgent Tray · Close Confirmation & Exit Options Modal
+   Strict anti-slop, high-contrast dark cyberpunk HUD aesthetics
+   ========================================================================== */
+
+.close-options-modal {
+  max-width: 640px;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #0d121f;
+  box-shadow: 0 24px 60px -10px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.close-options-subtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary, #94a3b8);
+  line-height: 1.45;
+}
+
+.close-options-body {
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.close-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 16px;
+}
+
+/* Option Card Base */
+.close-option-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  border-radius: var(--radius-md, 8px);
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  user-select: none;
+}
+
+.close-option-card:focus-visible {
+  outline: 2px solid var(--accent-cyan, #06b6d4);
+  outline-offset: 2px;
+}
+
+/* Standby / Tray Card */
+.close-option-card.close-option-tray {
+  border-color: rgba(56, 189, 248, 0.2);
+}
+
+.close-option-card.close-option-tray:hover {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: rgba(56, 189, 248, 0.45);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -6px rgba(56, 189, 248, 0.15);
+}
+
+/* Drain / Complete Stop Card */
+.close-option-card.close-option-daemon {
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.close-option-card.close-option-daemon:hover {
+  background: rgba(24, 18, 28, 0.85);
+  border-color: rgba(239, 68, 68, 0.55);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -6px rgba(239, 68, 68, 0.2);
+}
+
+/* Badges */
+.close-option-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #38bdf8;
+  margin-bottom: 12px;
+}
+
+.close-option-badge.danger {
+  color: #f87171;
+}
+
+.close-option-badge::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Card Header with Icon and Title */
+.close-option-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.close-option-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: #38bdf8;
+  flex-shrink: 0;
+}
+
+.close-option-icon.danger {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.close-option-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+}
+
+.close-option-desc {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: var(--text-secondary, #94a3b8);
+  line-height: 1.5;
+  flex-grow: 1;
+}
+
+/* Features List */
+.close-option-features {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted, #64748b);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 10px;
+}
+
+.close-option-features li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.close-option-features .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.close-option-features .dot.active {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+}
+
+.close-option-features .dot.stopped {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+}
+
+/* Buttons */
+.close-btn-secondary {
+  width: 100%;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.close-btn-secondary:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.5);
+  color: #ffffff;
+}
+
+.close-btn-danger {
+  width: 100%;
+  background: #dc2626;
+  border: 1px solid #ef4444;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.close-btn-danger:hover:not(:disabled) {
+  background: #b91c1c;
+  border-color: #dc2626;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.55);
+}
+
+/* Progress / Feedback */
+.close-options-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm, 6px);
+  animation: fadeIn 0.2s ease;
+}
+
+.close-options-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(239, 68, 68, 0.25);
+  border-top-color: #ef4444;
+  border-radius: 50%;
+  animation: closeSpin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes closeSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+#close-options-status-text {
+  font-size: 12.5px;
+  color: #f1f5f9;
+  font-weight: 500;
+}
+
+/* Footer */
+.close-options-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  background: rgba(0, 0, 0, 0.25);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.close-options-hint {
+  font-size: 11.5px;
+  color: var(--text-muted, #64748b);
+}

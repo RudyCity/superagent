@@ -249,6 +249,22 @@ fn read_launch_owner(dir:&Path)->Result<Option<TrayOwner>,String>{
 }
 
 #[cfg(windows)]
+fn is_valid_tray_filename(filename: &str) -> bool {
+    let lower = filename.to_ascii_lowercase();
+    if lower == "superagent-tray.exe" {
+        return true;
+    }
+    if let Some(rest) = lower.strip_prefix("superagent-tray-") {
+        if let Some(suffix) = rest.strip_suffix(".exe") {
+            let is_sha256 = suffix.len() == 64 && suffix.chars().all(|c| c.is_ascii_hexdigit());
+            let is_test = suffix.starts_with("test-");
+            return is_sha256 || is_test;
+        }
+    }
+    false
+}
+
+#[cfg(windows)]
 fn same_tray_process(owner:&TrayOwner)->Result<Option<u64>,String>{
     let mut system=System::new();
     system.refresh_processes();
@@ -262,7 +278,7 @@ fn same_tray_process(owner:&TrayOwner)->Result<Option<u64>,String>{
     let observed=fs::canonicalize(actual)
         .map_err(|_|"Existing Tray process executable is not verifiable")?;
     let filename=observed.file_name().and_then(|s|s.to_str()).unwrap_or("");
-    if !filename.eq_ignore_ascii_case("superagent-tray.exe")||
+    if !is_valid_tray_filename(filename)||
         !registered.to_string_lossy().eq_ignore_ascii_case(&observed.to_string_lossy()) {
         return Err("Existing Tray PID does not match its registered executable".into());
     }
@@ -426,6 +442,19 @@ mod tests{
         assert!(eq_secret(&x,&x));
         assert!(!eq_secret(&x, &format!("{}x",x)));
         assert!(!eq_secret(&x,&"a".repeat(64)));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn validates_tray_binary_filenames_standard_release_and_test() {
+        assert!(is_valid_tray_filename("superagent-tray.exe"));
+        assert!(is_valid_tray_filename("SUPERAGENT-TRAY.EXE"));
+        assert!(is_valid_tray_filename("superagent-tray-2a90159f54470ce4f44c4e35866c4d995419e417edb3bcc08b2ffdefc9df5de2.exe"));
+        assert!(is_valid_tray_filename("superagent-tray-test-abc-123.exe"));
+        assert!(!is_valid_tray_filename("other-app.exe"));
+        assert!(!is_valid_tray_filename("superagent-core.exe"));
+        assert!(!is_valid_tray_filename("superagent-tray-invalidhash.exe"));
+        assert!(!is_valid_tray_filename("superagent-tray-.exe"));
     }
 
     #[test]
