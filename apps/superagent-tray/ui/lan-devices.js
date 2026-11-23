@@ -24,9 +24,24 @@
   const notice = (message, isError = false) => {
     const el = $("lan-banner");
     if (!el) return;
-    el.textContent = String(message).slice(0, 350);
-    el.classList.toggle("error", isError);
-    el.hidden = false;
+    if (!message) {
+      el.hidden = true;
+      el.replaceChildren();
+      return;
+    }
+    if (window.TrayFeedback?.showBanner) {
+      window.TrayFeedback.showBanner(el, {
+        kind: isError ? "error" : "info",
+        message: String(message).slice(0, 500),
+        copyText: String(message),
+        aboveForm: true,
+        dismissible: true,
+      });
+    } else {
+      el.textContent = String(message).slice(0, 350);
+      el.classList.toggle("error", isError);
+      el.hidden = false;
+    }
   };
   const pairStatus = (message, isError = false) => {
     const el = $("lan-pair-status");

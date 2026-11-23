@@ -35,13 +35,31 @@ function museFileNotice(message, error = false, category = "action") {
   museFileState.noticeCategory = category;
   const el = museFileById("muse-files-banner");
   if (!el) return;
-  el.textContent = String(message).slice(0, 500);
-  el.classList.toggle("error", error);
-  el.hidden = false;
+  if (!message) {
+    el.hidden = true;
+    el.replaceChildren();
+    return;
+  }
+  if (window.TrayFeedback?.showBanner) {
+    window.TrayFeedback.showBanner(el, {
+      kind: error ? "error" : "info",
+      message: String(message).slice(0, 500),
+      copyText: String(message),
+      aboveForm: true,
+      dismissible: true,
+    });
+  } else {
+    el.textContent = String(message).slice(0, 500);
+    el.classList.toggle("error", error);
+    el.hidden = false;
+  }
 }
 function museFileNoticeClear() {
   const el = museFileById("muse-files-banner");
-  if (el) el.hidden = true;
+  if (el) {
+    el.hidden = true;
+    el.replaceChildren();
+  }
   museFileState.noticeCategory = null;
 }
 

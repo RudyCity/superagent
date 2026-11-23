@@ -1294,7 +1294,7 @@
         </section>
 
         <!-- Alert / Notice Banner -->
-        <div id="banner" class="banner" role="status" hidden></div>
+        <div id="banner" class="banner banner--above-form" role="status" hidden></div>
 
         <!-- Schedules Table Panel -->
         <section id="jobs" class="panel jobs-panel">
@@ -1897,7 +1897,7 @@
           </button>
         </nav>
 
-        <div id="lan-banner" class="banner" role="status" aria-live="polite" hidden></div>
+        <div id="lan-banner" class="banner banner--above-form" role="status" aria-live="polite" hidden></div>
 
         <div id="lan-subpage-devices" class="lan-subpage" role="tabpanel" aria-labelledby="lan-tab-btn-devices">
 <!-- Hallmark · pre-emit critique: P4 H5 E4 S5 R5 V4 -->
@@ -2347,6 +2347,8 @@
             </div>
             <span class="subtle-badge">Local · versioned</span>
           </div>
+          <!-- In-Page Alert Banner above form -->
+          <div id="tray-settings-banner" class="banner banner--above-form" role="status" hidden></div>
           <form id="tray-settings-form">
             <div class="tray-settings-section">
               <h3>Appearance &amp; Theming (r-ui Engine)</h3>
@@ -2608,6 +2610,7 @@
               </li>
             </ol>
             <div class="named-manager-message" id="named-manager-message" role="status" aria-live="polite" aria-atomic="true">Reading native status. Nothing starts automatically.</div>
+            <div id="named-tunnel-banner" class="banner banner--above-form" role="status" hidden></div>
           </section>
           <form id="named-tunnel-settings-form" autocomplete="off">
             <div class="tray-settings-section">
@@ -2691,6 +2694,7 @@
             </div>
             <span id="muse-telegram-status" class="subtle-badge">Checking…</span>
           </div>
+          <div id="muse-telegram-banner" class="banner banner--above-form" role="status" hidden></div>
           <form id="muse-telegram-settings-form">
             <div class="tray-settings-section">
               <h3>Telegram credentials &amp; routing</h3>
@@ -3801,7 +3805,7 @@
         </section>
 
         <!-- Alert / Notice Banner -->
-        <div id="muse-files-banner" class="banner" role="alert" hidden></div>
+        <div id="muse-files-banner" class="banner banner--above-form" role="alert" hidden></div>
 
         <!-- Workbench Grid: 2-Column Cockpit Layout -->
         <div class="muse-workbench-grid">
@@ -4284,6 +4288,7 @@
       </div>
 
       <div class="modal-body">
+        <div id="job-form-banner" class="banner banner--above-form" role="status" hidden></div>
         <div class="form-group">
           <label for="kind">Task Kind</label>
           <div class="select-wrapper">

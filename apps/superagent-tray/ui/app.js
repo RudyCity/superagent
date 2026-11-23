@@ -41,7 +41,18 @@ function errors(error) {
   // Only trusted local validation messages belong in toasts; never reveal
   // arbitrary daemon errors that might include credentials or private paths.
   const safe = /^(Both name|Autonomous Agent|Cron expression|One-time reminder|Please select|Invalid hour)/.test(message);
-  toast(safe ? message : "Schedule action not verified. Check Core and form details.", true);
+  const text = safe ? message : "Schedule action not verified. Check Core and form details.";
+  toast(text, true);
+  const formBanner = $("job-form-banner");
+  if (formBanner && window.TrayFeedback?.showBanner) {
+    window.TrayFeedback.showBanner(formBanner, {
+      kind: "error",
+      message: text,
+      copyText: text,
+      aboveForm: true,
+      dismissible: true,
+    });
+  }
 }
 
 function jobType(job) {
@@ -185,20 +196,49 @@ function connection(isOnline, message, coreVersion) {
 
 function setBanner(message, buttonText, action) {
   const banner = $("banner");
-  banner.replaceChildren();
-  if (message) {
+  if (!banner) return;
+  if (!message) {
+    banner.hidden = true;
+    banner.replaceChildren();
+    return;
+  }
+  if (window.TrayFeedback?.showBanner) {
+    const isError = /fail|unreachable|error|stopped/i.test(message);
+    window.TrayFeedback.showBanner(banner, {
+      kind: isError ? "error" : "warning",
+      message,
+      copyText: message,
+      dismissible: false,
+      aboveForm: true,
+    });
+    if (buttonText && action) {
+      const actions = banner.querySelector(".banner-actions");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button sm ghost";
+      button.textContent = buttonText;
+      button.addEventListener("click", action);
+      if (actions) {
+        actions.prepend(button);
+      } else {
+        banner.append(button);
+      }
+    }
+  } else {
+    banner.replaceChildren();
     const textNode = document.createElement("span");
     textNode.textContent = message;
     banner.append(textNode);
     if (buttonText && action) {
       const button = document.createElement("button");
       button.type = "button";
+      button.className = "button sm ghost";
       button.textContent = buttonText;
       button.addEventListener("click", action);
       banner.append(button);
     }
+    banner.hidden = false;
   }
-  banner.hidden = !message;
 }
 
 async function refresh() {
@@ -277,6 +317,11 @@ function updateFrequency() {
 
 function openEditor(job = null, preferredKind = "reminder") {
   state.editingId = job?.id || null;
+  const formBanner = $("job-form-banner");
+  if (formBanner) {
+    formBanner.hidden = true;
+    formBanner.replaceChildren();
+  }
   $("job-form").reset();
   $("form-title").textContent = job ? "Edit Schedule" : "Create New Schedule";
   $("save-form").textContent = job ? "Save Changes" : "Save Schedule";

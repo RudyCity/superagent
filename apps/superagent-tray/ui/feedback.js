@@ -186,7 +186,93 @@
     if (element) element.textContent = [phase, detail].filter(Boolean).join(" · ").slice(0, 300);
   }
 
+  async function copyText(text, btn) {
+    if (!text) return false;
+    const nav = typeof navigator !== "undefined" ? navigator : (typeof window !== "undefined" ? window.navigator : undefined);
+    let ok = false;
+    if (nav?.clipboard?.writeText) {
+      try {
+        await nav.clipboard.writeText(text);
+        ok = true;
+      } catch {}
+    }
+    if (!ok && typeof document !== "undefined" && typeof document.createElement === "function") {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select?.();
+        if (document.execCommand) document.execCommand("copy");
+        ta.remove?.();
+        ok = true;
+      } catch {}
+    }
+    if (btn && ok) {
+      const prevHTML = btn.innerHTML;
+      btn.classList?.add?.("copied");
+      btn.setAttribute?.("aria-label", "Copied to clipboard");
+      btn.setAttribute?.("title", "Copied!");
+      btn.innerHTML = CHECK_ICON;
+      setTimeout(() => {
+        btn.classList?.remove?.("copied");
+        btn.setAttribute?.("aria-label", "Copy to clipboard");
+        btn.setAttribute?.("title", "Copy");
+        btn.innerHTML = prevHTML;
+      }, 2000);
+    }
+    return ok;
+  }
+
+  function showBanner(target, { kind = "info", message = "", copyText: customCopy = "", dismissible = true, aboveForm = true } = {}) {
+    const el = typeof target === "string" ? document.getElementById(target) : target;
+    if (!el || !message) return false;
+    el.hidden = false;
+    el.className = "banner" + (aboveForm ? " banner--above-form" : "") + " banner--" + (KINDS.has(kind) ? kind : "info");
+    el.setAttribute("role", kind === "error" ? "alert" : "status");
+    el.innerHTML = "";
+
+    const content = document.createElement("div");
+    content.className = "banner-content";
+    content.textContent = message;
+
+    const actions = document.createElement("div");
+    actions.className = "banner-actions";
+
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "banner-copy-btn";
+    copyBtn.setAttribute("aria-label", "Copy alert payload");
+    copyBtn.setAttribute("title", "Copy text");
+    copyBtn.innerHTML = COPY_ICON;
+    copyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      void copyText(customCopy || message, copyBtn);
+    });
+    actions.append(copyBtn);
+
+    if (dismissible) {
+      const dismissBtn = document.createElement("button");
+      dismissBtn.type = "button";
+      dismissBtn.className = "tray-toast-dismiss";
+      dismissBtn.textContent = "×";
+      dismissBtn.setAttribute("aria-label", "Dismiss alert");
+      dismissBtn.addEventListener("click", () => {
+        el.hidden = true;
+      });
+      actions.append(dismissBtn);
+    }
+
+    el.append(content, actions);
+    return true;
+  }
+
   window.TrayFeedback = Object.freeze({
     begin, run, notify, clearScope, setPhase, isPending: (key) => pending.has(key),
+    copyText, showBanner,
   });
+  window.__superagentToast = notify;
+  window.__superagentBanner = showBanner;
+  window.__superagentCopy = copyText;
 })();

@@ -132,9 +132,29 @@ async function traySettingsSave(event) {
     if (feedback) feedback.textContent =
       "Settings saved. Runtime and schedules refresh intervals updated. " +
       "Auto-launch applies to the next SuperAgent startup; startup page applies to the next window.";
+    const banner = traySettingsElement("tray-settings-banner");
+    if (banner && window.TrayFeedback?.showBanner) {
+      window.TrayFeedback.showBanner(banner, {
+        kind: "success",
+        message: "Settings saved successfully. Runtime and schedules refresh intervals updated.",
+        copyText: "Tray settings saved successfully.",
+        aboveForm: true,
+        dismissible: true,
+      });
+    }
     notifySettings("success", "Tray settings saved.");
   } catch (error) {
     if (feedback) feedback.textContent = "Settings NOT saved: " + String(error);
+    const banner = traySettingsElement("tray-settings-banner");
+    if (banner && window.TrayFeedback?.showBanner) {
+      window.TrayFeedback.showBanner(banner, {
+        kind: "error",
+        message: "Settings NOT saved: " + String(error),
+        copyText: "Settings NOT saved: " + String(error),
+        aboveForm: true,
+        dismissible: true,
+      });
+    }
     notifySettings("error", "Tray settings could not be saved. Review the form.");
   } finally {
     traySettingsBusy = false;
@@ -347,11 +367,34 @@ async function museTelegramSave(event) {
     if (feedback) feedback.textContent=result.settings.configStale
       ? "Muse settings saved. Running watcher is stale; use Apply & Restart Muse when no batch is active."
       : "Muse settings saved.";
+    const banner = traySettingsElement("muse-telegram-banner");
+    if (banner && window.TrayFeedback?.showBanner) {
+      const msg = result.settings.configStale
+        ? "Muse settings saved. Running watcher is stale; use Apply & Restart Muse when no batch is active."
+        : "Muse settings saved.";
+      window.TrayFeedback.showBanner(banner, {
+        kind: result.settings.configStale ? "warning" : "success",
+        message: msg,
+        copyText: msg,
+        aboveForm: true,
+        dismissible: true,
+      });
+    }
     notifySettings("success", result.settings.configStale
       ? "Muse settings saved; watcher still needs a reviewed restart."
       : "Muse settings saved.");
   } catch (error) {
     if (feedback) feedback.textContent="Muse settings NOT saved: "+String(error);
+    const banner = traySettingsElement("muse-telegram-banner");
+    if (banner && window.TrayFeedback?.showBanner) {
+      window.TrayFeedback.showBanner(banner, {
+        kind: "error",
+        message: "Muse settings were not saved: " + String(error),
+        copyText: "Muse settings were not saved: " + String(error),
+        aboveForm: true,
+        dismissible: true,
+      });
+    }
     notifySettings("error", "Muse settings were not saved.");
   } finally {
     museTelegramBusy=false;
