@@ -22,7 +22,7 @@ import {
   extractErrorStatusCode,
 } from "./AgentUtils.js";
 import { cleanThinkingTags } from "./FastPath.js";
-import { isInformationalRequest, isAutoSeededSingleTask, MAX_TEXT_ONLY_CONTINUATIONS, isNeedsInputOrLimitation, isRepetitiveNarration } from "./ChecklistContinuationGuard.js";
+import { isInformationalRequest, isAutoSeededSingleTask, MAX_TEXT_ONLY_CONTINUATIONS, MAX_AUTONOMOUS_CONTINUATIONS, isNeedsInputOrLimitation, isRepetitiveNarration } from "./ChecklistContinuationGuard.js";
 
 async function handleUnavailableTool(
   rawMsg: string,
@@ -830,12 +830,14 @@ export class LoopIterationProcessor {
 
     if (toolCalls.length === 0) {
       const goalComplete = isGoalCompleteResponse(textContent);
+      const isAutonomous = Boolean(agent.goalMode || (agent as any).isAutonomous);
       const latestUserMessage = [...agent.getConversationMessages()].reverse().find((message) => message.role === "user");
       const latestUserText = latestUserMessage ? contentToString(latestUserMessage.content) : "";
-      const isInformational = !agent.goalMode && isInformationalRequest(latestUserText, agent.currentClassification?.category);
+      const isInformational = !isAutonomous && isInformationalRequest(latestUserText, agent.currentClassification?.category);
       const currentCwd = (agent.tier === "superagent" && agent.worktreePath)
         ? agent.worktreePath
         : agent.workingDirectory;
+      const allowedTextOnlyNudges = isAutonomous ? MAX_AUTONOMOUS_CONTINUATIONS : MAX_TEXT_ONLY_CONTINUATIONS;
       if (textContent.trim()) {
         const isEarlyIteration = i < 3;
         const hasActionNarration = /\b(let me|i will|i'll|going to|will check|will search|will look|will inspect|will find|checking|searching|inspecting|examining|scanning|investigating|mencari|memeriksa|mengecek|saya akan|mari kita|mari periksa|sedang mencari)\b/i.test(textContent);
@@ -854,7 +856,7 @@ export class LoopIterationProcessor {
           textContent.trim().length < 600 &&
           !/\?$/.test(textContent.trim());
 
-        if (isPlanningText && !(agent.goalMode && goalComplete) && agent.textOnlyContinuationNudges < MAX_TEXT_ONLY_CONTINUATIONS) {
+        if (isPlanningText && !(isAutonomous && goalComplete) && agent.textOnlyContinuationNudges < allowedTextOnlyNudges) {
           agent.textOnlyContinuationNudges++;
           agent.writeToLogFile(
             "INFO",
@@ -880,8 +882,8 @@ export class LoopIterationProcessor {
             const pendingItems = tasks.filter((t) => t.status === " " || t.status === "/");
             const isUserQuestion = isInformational || isAutoSeededSingleTask(taskContent, latestUserText);
 
-            if (pendingItems.length > 0 && !isUserQuestion && !needsInputOrBlocked && !(agent.goalMode && goalComplete)) {
-              if (isRepetitive || agent.textOnlyContinuationNudges >= MAX_TEXT_ONLY_CONTINUATIONS || i >= maxIterations - 1) {
+            if (pendingItems.length > 0 && !isUserQuestion && !needsInputOrBlocked && !(isAutonomous && goalComplete)) {
+              if (isRepetitive || agent.textOnlyContinuationNudges >= allowedTextOnlyNudges || i >= maxIterations - 1) {
                 agent.writeToLogFile("WARN", `Stopping checklist auto-continuation after ${agent.textOnlyContinuationNudges} text-only nudges at iteration ${i}; checklist is still unfinished.`);
                 agent.onEvent({ type: "text", content: `\n\n⚠️ Auto-continuation stopped because the checklist is unfinished and no progress was detected. Please review pending tasks or continue manually.\n` });
                 agent.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
@@ -910,6 +912,32 @@ Do NOT stop, give up, or return conversational greetings. Immediately execute th
           agent.writeToLogFile("WARN", `Checklist enforcement check failed: ${checklistErr.message}`);
         }
 
+        // Autonomous loop execution: If agent is in autonomous/goal mode and goal is NOT complete,
+        // do not break on text-only response unless the agent explicitly needs input, is blocked, is repeating itself,
+        // or has exceeded the max autonomous continuation nudges.
+        if (
+          isAutonomous &&
+          !goalComplete &&
+          !needsInputOrBlocked &&
+          !isRepetitive &&
+          agent.textOnlyContinuationNudges < allowedTextOnlyNudges &&
+          i < maxIterations - 1
+        ) {
+          agent.textOnlyContinuationNudges++;
+          agent.writeToLogFile(
+            "INFO",
+            `Autonomous execution continuation on iteration ${i} (${agent.textOnlyContinuationNudges}/${allowedTextOnlyNudges}). Prompting agent to proceed with tools.`
+          );
+          agent.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
+          agent.conversation.addMessage({
+            role: "system",
+            content: "[SYS] Autonomous execution is in progress. Do not stop or wait for user confirmation. Continue with the next step using available tools. When all tasks are fully accomplished, output 'TASK_COMPLETE: <summary>' or 'GOAL_COMPLETE: <summary>'.",
+            timestamp: Date.now(),
+          });
+          await agent.saveHistory();
+          return { shouldBreak: false };
+        }
+
         // Git status/diff is only needed for the final answer, not every
         // intermediate planning or checklist continuation.
         const endSnapshot = await captureGitSnapshot(currentCwd);
@@ -922,6 +950,17 @@ Do NOT stop, give up, or return conversational greetings. Immediately execute th
         agent.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
         await agent.saveHistory();
       } else {
+        if (isAutonomous && agent.textOnlyContinuationNudges < allowedTextOnlyNudges && i < maxIterations - 1) {
+          agent.textOnlyContinuationNudges++;
+          agent.writeToLogFile("INFO", `Empty response on iteration ${i} during autonomous execution. Auto-continuing with nudge.`);
+          agent.conversation.addMessage({
+            role: "system",
+            content: "[SYS] Autonomous execution is in progress. Continue with the next step using available tools. When all tasks are fully accomplished, output 'TASK_COMPLETE: <summary>' or 'GOAL_COMPLETE: <summary>'.",
+            timestamp: Date.now(),
+          });
+          await agent.saveHistory();
+          return { shouldBreak: false };
+        }
         agent.conversation.addAssistantMessage(textContent || "Completed task.", undefined, undefined, reasoningContent);
         await agent.saveHistory();
       }

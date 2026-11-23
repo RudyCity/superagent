@@ -108,6 +108,7 @@ export class Agent {
   public lastSpeed: number | null = null;
   public goalMode: string | null = null;
   public goalMaxIterations: number = DEFAULT_GOAL_MAX_ITERATIONS;
+  public isAutonomous: boolean = false;
   /** Bounds automatic text-only loop continuations per user turn. */
   public textOnlyContinuationNudges = 0;
   /** Prevent runaway duplicate tool calls, even when RealtimeAdvisor is disabled. */
@@ -843,7 +844,8 @@ export class Agent {
     this.advisor.syncSettings(getSettings());
     const signal = this.abortController?.signal;
     const activeGoal = this.goalMode;
-    const isGoalMode = !!activeGoal;
+    const activeAutonomous = this.isAutonomous;
+    const isGoalMode = Boolean(activeGoal || activeAutonomous);
     let goalStatus: Extract<AgentEvent, { type: "goal_done" }>["status"] = "maxed";
     // Fail closed: hitting a limit, waiting for plan approval, or stopping without
     // an explicit terminal iteration is not a verified task completion.
@@ -883,14 +885,14 @@ export class Agent {
         if (i === maxIterations - 1) {
           if (continueCount >= maxContinues) {
             const stopMsg = isGoalMode
-              ? `\n\n⚠️ [GOAL MODE: Reached maximum auto-continue limit (${maxContinues}x). Stopping to prevent infinite loop. Your goal was: "${this.goalMode}". You can continue with '/resume'.]\n`
+              ? `\n\n⚠️ [GOAL MODE: Reached maximum auto-continue limit (${maxContinues}x). Stopping to prevent infinite loop. Your goal was: "${this.goalMode || "autonomous execution"}". You can continue with '/resume'.]\n`
               : `\n\n⚠️ [System Warning: Reached maximum iteration limit and maximum auto-continues (${maxContinues}). Stopping to prevent infinite loop. You can continue the session by sending a message or running '/resume'.]\n`;
             this.onEvent({ type: "text", content: stopMsg });
           } else if (isGoalMode) {
             continueCount++;
             this.onEvent({
               type: "text",
-              content: `\n\n🎯 [GOAL MODE: Auto-continuing iteration block ${continueCount}/${maxContinues} to achieve goal: "${this.goalMode}"]\n`,
+              content: `\n\n🎯 [GOAL MODE: Auto-continuing iteration block ${continueCount}/${maxContinues} to achieve goal: "${this.goalMode || "autonomous execution"}"]\n`,
             });
             i = -1;
             continue;
@@ -925,6 +927,7 @@ export class Agent {
       }
       if (isGoalMode) {
         this.goalMode = null;
+        this.isAutonomous = false;
         this.goalMaxIterations = DEFAULT_GOAL_MAX_ITERATIONS;
       }
       let finalSummary = "Agent has finished executing. Check the output above for GOAL_COMPLETE or GOAL_PARTIAL status.";
@@ -954,10 +957,10 @@ export class Agent {
         }
       }
 
-      if (activeGoal) {
+      if (activeGoal || activeAutonomous) {
         this.onEvent({
           type: "goal_done",
-          goal: activeGoal,
+          goal: activeGoal || "autonomous execution",
           status: goalStatus,
           summary: finalSummary,
         });

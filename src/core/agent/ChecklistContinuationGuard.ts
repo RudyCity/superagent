@@ -4,6 +4,7 @@
  * makes sense. This is a safety net for classifier mistakes and stale task files.
  */
 export const MAX_TEXT_ONLY_CONTINUATIONS = 2;
+export const MAX_AUTONOMOUS_CONTINUATIONS = 10;
 
 export function isInformationalRequest(input: string, category?: string): boolean {
   const text = input.trim();
@@ -39,6 +40,7 @@ export function isAutoSeededSingleTask(taskContent: string, latestUserText: stri
 export function isTransientContinuationNudge(role: string, content: string): boolean {
   if (role !== "system") return false;
   return content.startsWith("[SYS] Continue immediately. Use the available tools to perform the search") ||
+    content.startsWith("[SYS] Autonomous execution is in progress.") ||
     (content.startsWith("[SYS] You have ") && content.includes("unfinished task(s) remaining on the checklist:"));
 }
 

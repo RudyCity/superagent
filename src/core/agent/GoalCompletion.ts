@@ -15,8 +15,8 @@ export function isGoalCompleteResponse(text: string): boolean {
       fence = delimiter[1];
       continue;
     }
-    if (/^\s*GOAL_PARTIAL\s*:/i.test(line)) return false;
-    if (/^\s*GOAL_COMPLETE\s*:/i.test(line)) complete = true;
+    if (/^\s*(?:GOAL_PARTIAL|TASK_PARTIAL)\s*:/i.test(line)) return false;
+    if (/^\s*(?:GOAL_COMPLETE|TASK_COMPLETE|AUTONOMOUS_COMPLETE)\s*:/i.test(line)) complete = true;
   }
   return complete;
 }
