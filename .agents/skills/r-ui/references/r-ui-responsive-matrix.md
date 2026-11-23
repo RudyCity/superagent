@@ -242,3 +242,146 @@ export function initSpatialNavigation(containerSelector = '.r-ui-tv-grid') {
   });
 }
 ```
+
+---
+
+## 6. Single-Screen Viewport Cockpit Responsive Matrix
+
+Production-grade recipes to maintain a clean, zero-spill single-screen layout across all device viewports:
+
+```text
++---------------------------------------------------------------------------------------------------------+
+|                                SINGLE-SCREEN MULTI-DEVICE MATRIX                                        |
++-------------------+---------------------+-------------------------------+-------------------------------+
+| VIEWPORT TIER     | WIDTH RANGE         | SHELL STRUCTURE               | SPACE-SAVING DISCLOSURE       |
++-------------------+---------------------+-------------------------------+-------------------------------+
+| Ultra-Wide / 4K   | >= 1440px           | 3-Pane (Sidebar + Main + Insp)| Persistent side-by-side panes |
+| Laptop / Compact  | 1024px - 1439px     | 2-Pane (60px Rail + Main)     | Right Inspector in overlay    |
+| Tablet / iPad     | 768px - 1023px      | 1-Pane (Hamburger + Main)     | Off-canvas drawer + Popovers  |
+| Mobile Smartphone | 360px - 767px       | 1-Pane (Header + Bottom Dock) | Bottom Sheets + Swipe Rail    |
++-------------------+---------------------+-------------------------------+-------------------------------+
+```
+
+### A. Desktop & Laptop Responsive Stylesheet
+```css
+/* 1. Global Viewport-Fit Root */
+.r-ui-cockpit-viewport {
+  width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 2. Laptop Adaptation (1024px to 1439px): Auto-collapse Sidebar into Mini-Rail */
+@media (min-width: 1024px) and (max-width: 1439px) {
+  .r-ui-cockpit-sidebar {
+    width: var(--r-ui-sidebar-rail-w, 60px) !important;
+    min-width: var(--r-ui-sidebar-rail-w, 60px) !important;
+  }
+  .r-ui-cockpit-sidebar .r-ui-nav-label,
+  .r-ui-cockpit-sidebar .r-ui-workspace-details {
+    display: none;
+  }
+  .r-ui-cockpit-sidebar .r-ui-nav-item {
+    justify-content: center;
+    padding: 8px 0;
+  }
+}
+
+/* 3. Tablet Adaptation (768px to 1023px): Collapsible Drawer Navigation */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .r-ui-cockpit-sidebar {
+    position: fixed;
+    top: 48px;
+    left: -260px;
+    bottom: 0;
+    width: 260px;
+    z-index: var(--r-ui-z-dialog);
+    box-shadow: var(--r-ui-shadow-lg);
+    transition: left var(--r-ui-duration-normal) var(--r-ui-ease-spring);
+  }
+  .r-ui-cockpit-sidebar.is-open {
+    left: 0;
+  }
+}
+
+/* 4. Mobile Adaptation (<= 767px): Bottom-Dock Cockpit with Touch Rails */
+@media (max-width: 767px) {
+  .r-ui-cockpit-sidebar {
+    display: none; /* Replaced by bottom dock */
+  }
+  
+  .r-ui-mobile-bottom-dock {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    height: var(--r-ui-bottom-dock-h, 56px);
+    background-color: var(--r-ui-color-surface);
+    border-top: 1px solid var(--r-ui-color-border-standard);
+    padding-bottom: env(safe-area-inset-bottom);
+    z-index: var(--r-ui-z-sticky);
+  }
+
+  .r-ui-bottom-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    color: var(--r-ui-color-text-tertiary);
+    text-decoration: none;
+    font-size: var(--r-ui-font-nano, 10px);
+    font-weight: 600;
+  }
+
+  .r-ui-bottom-nav-item.is-active {
+    color: var(--r-ui-color-accent-primary);
+  }
+
+  /* Force Horizontal Icon Rails on Mobile Toolbars */
+  .r-ui-toolbar {
+    overflow-x: auto;
+    flex-wrap: nowrap !important;
+    mask-image: var(--r-ui-mask-fade-x);
+    -webkit-mask-image: var(--r-ui-mask-fade-x);
+    scrollbar-width: none;
+  }
+}
+```
+
+### B. Container Query Recipe for Modular Widget Density
+Container queries allow cards and widgets to automatically adjust text and icon sizing based on their allocated pane width, rather than the global window width:
+
+```css
+.r-ui-pane-container {
+  container-type: inline-size;
+  container-name: pane;
+}
+
+/* Wide Container (>= 480px): Full KPI with micro-tags */
+@container pane (min-width: 480px) {
+  .r-ui-stat-metric {
+    font-size: var(--r-ui-font-h1);
+  }
+  .r-ui-stat-icon {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+/* Narrow Container (< 480px): Compact KPI with smaller icons */
+@container pane (max-width: 479px) {
+  .r-ui-stat-metric {
+    font-size: var(--r-ui-font-h3);
+  }
+  .r-ui-stat-icon {
+    width: 16px;
+    height: 16px;
+  }
+  .r-ui-stat-caption {
+    font-size: 10px;
+  }
+}
+```

@@ -76,7 +76,16 @@
   --r-ui-font-h3: clamp(1.25rem, 1.05rem + 1vw, 1.75rem);
   --r-ui-font-body: clamp(0.9375rem, 0.875rem + 0.3vw, 1.0625rem);
   --r-ui-font-small: clamp(0.8125rem, 0.775rem + 0.2vw, 0.875rem);
-  --r-ui-font-micro: 0.75rem;
+  --r-ui-font-micro: 0.75rem;       /* 12px - secondary metadata & table cell tags */
+  --r-ui-font-caption: 0.6875rem;   /* 11px - micro labels, status pills, shortcuts */
+  --r-ui-font-nano: 0.625rem;       /* 10px - dense telemetry timestamps & badges */
+
+  /* Letter Spacing (Tracking Inversion Law) */
+  --r-ui-tracking-hero: -0.035em;   /* Tight on large display text */
+  --r-ui-tracking-title: -0.02em;   /* Snug on headings */
+  --r-ui-tracking-normal: 0;        /* Normal on body */
+  --r-ui-tracking-wide: 0.04em;     /* Open on all-caps micro tags */
+  --r-ui-tracking-wider: 0.08em;    /* Extra open on dense status badges */
 
   /* Line Heights */
   --r-ui-leading-tight: 1.15;
@@ -126,4 +135,39 @@
   --r-ui-z-dialog: 50;
   --r-ui-z-popover: 60;
   --r-ui-z-toast: 100;
+
+  /* ==========================================================================
+     8. MULTI-TIER ICON SCALE SYSTEM
+     Bespoke SVG icons scaled optically to match typographical rhythm.
+     ========================================================================== */
+  --r-ui-icon-micro: 12px;    /* Inline tags, breadcrumb chevrons, mini status dots */
+  --r-ui-icon-sm: 16px;       /* Table row actions, dropdown chevrons, input prefixes */
+  --r-ui-icon-md: 20px;       /* Standard buttons, navigation links, toolbar triggers */
+  --r-ui-icon-lg: 24px;       /* Section headers, card status accents, modal headers */
+  --r-ui-icon-xl: 32px;       /* Empty states, hero callout features, stat card icons */
+  --r-ui-icon-hero: 40px;     /* Feature banners, onboarding splash graphics */
+
+  /* Icon Stroke Weights */
+  --r-ui-icon-stroke-thin: 1.25;  /* For large hero icons (32-40px) to prevent heaviness */
+  --r-ui-icon-stroke-std: 1.5;    /* Standard calibrated stroke on 20-24px optical grid */
+  --r-ui-icon-stroke-heavy: 2;    /* For micro icons (12-16px) to maintain clarity */
+
+  /* ==========================================================================
+     9. SINGLE-SCREEN VIEWPORT & COCKPIT CONSTRAINTS
+     Strict 100dvh zero-spill architecture with internal pane scrolling.
+     ========================================================================== */
+  --r-ui-viewport-height: 100dvh;
+  --r-ui-header-compact-h: 48px;
+  --r-ui-sidebar-expanded-w: 240px;
+  --r-ui-sidebar-rail-w: 60px;
+  --r-ui-bottom-dock-h: 56px;
+  --r-ui-action-dock-h: 44px;
+
+  /* ==========================================================================
+     10. HORIZONTAL SCROLL & FADE GRADIENT MASKS
+     Clean overflow handling for icon rails, tabs, and filter chip carousels.
+     ========================================================================== */
+  --r-ui-mask-fade-start: linear-gradient(to right, transparent, black 24px);
+  --r-ui-mask-fade-end: linear-gradient(to left, transparent, black 24px);
+  --r-ui-mask-fade-x: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
 }

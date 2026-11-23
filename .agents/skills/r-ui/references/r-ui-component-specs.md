@@ -765,3 +765,355 @@ Raw native <select> and <option> elements are **strictly banned** because OS pop
 }
 ```
 
+---
+
+## 15. Single-Screen Viewport-Fit Cockpit Layout
+Strict 100dvh zero-page-scroll architecture with independent bounded scroll zones.
+
+```css
+/* Root Cockpit Framework */
+.r-ui-cockpit-viewport {
+  width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--r-ui-color-canvas);
+  color: var(--r-ui-color-text-primary);
+}
+
+/* Compact Top Header */
+.r-ui-cockpit-header {
+  height: var(--r-ui-header-compact-h, 48px);
+  min-height: var(--r-ui-header-compact-h, 48px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--r-ui-space-4);
+  border-bottom: 1px solid var(--r-ui-color-border-standard);
+  background-color: var(--r-ui-color-surface);
+  z-index: var(--r-ui-z-sticky);
+}
+
+/* Main Split Workspace */
+.r-ui-cockpit-workspace {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Collapsible Cockpit Sidebar */
+.r-ui-cockpit-sidebar {
+  width: var(--r-ui-sidebar-expanded-w, 240px);
+  min-width: var(--r-ui-sidebar-expanded-w, 240px);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-right: 1px solid var(--r-ui-color-border-standard);
+  background-color: var(--r-ui-color-surface);
+  transition: width var(--r-ui-duration-normal) var(--r-ui-ease-spring),
+              min-width var(--r-ui-duration-normal) var(--r-ui-ease-spring);
+  overflow: hidden;
+}
+
+.r-ui-cockpit-sidebar.is-rail {
+  width: var(--r-ui-sidebar-rail-w, 60px);
+  min-width: var(--r-ui-sidebar-rail-w, 60px);
+}
+
+/* Central Workspace & Split Panes */
+.r-ui-cockpit-main {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Bounded Scroll Inner Container */
+.r-ui-bounded-pane {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--r-ui-color-border-standard) transparent;
+  padding: var(--r-ui-space-4);
+}
+
+.r-ui-bounded-pane::-webkit-scrollbar {
+  width: 6px;
+}
+.r-ui-bounded-pane::-webkit-scrollbar-thumb {
+  background: var(--r-ui-color-border-standard);
+  border-radius: var(--r-ui-radius-full);
+}
+```
+
+---
+
+## 16. Horizontal Icon & Tab Scroll Rail (Fade-Masked)
+Clean zero-wrap horizontal scrolling for category icons, filters, and toolbars.
+
+```css
+.r-ui-fade-rail {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  overflow: hidden;
+}
+
+.r-ui-fade-rail__track {
+  display: flex;
+  align-items: center;
+  gap: var(--r-ui-space-2);
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 4px 2px;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    black 20px,
+    black calc(100% - 20px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    black 20px,
+    black calc(100% - 20px),
+    transparent 100%
+  );
+}
+.r-ui-fade-rail__track::-webkit-scrollbar {
+  display: none;
+}
+
+.r-ui-fade-rail__item {
+  flex-shrink: 0;
+  scroll-snap-align: start;
+}
+
+/* Chevron scroll indicators */
+.r-ui-fade-rail__btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-ui-radius-full);
+  background: var(--r-ui-color-surface-elevated);
+  border: 1px solid var(--r-ui-color-border-standard);
+  color: var(--r-ui-color-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  box-shadow: var(--r-ui-shadow-xs);
+  opacity: 0.9;
+  transition: all var(--r-ui-duration-fast) var(--r-ui-ease-spring);
+}
+.r-ui-fade-rail__btn:hover {
+  opacity: 1;
+  background: var(--r-ui-color-surface-overlay);
+  border-color: var(--r-ui-color-accent-primary);
+}
+.r-ui-fade-rail__btn--prev { left: 2px; }
+.r-ui-fade-rail__btn--next { right: 2px; }
+```
+
+---
+
+## 17. Multi-Tier Optical Icon Size Utilities
+Calibrated sizing classes with integer pixel grid snapping and proportional strokes.
+
+```css
+.r-ui-icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+/* 12px Micro Icon */
+.r-ui-icon--micro {
+  width: var(--r-ui-icon-micro, 12px);
+  height: var(--r-ui-icon-micro, 12px);
+  stroke-width: var(--r-ui-icon-stroke-heavy, 2);
+}
+
+/* 16px Compact Icon */
+.r-ui-icon--sm {
+  width: var(--r-ui-icon-sm, 16px);
+  height: var(--r-ui-icon-sm, 16px);
+  stroke-width: var(--r-ui-icon-stroke-std, 1.5);
+}
+
+/* 20px Standard Icon */
+.r-ui-icon--md {
+  width: var(--r-ui-icon-md, 20px);
+  height: var(--r-ui-icon-md, 20px);
+  stroke-width: var(--r-ui-icon-stroke-std, 1.5);
+}
+
+/* 24px Prominent Icon */
+.r-ui-icon--lg {
+  width: var(--r-ui-icon-lg, 24px);
+  height: var(--r-ui-icon-lg, 24px);
+  stroke-width: var(--r-ui-icon-stroke-std, 1.5);
+}
+
+/* 32px Hero Icon */
+.r-ui-icon--xl {
+  width: var(--r-ui-icon-xl, 32px);
+  height: var(--r-ui-icon-xl, 32px);
+  stroke-width: var(--r-ui-icon-stroke-thin, 1.25);
+}
+```
+
+---
+
+## 18. Micro-Typography & Optical Scale Classes
+High-density visual rhythm balancing bold metrics against legible micro-metadata.
+
+```css
+/* Big KPI Stat Metric */
+.r-ui-text-kpi {
+  font-size: clamp(1.75rem, 1.25rem + 1.5vw, 2.25rem);
+  line-height: var(--r-ui-leading-tight, 1.15);
+  font-weight: 800;
+  letter-spacing: var(--r-ui-tracking-hero, -0.035em);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Section Subhead */
+.r-ui-text-section-title {
+  font-size: 0.875rem; /* 14px */
+  line-height: var(--r-ui-leading-snug, 1.35);
+  font-weight: 600;
+  letter-spacing: var(--r-ui-tracking-title, -0.02em);
+  color: var(--r-ui-color-text-primary);
+}
+
+/* Standard UI Label */
+.r-ui-text-ui {
+  font-size: 0.8125rem; /* 13px */
+  line-height: var(--r-ui-leading-snug, 1.35);
+  font-weight: 500;
+  color: var(--r-ui-color-text-primary);
+}
+
+/* Micro Metadata Label */
+.r-ui-text-caption {
+  font-size: var(--r-ui-font-caption, 0.6875rem); /* 11px */
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: var(--r-ui-tracking-wide, 0.04em);
+  text-transform: uppercase;
+  color: var(--r-ui-color-text-tertiary);
+}
+
+/* Nano Status Timestamp */
+.r-ui-text-nano {
+  font-size: var(--r-ui-font-nano, 0.625rem); /* 10px */
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: var(--r-ui-tracking-wider, 0.08em);
+  font-variant-numeric: tabular-nums;
+  color: var(--r-ui-color-text-muted);
+}
+```
+
+---
+
+## 19. Searchable Custom Dropdown Popover
+Accessible W3C compliant dropdown maintaining pristine screen real-estate.
+
+```css
+.r-ui-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.r-ui-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--r-ui-space-2);
+  min-height: 32px;
+  padding: 4px 10px;
+  background-color: var(--r-ui-color-surface-elevated);
+  border: 1px solid var(--r-ui-color-border-standard);
+  border-radius: var(--r-ui-radius-xs);
+  color: var(--r-ui-color-text-primary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--r-ui-duration-fast) var(--r-ui-ease-spring);
+}
+
+.r-ui-dropdown-trigger:hover {
+  border-color: var(--r-ui-color-border-strong);
+  background-color: var(--r-ui-color-surface-overlay);
+}
+
+.r-ui-dropdown-trigger[aria-expanded="true"] .r-ui-dropdown-chevron {
+  transform: rotate(180deg);
+}
+
+.r-ui-dropdown-chevron {
+  transition: transform var(--r-ui-duration-fast) var(--r-ui-ease-spring);
+}
+
+.r-ui-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 180px;
+  background-color: var(--r-ui-color-surface-overlay);
+  border: 1px solid var(--r-ui-color-border-standard);
+  border-radius: var(--r-ui-radius-sm);
+  box-shadow: var(--r-ui-shadow-md);
+  backdrop-filter: blur(12px);
+  padding: 4px;
+  z-index: var(--r-ui-z-dropdown);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: r-ui-slide-down var(--r-ui-duration-fast) var(--r-ui-ease-spring);
+}
+
+.r-ui-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: var(--r-ui-space-2);
+  padding: 6px 8px;
+  border-radius: var(--r-ui-radius-xs);
+  color: var(--r-ui-color-text-secondary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: all var(--r-ui-duration-instant) ease;
+}
+
+.r-ui-dropdown-item:hover,
+.r-ui-dropdown-item.is-selected {
+  background-color: var(--r-ui-color-surface-elevated);
+  color: var(--r-ui-color-text-primary);
+}
+
+.r-ui-dropdown-item.is-selected {
+  color: var(--r-ui-color-accent-primary);
+  font-weight: 600;
+}
+```
+```
+

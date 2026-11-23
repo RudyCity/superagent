@@ -1,8 +1,8 @@
 ---
 name: r-ui
-description: Universal UI/UX Design System, Multi-Theme, Modular Color Accent, 9-Pillar Complete Dashboard Kit Architecture (45+ Production Components), Spatial Harmony & Layout Precision Doctrine, Color Science & Palette Architecture (60-30-10, Tonal Ramps, Undertones), Typographic Composition Doctrine (3-Tier Font Pairing, Modular Scale, Leading Ratios, Tracking Inversion, 3-Weight Discipline), Kinetic Physics & Micro-Interactions (Designspells Delight, Spring Curves, Tactile Press), Accessibility & Keyboard Spatial Navigation (WCAG 2.2 AAA Double-Ring Focus, Roving Tabindex, ARIA Live Regions), Component State Machine Exhaustiveness (6 Universal Visual States), Unified Canvas & Line-less Workspace Doctrine (Seamless Master-Detail, Unified Title Bar & Floating Action Dock), On-Demand Bespoke SVG Icon Crafting Doctrine (24x24 Optical Grid, 1.5px Geometry, Zero-Dependency Theme Reactivity), Project-Adaptive & Live Playground Architecture Skill. Enforces anti-slop aesthetic standards (11 Anti-Slop Visual Laws: zero thick asymmetric left borders, crisp 1px uniform perimeter, zero generic purple haze, zero neon, zero heavy shadows), anti-rigid project adaptation (5 project archetypes & 4 visual dials), visual-first density, dual-layer theming (5 Canvas Themes + 8 Calibrated Color Themes), strict componentized form policy (zero raw native forms), headless/unstyled component flexibility, live interactive showcase, multi-framework integration (React, Next.js, Tailwind v3/v4, Vue, Svelte, Ink CLI), fluid cross-platform responsiveness (Web, Windows, macOS, Linux, Android, iOS, Foldables, Smart TV), and integration with curated design references (jiro.build, designspells.com, styles.refero.design, supahero.io, mobbin.com).
+description: Universal UI/UX Design System, Multi-Theme, Modular Color Accent, 9-Pillar Complete Dashboard Kit Architecture (45+ Production Components), Spatial Harmony & Layout Precision Doctrine, Color Science & Palette Architecture (60-30-10, Tonal Ramps, Undertones), Typographic Composition Doctrine (3-Tier Font Pairing, Modular Scale, Leading Ratios, Tracking Inversion, 3-Weight Discipline), Kinetic Physics & Micro-Interactions (Designspells Delight, Spring Curves, Tactile Press), Accessibility & Keyboard Spatial Navigation (WCAG 2.2 AAA Double-Ring Focus, Roving Tabindex, ARIA Live Regions), Component State Machine Exhaustiveness (6 Universal Visual States), Unified Canvas & Line-less Workspace Doctrine (Seamless Master-Detail, Unified Title Bar & Floating Action Dock), On-Demand Bespoke SVG Icon Crafting Doctrine (24x24 Optical Grid, 1.5px Geometry, Zero-Dependency Theme Reactivity), Viewport-Fit Single-Screen Cockpit Doctrine (100dvh Zero-Spill Architecture, Internal Pane Bounded Scrolling), Optical Hierarchy Doctrine (Besar-Kecil Text & Multi-Tier Bespoke Icon Sizing 12px-40px), Progressive Disclosure & Interactive Space-Savers (Custom Dropdown Popovers, Searchable Selects), Horizontal Icon & Tab Scroll Rails with Fade Gradient Masks, Project-Adaptive & Live Playground Architecture Skill. Enforces anti-slop aesthetic standards (11 Anti-Slop Visual Laws: zero thick asymmetric left borders, crisp 1px uniform perimeter, zero generic purple haze, zero neon, zero heavy shadows), anti-rigid project adaptation (5 project archetypes & 4 visual dials), visual-first density, dual-layer theming (5 Canvas Themes + 8 Calibrated Color Themes), strict componentized form policy (zero raw native forms), headless/unstyled component flexibility, live interactive showcase, multi-framework integration (React, Next.js, Tailwind v3/v4, Vue, Svelte, Ink CLI), fluid cross-platform responsiveness (Web, Windows, macOS, Linux, Android, iOS, Foldables, Smart TV), and integration with curated design references (jiro.build, designspells.com, styles.refero.design, supahero.io, mobbin.com).
 when_to_use: Use whenever designing, building, auditing, refactoring, or reviewing user interfaces (UI), user experiences (UX), dashboard kits, admin consoles, SaaS platforms, responsive layouts, design systems, design tokens, micro-interactions, components, color themes, project adaptation, interactive showcases, or cross-platform web/app experiences.
-version: 3.3.0
+version: 3.4.0
 ---
 
 # r-ui: Universal UI/UX Design System & Visual-First Architecture
@@ -145,7 +145,7 @@ When designing, reviewing, or refactoring UI/UX, verify patterns against the 5 e
 
 ---
 
-## 8. PRE-FLIGHT UI/UX AUDIT CHECKLIST (28-Point Master Gate)
+## 8. PRE-FLIGHT UI/UX AUDIT CHECKLIST (34-Point Master Gate)
 
 ```text
 [ ] 1.  Anti-Slop Check: Free of AI-purple mesh gradients, monotonous uniform bentos, & "Lorem Ipsum" dummy text.
@@ -176,6 +176,12 @@ When designing, reviewing, or refactoring UI/UX, verify patterns against the 5 e
 [ ] 26. Anti-Thick Left Border & Asymmetric Strip Check: 100% free of asymmetric border-l-4 / border-l-2 or thick accent bars on rounded cards, callouts, and active items; strictly utilizes crisp 1px uniform perimeter borders and soft background tint or decoupled floating indicators.
 [ ] 27. Unified Canvas & Line-less Workspace Check: For modern productivity/developer tools and AI workspaces, validates seamless canvas integration without boxy hard dividers between sidebar and workspace, unified compact header/titlebar, floating action dock, and Gestalt negative-space separation.
 [ ] 28. On-Demand Bespoke SVG Icon Check: When icons are needed, validates that icons are crafted on a 24x24 optical grid (2px margin) with crisp 1.5px stroke, stroke="currentColor", round linecap/linejoin, zero neon filter slop, and proper WCAG accessibility (aria-hidden="true" on decorative icons, aria-label on interactive controls).
+[ ] 29. Single-Screen Viewport Containment Gate: Enforces strict 100dvh zero-spill architecture. Outer page scrollbar is eliminated; layout panes use internal bounded scroll zones with sleek thin scrollbars (scrollbar-width: thin).
+[ ] 30. Optical Typographic Scale Hierarchy Gate: Clear typographic hierarchy separating Display KPI metrics, Page Headers, Section Titles, Body Text, and Micro/Caption Tags (10-11px with +0.05em tracking) without visual crowding.
+[ ] 31. Multi-Tier Icon Scale & Optical Mass Gate: Icons are sized in calibrated tiers (Micro 12-14px, Compact 16-18px, Standard 20-22px, Prominent 24-28px, Hero 32-40px) with adjusted stroke weights (2.0px for micro, 1.5px standard, 1.25px hero) and optical weight balancing.
+[ ] 32. Progressive Disclosure & Space-Saver Gate: Complex secondary actions and filters are tucked cleanly into accessible custom select/dropdown popovers or slide-over inspector sheets, preventing primary screen clutter.
+[ ] 33. Horizontal Fade-Masked Scroll Rail Gate: Toolbars, filter chips, and icon carousels exceeding viewport width utilize smooth horizontal scrolling with CSS gradient edge masks (mask-image: linear-gradient(...)) and optional scroll arrows.
+[ ] 34. Instant Multi-Device Responsiveness Gate: Single-screen layout adapts seamlessly across Desktop (3-pane cockpit), Laptop (auto-collapsed mini-rail), Tablet (touch-optimized drawer), and Mobile (bottom navigation dock + bottom sheets) without layout breakage.
 ```
 
 ---
@@ -718,3 +724,237 @@ const RUiIcon = ({ size = 20, label, children, ...props }) => (
 - **Dynamic Masking & Radar Pulses**: Support live status telemetry with expanding radar ripple rings and animated secret reveal lines.
 
 *Complete on-demand recipes, kinetic morphing kit & optical balance guide:* [r-ui-on-demand-icon-crafting.md](references/r-ui-on-demand-icon-crafting.md).
+
+---
+
+## 20. VIEWPORT-FIT SINGLE-SCREEN COCKPIT DOCTRINE (100dvh Zero-Spill Architecture)
+
+```text
++---------------------------------------------------------------------------------------------------+
+|                        VIEWPORT-FIT SINGLE-SCREEN COCKPIT ARCHITECTURE                            |
++---------------------------------------------------------------------------------------------------+
+|  [ TOP COMPACT HEADER ] ── 48px Fixed Height (Org Switcher, Breadcrumb, Status, Quick Actions)    |
++-----------------------------------+---------------------------------------------------------------+
+|  COLLAPSIBLE SIDEBAR RAIL         |  MAIN WORKSPACE VIEWPORT-FIT (Height: calc(100dvh - 48px))    |
+|  240px (Expanded) / 60px (Mini)   |  +---------------------------------------------------------+  |
+|  Zero-Scroll Primary Navigation   |  | TELEMETRY RIBBON: Compact 1-line Stat Gauges (Zero Gap) |  |
+|                                   |  +---------------------------------------------------------+  |
+|  - Workspace Pill                 |  | SPLIT-PANE WORKSPACE:                                   |  |
+|  - Main Nav Groups                |  | - Entity List / Data Table (Bounded Scroll: thin bar)   |  |
+|  - Bottom Profile Dock            |  | - Detail Inspector Pane (Zero Page Reload)              |  |
+|                                   |  +---------------------------------------------------------+  |
+|                                   |  | [ FLOATING / STICKY ACTION DOCK ] (36-44px Bottom Dock) |  |
++-----------------------------------+---------------------------------------------------------------+
+```
+
+### 20.1. The Zero-Outer-Scroll Invariant
+1. **No Window-Level Page Scrolling**: Analytical dashboards, DevOps telemetry consoles, and SaaS cockpits must fit entirely within the browser viewport (`height: 100dvh; overflow: hidden;`).
+2. **Inner Bounded Scroll Panes**: When content (such as data tables, terminal feeds, or inspector forms) exceeds its allocated container, scrolling occurs **strictly within that specific pane** (`overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;`). The header, sidebar, telemetry ribbons, and action docks remain perfectly anchored.
+3. **No Trapped Dead-Space**: Panes expand to fill available height using Flexbox (`flex: 1 1 0; min-height: 0;`) or CSS Grid (`grid-template-rows: auto 1fr auto;`), guaranteeing that no empty void or awkward gap appears between sections.
+
+### 20.2. Core Viewport-Fit CSS Architecture
+```css
+/* Root Cockpit Scaffold */
+.r-ui-cockpit-viewport {
+  width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--r-ui-color-canvas);
+  color: var(--r-ui-color-text-primary);
+}
+
+/* 48px Compact Header */
+.r-ui-cockpit-header {
+  height: var(--r-ui-header-compact-h, 48px);
+  min-height: var(--r-ui-header-compact-h, 48px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--r-ui-space-4);
+  border-bottom: 1px solid var(--r-ui-color-border-standard);
+  background-color: var(--r-ui-color-surface);
+  z-index: var(--r-ui-z-sticky);
+}
+
+/* Main Split Workspace */
+.r-ui-cockpit-workspace {
+  flex: 1 1 0;
+  min-height: 0; /* Crucial for nested flex scrolling */
+  display: flex;
+  overflow: hidden;
+}
+
+/* Bounded Scroll Inner Pane */
+.r-ui-bounded-pane {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--r-ui-color-border-standard) transparent;
+  padding: var(--r-ui-space-4);
+}
+```
+
+---
+
+## 21. OPTICAL HIERARCHY DOCTRINE: BESAR-KECIL TEKS & MULTI-TIER ICON SCALING
+
+To pack rich information into a single screen without creating cognitive noise, `r-ui` enforces strict optical contrast between typography and iconography:
+
+```text
++---------------------------------------------------------------------------------------------------+
+|                      BESAR-KECIL TYPOGRAPHY & ICON OPTICAL MATCHING TABLE                         |
++---------------------+-------------------+---------------------+------------------+----------------+
+| TIER / ROLE         | FONT SIZE & TRACK | LINE-HEIGHT / WT    | ICON SIZE & STRK | PRIMARY USAGE  |
++---------------------+-------------------+---------------------+------------------+----------------+
+| Hero / KPI Value    | 28px - 36px (-3%) | 1.10 / Extrabold 800| 32px (1.25px str)| Big metrics    |
+| Page / Drawer Title | 18px - 20px (-2%) | 1.25 / Bold 700     | 24px (1.50px str)| Screen titles  |
+| Section Header      | 14px - 15px (-1%) | 1.35 / Semibold 600 | 20px (1.50px str)| Card headers   |
+| Standard UI / Body  | 13px - 14px ( 0%) | 1.45 / Regular 400  | 16px (1.50px str)| Inputs, rows   |
+| Compact / Meta      | 12px ( 0%)        | 1.30 / Medium 500   | 14px (1.75px str)| Secondary info |
+| Micro / Caption Tag | 10px - 11px (+6%) | 1.15 / Bold 700     | 12px (2.00px str)| Status badges  |
++---------------------+-------------------+---------------------+------------------+----------------+
+```
+
+### 21.1. Typographic Contrast Rules (Besar-Kecil Text)
+1. **KPI Numerics (Big Text)**: Large figures (`$284,920`, `99.98%`) use `28px–36px` font with `font-variant-numeric: tabular-nums; letter-spacing: -0.03em; font-weight: 800`.
+2. **Context Labels (Small Micro-Text)**: Underneath large KPIs, use `10px–11px` uppercase metadata (`MONTHLY RECURRING REVENUE`) with `letter-spacing: 0.06em; font-weight: 700; color: var(--r-ui-color-text-tertiary);`.
+3. **Leading Ratios**: Never let body leading (`1.6`) contaminate display titles (`1.10`) or compact UI rows (`1.35`). Proportional line-height prevents vertical ballooning on single-screen views.
+
+### 21.2. Multi-Tier Bespoke Icon Sizing (Besar-Kecil Icon)
+1. **Micro Icons (`12px–14px`)**: Used inside status pills, inline table tags, and breadcrumb chevrons. Declare `stroke-width="2.0"` so thin strokes do not wash out at small scales.
+2. **Compact Icons (`16px–18px`)**: Used for table row action buttons, input prefixes, and dropdown chevrons. Declare `stroke-width="1.5"`.
+3. **Standard Icons (`20px–22px`)**: Used for primary sidebar navigation links and header utility icons. Declare `stroke-width="1.5"`.
+4. **Prominent Icons (`24px–28px`)**: Used for modal titles and feature card headers. Declare `stroke-width="1.5"`.
+5. **Hero Icons (`32px–40px`)**: Used for empty states, success celebrations, and onboarding. Declare `stroke-width="1.25"` to prevent heavy visual clunkiness.
+
+---
+
+## 22. PROGRESSIVE DISCLOSURE & INTERACTIVE SPACE-SAVERS (Custom Dropdowns & Popovers)
+
+To maintain a clean, uncluttered single-screen interface without sacrificing deep capability, secondary filters, complex options, and row actions must be deferred to **Custom Accessible Dropdowns & Popovers**:
+
+```text
++---------------------------------------------------------------------------------------------------+
+|                        PROGRESSIVE DISCLOSURE DENSITY ARCHITECTURE                                |
++---------------------------------------------------------------------------------------------------+
+|  [ PRIMARY SCREEN: High-Priority Signals Only ]                                                   |
+|  - Quick search field + 3-4 top filter pills                                                      |
+|  - Compact Trigger: [ ▾ More Filters (3) ] ──► Opens Floating Popover Menu                        |
+|  - Row Action Trigger: [ ··· ]             ──► Opens Context Menu (Edit, Clone, Archive, Delete)  |
+|  - Entity Row Click:                       ──► Slides out Right Inspector Drawer (Zero Navigation)|
++---------------------------------------------------------------------------------------------------+
+```
+
+### 22.1. Custom Accessible Dropdown Anatomy
+- **Trigger Element**: Sleek compact button (`height: 32px; padding: 4px 10px; font-size: 13px; border-radius: 6px;`). Displays current active label, leading icon, and an animated chevron that rotates smoothly on open (`transform: rotate(180deg)`).
+- **Floating Popover**:
+  - `position: absolute; z-index: var(--r-ui-z-dropdown);`
+  - Subtle micro-elevation (`box-shadow: var(--r-ui-shadow-md); border: 1px solid var(--r-ui-color-border-standard);`)
+  - Frosted glass backdrop (`backdrop-filter: blur(12px); background-color: var(--r-ui-color-surface-overlay);`)
+  - Search filter input for menus containing more than 6 items.
+  - Keyboard navigation (`ArrowDown`, `ArrowUp`, `Enter`, `Escape`).
+
+---
+
+## 23. HORIZONTAL ICON & TAB SCROLL RAILS (Zero-Break Overflow Architecture)
+
+When toolbars, category filters, navigation tags, or icon feeds exceed the available screen width, **NEVER wrap them onto multiple lines** (which ruins single-screen vertical containment). Instead, deploy a **Horizontal Scroll Rail with Fade-Masks**:
+
+```text
++---------------------------------------------------------------------------------------------------+
+|                        HORIZONTAL FADE-MASKED SCROLL RAIL                                         |
++---------------------------------------------------------------------------------------------------+
+|  [<]  ░░░ [⚡ All] [📊 Metrics] [🔒 Security] [🚀 Deploys] [👥 Users] [⚙️ Config] ░░░  [>]        |
+|  Left Fade-Mask                                                      Right Fade-Mask              |
+|  (Transparent -> Solid)                                              (Solid -> Transparent)       |
++---------------------------------------------------------------------------------------------------+
+```
+
+### 23.1. Fade-Masked Scroll Rail CSS Implementation
+```css
+.r-ui-scroll-rail-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  overflow: hidden;
+}
+
+.r-ui-scroll-rail {
+  display: flex;
+  align-items: center;
+  gap: var(--r-ui-space-2);
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none; /* Hide default scrollbar */
+  -ms-overflow-style: none;
+  padding: 4px 2px;
+  /* CSS Mask creates smooth gradient fade at left and right edges */
+  mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    black 24px,
+    black calc(100% - 24px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    black 24px,
+    black calc(100% - 24px),
+    transparent 100%
+  );
+}
+
+.r-ui-scroll-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.r-ui-scroll-rail-item {
+  flex-shrink: 0;
+  scroll-snap-align: start;
+}
+
+/* Navigational Arrow Controls for Precision Pointers */
+.r-ui-scroll-rail-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-ui-radius-full);
+  background: var(--r-ui-color-surface-elevated);
+  border: 1px solid var(--r-ui-color-border-standard);
+  color: var(--r-ui-color-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  box-shadow: var(--r-ui-shadow-xs);
+  transition: all var(--r-ui-duration-fast) var(--r-ui-ease-spring);
+}
+.r-ui-scroll-rail-btn--prev { left: 0; }
+.r-ui-scroll-rail-btn--next { right: 0; }
+```
+
+---
+
+## 24. UNIVERSAL MULTI-DEVICE INSTANT RESPONSIVENESS MATRIX
+
+Every single-screen interface crafted with `r-ui` responds instantly across all device viewports:
+
+| Device Viewport | Dimensions | Layout Structure & Adaptations |
+| :--- | :--- | :--- |
+| **Desktop Ultra-Wide & 4K** | $\ge 1440\text{px}$ | **3-Pane Cockpit**: Expanded Sidebar (240px), Main Workspace (Bento 3-col Grid / Data Table), and Persistent Right Inspector Drawer (320px). Zero vertical page scroll. |
+| **Laptop / Compact PC** | $1024\text{px} - 1439\text{px}$ | **2-Pane Adaptive**: Sidebar automatically collapses into Mini-Rail (60px) with hover tooltips; Right Inspector slides over as an overlay drawer when requested; Density Dial set to 7-8. |
+| **Tablet / iPad** | $768\text{px} - 1023\text{px}$ | **Drawer Navigation**: Sidebar hidden behind hamburger trigger; 2-column bento grid; touch targets scaled to min 44×44px; horizontal icon rails enabled for filters. |
+| **Mobile Smartphone** | $360\text{px} - 767\text{px}$ | **Bottom-Dock Cockpit**: Top compact bar (title + avatar); 1-column vertically bounded cards; bottom navigation dock (56px) with micro icons; slide-up bottom sheets for filters/actions; `safe-area-inset-bottom` applied. |
+| **Foldables** | Unfolded ($8:7$ / $4:3$) | **Dual-Pane Book Mode**: Navigation + master list on left screen half, detail inspector on right screen half. |
+

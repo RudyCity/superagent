@@ -1078,6 +1078,9 @@ export function startDeadlockRecoveryDaemon(checkIntervalMs: number = 5000) {
       }
     });
   }, checkIntervalMs);
+  if (typeof (recoveryDaemonTimer as any)?.unref === "function") {
+    (recoveryDaemonTimer as any).unref();
+  }
 }
 
 export function stopDeadlockRecoveryDaemon() {

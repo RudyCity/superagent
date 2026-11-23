@@ -773,7 +773,7 @@ async function cmdStatus(): Promise<string> {
 export const controlChromeVisionTool: Tool = {
   name: "control_chrome_vision",
   description:
-    "Vision-Based Chrome Perception & Automation via local UI-DETR-1 AI (no manual DOM selectors needed). " +
+    "Vision-Based Chrome CDP Perception & Automation via local UI-DETR-1 AI (no manual DOM selectors needed). " +
     "Provides Set-of-Mark (SoM) visual perception, ID-based coordinate clicking, typing, before/after visual state verification, and automated layout defect auditing. " +
     "PRIMARY COMMANDS: " +
     "1. 'perceive_page': Takes screenshot, overlays Set-of-Mark [1, 2, 3...] tags, and embeds the visual image for direct LLM multimodal inspection. " +

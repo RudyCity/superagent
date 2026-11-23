@@ -48,6 +48,34 @@ Geometrical shapes have differing visual weights even when their bounding boxes 
 
 ---
 
+## 2.1. THE MULTI-TIER OPTICAL SIZING & STROKE CALIBRATION MATRIX
+
+Icons must scale proportionally in stroke weight as their dimensions change to prevent hairline washout or visual clutter:
+
+```text
++---------------------------------------------------------------------------------------------------+
+|                        MULTI-TIER ICON OPTICAL SIZING SPECIFICATION                               |
++-----------+---------------+--------------------+--------------+-----------------------------------+
+| TIER      | DIMENSIONS    | VIEWBOX CANVAS     | STROKE WIDTH | INTENDED USAGE CONTEXT            |
++-----------+---------------+--------------------+--------------+-----------------------------------+
+| Micro     | 12px - 14px   | 0 0 16 16 (1px pad)| 2.00px       | Inline badges, table status dots  |
+| Compact   | 16px - 18px   | 0 0 16 16 / 24 24  | 1.50px - 1.75| Dropdown chevrons, input prefixes |
+| Standard  | 20px - 22px   | 0 0 24 24 (2px pad)| 1.50px       | Nav links, primary action buttons |
+| Prominent | 24px - 28px   | 0 0 24 24 (2px pad)| 1.50px       | Modal titles, card accent badges  |
+| Hero      | 32px - 40px   | 0 0 24 24 (2px pad)| 1.25px       | Empty states, onboarding features |
++-----------+---------------+--------------------+--------------+-----------------------------------+
+```
+
+### Micro-Grid Rules (12px - 14px)
+- When rendering icons at 12px–14px inside badges or micro-typography pills, a 1.5px stroke often renders as a faint, blurry smudge on 1x displays.
+- **Rule**: Boost stroke to `2.0` on 12px icons, or use clean geometric primitives (`<circle>`, `<path>`) with fewer nodes.
+
+### Hero-Grid Rules (32px - 40px)
+- When scaling up to 32px–40px for empty states, keeping a heavy 2.0px or 1.5px stroke makes the icon feel clunky and cartoonish.
+- **Rule**: Lower stroke to `1.25` on hero icons to maintain an airy, refined, high-end agency aesthetic.
+
+---
+
 ## 3. ON-DEMAND GEOMETRIC PRIMITIVES COOKBOOK
 
 When an agent needs an icon on-demand during component implementation, use these mathematically verified path recipes:

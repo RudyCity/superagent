@@ -88,3 +88,4 @@ if (fs.existsSync(srcFonts)) {
 }
 
 console.log("MCP Chrome schemas synchronized: dist=" + local + ", existing Antigravity folder=" + antigravity + ".");
+process.exit(0);

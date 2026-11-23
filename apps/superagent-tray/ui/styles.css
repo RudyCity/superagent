@@ -678,6 +678,15 @@ html, body {
   border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
   border-radius: var(--radius-md, 10px);
   overflow-x: auto;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  mask-image: var(--r-ui-mask-fade-x, linear-gradient(to right, transparent 0px, black 16px, black calc(100% - 16px), transparent 100%));
+  -webkit-mask-image: var(--r-ui-mask-fade-x, linear-gradient(to right, transparent 0px, black 16px, black calc(100% - 16px), transparent 100%));
+}
+.settings-subnav::-webkit-scrollbar {
+  display: none;
 }
 .settings-subnav-btn {
   display: inline-flex;
@@ -693,6 +702,8 @@ html, body {
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
+  flex-shrink: 0;
+  scroll-snap-align: start;
   transition: all var(--transition-fast, 150ms ease);
 }
 .settings-subnav-btn:hover {
@@ -977,7 +988,32 @@ html, body {
   --r-ui-transition-fast: 160ms cubic-bezier(0.16, 1, 0.3, 1);
   --r-ui-transition-normal: 220ms cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* --- 10. Backward-Compatibility Aliases --- */
+  /* --- 10. r-ui v3.4.0 Multi-Tier Icon Scale System --- */
+  --r-ui-icon-micro: 12px;
+  --r-ui-icon-sm: 16px;
+  --r-ui-icon-md: 20px;
+  --r-ui-icon-lg: 24px;
+  --r-ui-icon-xl: 32px;
+  --r-ui-icon-hero: 40px;
+
+  --r-ui-icon-stroke-thin: 1.25;
+  --r-ui-icon-stroke-std: 1.5;
+  --r-ui-icon-stroke-heavy: 2.0;
+
+  /* --- 11. r-ui v3.4.0 Optical Typographic Scale & Tracking Inversion --- */
+  --r-ui-font-kpi: clamp(1.75rem, 1.25rem + 1.5vw, 2.25rem);
+  --r-ui-font-caption: 0.6875rem; /* 11px */
+  --r-ui-font-nano: 0.625rem;    /* 10px */
+  --r-ui-tracking-hero: -0.035em;
+  --r-ui-tracking-title: -0.02em;
+  --r-ui-tracking-wide: 0.04em;
+  --r-ui-tracking-wider: 0.08em;
+
+  /* --- 12. r-ui v3.4.0 Single-Screen Viewport & Horizontal Fade Masks --- */
+  --r-ui-viewport-height: 100dvh;
+  --r-ui-mask-fade-x: linear-gradient(to right, transparent 0px, black 20px, black calc(100% - 20px), transparent 100%);
+
+  /* --- 13. Backward-Compatibility Aliases --- */
   --bg-base: var(--r-ui-color-canvas-base);
   --bg-sidebar: var(--r-ui-color-canvas-sidebar);
   --bg-surface: var(--r-ui-color-canvas-surface);
@@ -1211,11 +1247,13 @@ button:disabled {
   background: rgba(255, 255, 255, 0.22);
 }
 
-/* Master Shell Layout */
+/* Master Shell Layout - r-ui v3.4.0 Single-Screen Cockpit (100dvh Zero-Spill) */
 .shell {
-  min-height: calc(100vh - var(--tray-titlebar-height));
+  height: calc(100dvh - var(--tray-titlebar-height, 44px));
+  max-height: calc(100dvh - var(--tray-titlebar-height, 44px));
   display: grid;
   grid-template-columns: var(--tray-sidebar-width, 250px) 1fr;
+  overflow: hidden;
 }
 
 /* Sidebar Component */
@@ -1227,8 +1265,9 @@ button:disabled {
   flex-direction: column;
   gap: 20px;
   position: sticky;
-  top: var(--tray-titlebar-height);
-  height: calc(100vh - var(--tray-titlebar-height));
+  top: var(--tray-titlebar-height, 44px);
+  height: calc(100dvh - var(--tray-titlebar-height, 44px));
+  max-height: calc(100dvh - var(--tray-titlebar-height, 44px));
   overflow: hidden;
 }
 
@@ -1561,10 +1600,15 @@ button:disabled {
   opacity: 0.75;
 }
 
-/* Main Content Area */
+/* Main Content Area - r-ui v3.4.0 Bounded Scroll Inner Container */
 .main {
-  padding: 28px 36px calc(36px + var(--tray-footer-height));
+  height: calc(100dvh - var(--tray-titlebar-height, 44px));
+  max-height: calc(100dvh - var(--tray-titlebar-height, 44px));
+  padding: 28px 36px calc(36px + var(--tray-footer-height, 28px));
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12)) transparent;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -4689,3 +4733,147 @@ tbody tr:hover {
   .runtime-mcp-access-overview,#runtime-mcp-connected-panel.runtime-mcp-connected-card{padding:15px}
   .runtime-mcp-security-link{width:100%;min-height:44px}
 }
+
+/* ==========================================================================
+   r-ui v3.4.0 · Universal Multi-Tier Icon & Optical Hierarchy Utilities
+   ========================================================================== */
+.r-ui-icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+  color: currentColor;
+}
+.r-ui-icon--micro { width: var(--r-ui-icon-micro, 12px); height: var(--r-ui-icon-micro, 12px); stroke-width: var(--r-ui-icon-stroke-heavy, 2.0); }
+.r-ui-icon--sm { width: var(--r-ui-icon-sm, 16px); height: var(--r-ui-icon-sm, 16px); stroke-width: var(--r-ui-icon-stroke-std, 1.5); }
+.r-ui-icon--md { width: var(--r-ui-icon-md, 20px); height: var(--r-ui-icon-md, 20px); stroke-width: var(--r-ui-icon-stroke-std, 1.5); }
+.r-ui-icon--lg { width: var(--r-ui-icon-lg, 24px); height: var(--r-ui-icon-lg, 24px); stroke-width: var(--r-ui-icon-stroke-std, 1.5); }
+.r-ui-icon--xl { width: var(--r-ui-icon-xl, 32px); height: var(--r-ui-icon-xl, 32px); stroke-width: var(--r-ui-icon-stroke-thin, 1.25); }
+
+/* Optical Typography Scale Classes */
+.r-ui-text-kpi {
+  font-size: var(--r-ui-font-kpi, 24px);
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: var(--r-ui-tracking-hero, -0.035em);
+  font-variant-numeric: tabular-nums;
+}
+.r-ui-text-caption {
+  font-size: var(--r-ui-font-caption, 11px);
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: var(--r-ui-tracking-wide, 0.04em);
+  text-transform: uppercase;
+  color: var(--r-ui-color-text-secondary, #94a3b8);
+}
+.r-ui-text-nano {
+  font-size: var(--r-ui-font-nano, 10px);
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: var(--r-ui-tracking-wider, 0.08em);
+  font-variant-numeric: tabular-nums;
+  color: var(--r-ui-color-text-muted, #64748b);
+}
+
+/* Horizontal Fade-Masked Scroll Rail (Zero-Break Overflow Architecture) */
+.r-ui-fade-rail,
+.fade-scroll-rail {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  overflow: hidden;
+}
+.r-ui-fade-rail__track,
+.fade-scroll-rail-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 4px 2px;
+  mask-image: var(--r-ui-mask-fade-x, linear-gradient(to right, transparent 0px, black 20px, black calc(100% - 20px), transparent 100%));
+  -webkit-mask-image: var(--r-ui-mask-fade-x, linear-gradient(to right, transparent 0px, black 20px, black calc(100% - 20px), transparent 100%));
+}
+.r-ui-fade-rail__track::-webkit-scrollbar,
+.fade-scroll-rail-track::-webkit-scrollbar {
+  display: none;
+}
+.r-ui-fade-rail__item,
+.fade-scroll-rail-item {
+  flex-shrink: 0;
+  scroll-snap-align: start;
+}
+
+/* Custom Accessible Dropdown Popover (r-ui v3.4.0) */
+.r-ui-dropdown {
+  position: relative;
+  display: inline-block;
+}
+.r-ui-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 10px;
+  background-color: var(--r-ui-color-canvas-surface-elevated, #161b22);
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));
+  border-radius: var(--r-ui-radius-sm, 6px);
+  color: var(--r-ui-color-text-primary, #f0f6fc);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--r-ui-transition-fast, 160ms cubic-bezier(0.16, 1, 0.3, 1));
+}
+.r-ui-dropdown-trigger:hover {
+  border-color: var(--r-ui-color-border-strong, rgba(255, 255, 255, 0.22));
+  background-color: var(--r-ui-color-canvas-surface-hover, #1f2937);
+}
+.r-ui-dropdown-trigger[aria-expanded="true"] .r-ui-dropdown-chevron {
+  transform: rotate(180deg);
+}
+.r-ui-dropdown-chevron {
+  transition: transform var(--r-ui-transition-fast, 160ms cubic-bezier(0.16, 1, 0.3, 1));
+}
+.r-ui-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 180px;
+  background-color: var(--r-ui-color-canvas-surface-elevated, #161b22);
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));
+  border-radius: var(--r-ui-radius-md, 8px);
+  box-shadow: var(--r-ui-shadow-popover, 0 16px 36px -6px rgba(0, 0, 0, 0.58));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 4px;
+  z-index: 2500;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: settingsSubpageFade 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.r-ui-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--r-ui-radius-xs, 4px);
+  color: var(--r-ui-color-text-secondary, #8b949e);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.r-ui-dropdown-item:hover,
+.r-ui-dropdown-item.is-selected {
+  background-color: var(--r-ui-color-canvas-surface-hover, #1f2937);
+  color: var(--r-ui-color-text-primary, #f0f6fc);
+}
+.r-ui-dropdown-item.is-selected {
+  color: var(--r-ui-color-accent-primary, #38bdf8);
+  font-weight: 600;
+}
+

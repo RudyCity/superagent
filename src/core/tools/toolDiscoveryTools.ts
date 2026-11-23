@@ -130,7 +130,11 @@ const INTENT_SYNONYMS: Record<string, string[]> = {
   build: ["compile", "test", "run", "command"],
   test: ["run", "command", "execute", "verify"],
   commit: ["git", "stage", "repository"],
-  browse: ["chrome", "browser", "cdp", "web"],
+  browse: ["chrome", "browser", "cdp", "web", "vision"],
+  cdp: ["chrome", "browser", "cdp", "vision", "web", "tab", "emulate", "cursor"],
+  chrome: ["cdp", "browser", "web", "tab", "profile", "vision"],
+  browser: ["chrome", "cdp", "web", "tab", "navigate", "vision"],
+  vision: ["chrome", "cdp", "som", "visual", "ui_detr"],
   remember: ["memory", "rmemory", "history"],
   project: ["workspace", "file", "repository"],
   deploy: ["git", "ssh", "terminal", "process"],
@@ -143,6 +147,8 @@ const INTENT_SYNONYMS: Record<string, string[]> = {
   baca: ["read", "view", "file"],
   simpan: ["write", "save", "memory"],
   memori: ["rmemory", "memory", "history"],
+  jelajah: ["chrome", "browser", "cdp", "web"],
+  web: ["browser", "chrome", "cdp", "navigate"],
 };
 
 /** Low-cost intent matching against only the authorized catalog. */

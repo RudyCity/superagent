@@ -481,8 +481,16 @@
 .notification-kind-filter.is-action .notification-kind-count { color: var(--notif-warning); }
 .notification-filter-scroll {
   overflow-x: auto;
-  scrollbar-width: thin;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   padding-bottom: 2px;
+  mask-image: var(--r-ui-mask-fade-x, linear-gradient(to right, transparent 0px, black 16px, black calc(100% - 16px), transparent 100%));
+  -webkit-mask-image: var(--r-ui-mask-fade-x, linear-gradient(to right, transparent 0px, black 16px, black calc(100% - 16px), transparent 100%));
+}
+.notification-filter-scroll::-webkit-scrollbar {
+  display: none;
 }
 .notification-filter-row {
   display: inline-flex;

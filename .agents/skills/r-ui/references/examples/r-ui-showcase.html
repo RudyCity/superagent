@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>r-ui Interactive Showcase (v3.0.0)</title>
+  <title>r-ui Interactive Showcase (v3.4.0)</title>
   <link rel="stylesheet" href="../r-ui-tokens.css">
   <link rel="stylesheet" href="../r-ui-themes.css">
   <link rel="stylesheet" href="../r-ui-color-themes.css">
@@ -379,6 +379,237 @@
         box-shadow: var(--r-ui-shadow-lg);
       }
     }
+
+    /* ==========================================================================
+       v3.4.0 Single-Screen Cockpit, Icon Scroll Rail & Dropdowns
+       ========================================================================== */
+    .r-ui-cockpit-demo {
+      width: 100%;
+      height: 520px;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--r-ui-color-border-standard);
+      border-radius: var(--r-ui-radius-lg);
+      background-color: var(--r-ui-color-canvas);
+      overflow: hidden;
+      box-shadow: var(--r-ui-shadow-md);
+      transition: all var(--r-ui-duration-normal) var(--r-ui-ease-spring);
+    }
+
+    .r-ui-cockpit-demo.is-mobile-view {
+      max-width: 390px;
+      margin: 0 auto;
+      height: 560px;
+    }
+
+    .r-ui-cockpit-demo-header {
+      height: 48px;
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 var(--r-ui-space-4);
+      background-color: var(--r-ui-color-surface);
+      border-bottom: 1px solid var(--r-ui-color-border-standard);
+      z-index: 10;
+    }
+
+    .r-ui-cockpit-body {
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .r-ui-cockpit-demo-sidebar {
+      width: 200px;
+      min-width: 200px;
+      background-color: var(--r-ui-color-surface);
+      border-right: 1px solid var(--r-ui-color-border-standard);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: var(--r-ui-space-3);
+      transition: all var(--r-ui-duration-fast) var(--r-ui-ease-spring);
+      overflow: hidden;
+    }
+
+    .r-ui-cockpit-demo-sidebar.is-rail {
+      width: 56px;
+      min-width: 56px;
+      padding: var(--r-ui-space-2) 6px;
+    }
+
+    .r-ui-cockpit-demo-sidebar.is-rail .r-ui-nav-text {
+      display: none;
+    }
+
+    .r-ui-cockpit-demo-sidebar.is-hidden {
+      display: none;
+    }
+
+    .r-ui-cockpit-demo-main {
+      flex: 1 1 0;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .r-ui-cockpit-scroll-pane {
+      flex: 1 1 0;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+      scrollbar-color: var(--r-ui-color-border-standard) transparent;
+      padding: var(--r-ui-space-4);
+      display: flex;
+      flex-direction: column;
+      gap: var(--r-ui-space-4);
+    }
+
+    /* Fade-Masked Scroll Rail */
+    .r-ui-fade-rail {
+      position: relative;
+      display: flex;
+      align-items: center;
+      width: 100%;
+      background: var(--r-ui-color-surface);
+      border: 1px solid var(--r-ui-color-border-subtle);
+      border-radius: var(--r-ui-radius-sm);
+      padding: 4px 6px;
+      overflow: hidden;
+    }
+
+    .r-ui-fade-rail-track {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      scroll-behavior: smooth;
+      scrollbar-width: none;
+      mask-image: linear-gradient(to right, transparent, black 20px, black calc(100% - 20px), transparent);
+      -webkit-mask-image: linear-gradient(to right, transparent, black 20px, black calc(100% - 20px), transparent);
+      padding: 2px 28px;
+      width: 100%;
+    }
+    .r-ui-fade-rail-track::-webkit-scrollbar { display: none; }
+
+    .r-ui-rail-pill {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: var(--r-ui-radius-full);
+      background: var(--r-ui-color-surface-elevated);
+      border: 1px solid var(--r-ui-color-border-standard);
+      color: var(--r-ui-color-text-secondary);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all var(--r-ui-duration-fast) ease;
+    }
+
+    .r-ui-rail-pill:hover,
+    .r-ui-rail-pill.is-active {
+      background: rgba(56, 189, 248, 0.12);
+      border-color: var(--r-ui-color-accent-primary);
+      color: var(--r-ui-color-text-primary);
+    }
+
+    .r-ui-rail-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--r-ui-color-surface-elevated);
+      border: 1px solid var(--r-ui-color-border-standard);
+      color: var(--r-ui-color-text-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 2;
+      box-shadow: var(--r-ui-shadow-xs);
+    }
+    .r-ui-rail-btn--prev { left: 4px; }
+    .r-ui-rail-btn--next { right: 4px; }
+
+    /* Telemetry Ribbon */
+    .r-ui-telemetry-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      background: var(--r-ui-color-surface);
+      border: 1px solid var(--r-ui-color-border-standard);
+      border-radius: var(--r-ui-radius-sm);
+      overflow: hidden;
+    }
+    .r-ui-telemetry-cell {
+      padding: 8px 12px;
+      border-right: 1px solid var(--r-ui-color-border-subtle);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .r-ui-telemetry-cell:last-child { border-right: none; }
+
+    /* Interactive Dropdown in Showcase */
+    .r-ui-popover-dropdown {
+      position: relative;
+      display: inline-block;
+    }
+
+    .r-ui-popover-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      min-width: 170px;
+      background: var(--r-ui-color-surface-overlay);
+      border: 1px solid var(--r-ui-color-border-standard);
+      border-radius: var(--r-ui-radius-sm);
+      box-shadow: var(--r-ui-shadow-md);
+      backdrop-filter: blur(12px);
+      padding: 4px;
+      z-index: 50;
+    }
+    .r-ui-popover-menu.is-open { display: flex; flex-direction: column; gap: 2px; }
+
+    .r-ui-popover-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: var(--r-ui-color-text-secondary);
+      border-radius: var(--r-ui-radius-xs);
+      cursor: pointer;
+    }
+    .r-ui-popover-item:hover {
+      background: var(--r-ui-color-surface-elevated);
+      color: var(--r-ui-color-text-primary);
+    }
+
+    /* Mobile Bottom Dock */
+    .r-ui-demo-bottom-dock {
+      display: none;
+      height: 48px;
+      background: var(--r-ui-color-surface);
+      border-top: 1px solid var(--r-ui-color-border-standard);
+      align-items: center;
+      justify-content: space-around;
+      z-index: 10;
+    }
+    .is-mobile-view .r-ui-demo-bottom-dock {
+      display: flex;
+    }
   </style>
 </head>
 <body>
@@ -387,7 +618,7 @@
     <header class="r-ui-navbar">
       <div class="r-ui-brand">
         <span>r-ui</span>
-        <span class="r-ui-badge">v3.0.0 Live</span>
+        <span class="r-ui-badge">v3.4.0 Live</span>
       </div>
 
       <div style="display: flex; align-items: center; gap: var(--r-ui-space-3); flex-wrap: wrap;">
@@ -434,6 +665,216 @@
 
     <!-- Bento Grid Modules -->
     <main class="r-ui-bento" id="bentoContainer">
+      <!-- Card 0: Viewport-Fit Single-Screen Cockpit Studio (v3.4.0) -->
+      <article class="r-ui-card r-ui-bento-full" style="padding: var(--r-ui-space-5);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 8px;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="r-ui-badge" style="background: rgba(56, 189, 248, 0.12);">v3.4.0 Innovation</span>
+              <h2 style="font-size: var(--r-ui-font-h3); font-weight: 700;">Single-Screen Cockpit Studio</h2>
+            </div>
+            <p style="color: var(--r-ui-color-text-secondary); font-size: 13px; margin-top: 4px;">
+              Memanfaatkan 1 layar penuh rapi & padat (100dvh zero-spill), besar-kecil text & icon terkalibrasi, custom dropdown popover, dan horizontal fade-masked icon scroll rail.
+            </p>
+          </div>
+          <!-- Device Mode Selector -->
+          <div style="display: flex; align-items: center; gap: 6px;" role="group" aria-label="Viewport Simulator">
+            <button class="r-ui-btn r-ui-btn-secondary" id="modeDesktopBtn" style="padding: 4px 10px; min-height: 28px; font-size: 11px;">Desktop 3-Pane</button>
+            <button class="r-ui-btn r-ui-btn-secondary" id="modeLaptopBtn" style="padding: 4px 10px; min-height: 28px; font-size: 11px;">Laptop Mini-Rail</button>
+            <button class="r-ui-btn r-ui-btn-secondary" id="modeMobileBtn" style="padding: 4px 10px; min-height: 28px; font-size: 11px;">Mobile Preview</button>
+          </div>
+        </div>
+
+        <!-- The Cockpit Simulator Container -->
+        <div class="r-ui-cockpit-demo" id="cockpitDemo">
+          <!-- 48px Header -->
+          <header class="r-ui-cockpit-demo-header">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <button class="r-ui-btn r-ui-btn-secondary" id="toggleCockpitSidebarBtn" style="padding: 2px 6px; min-height: 26px;" aria-label="Toggle Rail">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </button>
+              <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;">
+                <span style="color: var(--r-ui-color-accent-primary);">prod-cluster-01</span>
+                <span style="color: var(--r-ui-color-text-muted);">/</span>
+                <span>us-east</span>
+              </div>
+              <span class="r-ui-badge" style="font-size: 9px; padding: 1px 6px;">
+                <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981; margin-right: 4px;"></span>
+                Live 99.98%
+              </span>
+            </div>
+
+            <!-- Header Right Controls with Popover Dropdown -->
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <!-- Custom Accessible Dropdown -->
+              <div class="r-ui-popover-dropdown" id="demoPopoverDropdown">
+                <button type="button" class="r-ui-dropdown-trigger" id="demoPopoverTrigger" aria-expanded="false" style="min-height: 28px; padding: 2px 8px; font-size: 11px;">
+                  <span id="popoverLabel">Region: Global</span>
+                  <svg class="r-ui-dropdown-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div class="r-ui-popover-menu" id="demoPopoverMenu">
+                  <div class="r-ui-popover-item is-selected" data-val="Global">🌐 Global Anycast</div>
+                  <div class="r-ui-popover-item" data-val="US-East">🇺🇸 US-East (N. Virginia)</div>
+                  <div class="r-ui-popover-item" data-val="EU-Central">🇪🇺 EU-Central (Frankfurt)</div>
+                  <div class="r-ui-popover-item" data-val="AP-Southeast">🇸🇬 AP-Southeast (Singapore)</div>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <!-- Main Split Workspace -->
+          <div class="r-ui-cockpit-body">
+            <!-- Collapsible Sidebar -->
+            <aside class="r-ui-cockpit-demo-sidebar" id="cockpitSidebar">
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <div class="r-ui-rail-pill is-active" style="border-radius: 6px; padding: 6px 8px; justify-content: flex-start; width: 100%;">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                  <span class="r-ui-nav-text" style="font-size: 12px;">Cockpit</span>
+                </div>
+                <div class="r-ui-rail-pill" style="border-radius: 6px; padding: 6px 8px; justify-content: flex-start; width: 100%;">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                  <span class="r-ui-nav-text" style="font-size: 12px;">Telemetry</span>
+                </div>
+                <div class="r-ui-rail-pill" style="border-radius: 6px; padding: 6px 8px; justify-content: flex-start; width: 100%;">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                  <span class="r-ui-nav-text" style="font-size: 12px;">Settings</span>
+                </div>
+              </div>
+              <div style="font-size: 10px; color: var(--r-ui-color-text-muted);" class="r-ui-nav-text">
+                r-ui Single-Screen Core
+              </div>
+            </aside>
+
+            <!-- Main Scrollable Pane (Bounded Scroll) -->
+            <main class="r-ui-cockpit-demo-main">
+              <div class="r-ui-cockpit-scroll-pane">
+                <!-- 1. Horizontal Fade-Masked Icon Scroll Rail -->
+                <div class="r-ui-fade-rail">
+                  <button type="button" class="r-ui-rail-btn r-ui-rail-btn--prev" id="railPrevBtn" aria-label="Scroll left">‹</button>
+                  <div class="r-ui-fade-rail-track" id="railTrack">
+                    <span class="r-ui-rail-pill is-active">⚡ All Systems</span>
+                    <span class="r-ui-rail-pill">📊 Telemetry</span>
+                    <span class="r-ui-rail-pill">🔒 Security</span>
+                    <span class="r-ui-rail-pill">🚀 Deploys</span>
+                    <span class="r-ui-rail-pill">👥 Workspaces</span>
+                    <span class="r-ui-rail-pill">📈 Analytics</span>
+                    <span class="r-ui-rail-pill">🔑 Secrets & Keys</span>
+                    <span class="r-ui-rail-pill">⚙️ Architecture</span>
+                    <span class="r-ui-rail-pill">📡 Edge Nodes</span>
+                  </div>
+                  <button type="button" class="r-ui-rail-btn r-ui-rail-btn--next" id="railNextBtn" aria-label="Scroll right">›</button>
+                </div>
+
+                <!-- 2. Architectural Telemetry Ribbon (Besar-Kecil Text) -->
+                <div class="r-ui-telemetry-strip">
+                  <div class="r-ui-telemetry-cell">
+                    <span style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--r-ui-color-text-tertiary);">Throughput</span>
+                    <div style="display: flex; align-items: baseline; gap: 4px;">
+                      <span style="font-size: 22px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums;">18,420</span>
+                      <span style="font-size: 11px; color: var(--r-ui-color-text-secondary);">req/s</span>
+                    </div>
+                    <span style="font-size: 10px; color: #10b981; font-weight: 600;">+12.4% vs last hour</span>
+                  </div>
+                  <div class="r-ui-telemetry-cell">
+                    <span style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--r-ui-color-text-tertiary);">P99 Latency</span>
+                    <div style="display: flex; align-items: baseline; gap: 4px;">
+                      <span style="font-size: 22px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums;">11.8</span>
+                      <span style="font-size: 11px; color: var(--r-ui-color-text-secondary);">ms</span>
+                    </div>
+                    <span style="font-size: 10px; color: #10b981; font-weight: 600;">Optimal (SLA &lt; 50ms)</span>
+                  </div>
+                  <div class="r-ui-telemetry-cell">
+                    <span style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--r-ui-color-text-tertiary);">Error Budget</span>
+                    <div style="display: flex; align-items: baseline; gap: 4px;">
+                      <span style="font-size: 22px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums;">99.98%</span>
+                    </div>
+                    <span style="font-size: 10px; color: var(--r-ui-color-text-muted);">0.002% burn rate</span>
+                  </div>
+                </div>
+
+                <!-- 3. Multi-Tier Optical Icon & Typography Grid -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px;">
+                  <div style="padding: 8px; background: var(--r-ui-color-surface); border: 1px solid var(--r-ui-color-border-standard); border-radius: 6px; display: flex; align-items: center; gap: 8px;">
+                    <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" style="color: #10b981;"><circle cx="8" cy="8" r="6"/><path d="m5 8 2 2 4-4"/></svg>
+                    <div>
+                      <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--r-ui-color-text-muted);">Micro Icon</div>
+                      <div style="font-size: 11px; font-weight: 600;">12px • 2.0strk</div>
+                    </div>
+                  </div>
+                  <div style="padding: 8px; background: var(--r-ui-color-surface); border: 1px solid var(--r-ui-color-border-standard); border-radius: 6px; display: flex; align-items: center; gap: 8px;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" style="color: var(--r-ui-color-accent-primary);"><path d="m6 9 6 6 6-6"/></svg>
+                    <div>
+                      <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--r-ui-color-text-muted);">Compact</div>
+                      <div style="font-size: 11px; font-weight: 600;">16px • 1.5strk</div>
+                    </div>
+                  </div>
+                  <div style="padding: 8px; background: var(--r-ui-color-surface); border: 1px solid var(--r-ui-color-border-standard); border-radius: 6px; display: flex; align-items: center; gap: 8px;">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" style="color: #a855f7;"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    <div>
+                      <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--r-ui-color-text-muted);">Standard</div>
+                      <div style="font-size: 11px; font-weight: 600;">20px • 1.5strk</div>
+                    </div>
+                  </div>
+                  <div style="padding: 8px; background: var(--r-ui-color-surface); border: 1px solid var(--r-ui-color-border-standard); border-radius: 6px; display: flex; align-items: center; gap: 8px;">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: #f59e0b;"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    <div>
+                      <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--r-ui-color-text-muted);">Prominent</div>
+                      <div style="font-size: 11px; font-weight: 600;">24px • 1.5strk</div>
+                    </div>
+                  </div>
+                  <div style="padding: 8px; background: var(--r-ui-color-surface); border: 1px solid var(--r-ui-color-border-standard); border-radius: 6px; display: flex; align-items: center; gap: 8px;">
+                    <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.25" style="color: #38bdf8;"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>
+                    <div>
+                      <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--r-ui-color-text-muted);">Hero Icon</div>
+                      <div style="font-size: 11px; font-weight: 600;">32px • 1.25strk</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 4. Dense Clean Table with Bounded Overflow -->
+                <div style="background: var(--r-ui-color-surface); border: 1px solid var(--r-ui-color-border-standard); border-radius: 6px; overflow: hidden;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--r-ui-color-border-standard);">
+                    <span style="font-size: 11px; font-weight: 600;">Active Cluster Deployments</span>
+                    <span class="r-ui-badge" style="font-size: 9px; padding: 1px 6px;">3 Running</span>
+                  </div>
+                  <div style="display: flex; flex-direction: column;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--r-ui-color-border-subtle); font-size: 11px;">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981;"></span>
+                        <span style="font-weight: 500;">edge-proxy-v4.2</span>
+                      </div>
+                      <span style="color: var(--r-ui-color-text-tertiary); font-family: monospace;">24 pods • 12ms</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--r-ui-color-border-subtle); font-size: 11px;">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981;"></span>
+                        <span style="font-weight: 500;">auth-gateway-oauth2</span>
+                      </div>
+                      <span style="color: var(--r-ui-color-text-tertiary); font-family: monospace;">16 pods • 8ms</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; font-size: 11px;">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="width: 6px; height: 6px; border-radius: 50%; background: #38bdf8;"></span>
+                        <span style="font-weight: 500;">telemetry-aggregator</span>
+                      </div>
+                      <span style="color: var(--r-ui-color-text-tertiary); font-family: monospace;">32 pods • 15ms</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </main>
+          </div>
+
+          <!-- Mobile Bottom Dock (Active when in mobile view) -->
+          <footer class="r-ui-demo-bottom-dock">
+            <span style="font-size: 10px; font-weight: 700; color: var(--r-ui-color-accent-primary);">⚡ Cockpit</span>
+            <span style="font-size: 10px; font-weight: 600; color: var(--r-ui-color-text-muted);">📊 Metrics</span>
+            <span style="font-size: 10px; font-weight: 600; color: var(--r-ui-color-text-muted);">🔒 Sec</span>
+            <span style="font-size: 10px; font-weight: 600; color: var(--r-ui-color-text-muted);">⚙️ Config</span>
+          </footer>
+        </div>
+      </article>
+
       <!-- Card 1: Bento Asymmetric & Kinetic Switches -->
       <article class="r-ui-card r-ui-bento-hero">
         <h2 style="font-size: var(--r-ui-font-h2); font-weight: 700;">Kinetic Physics & Spatial Harmony</h2>
@@ -692,6 +1133,96 @@
         tvBoxes[currentIndex + 1].focus();
       } else if (e.key === 'ArrowLeft' && currentIndex > 0) {
         tvBoxes[currentIndex - 1].focus();
+      }
+    });
+
+    // ==========================================================================
+    // v3.4.0 Single-Screen Cockpit Interactive Logic
+    // ==========================================================================
+    const cockpitDemo = document.getElementById('cockpitDemo');
+    const cockpitSidebar = document.getElementById('cockpitSidebar');
+    const toggleCockpitSidebarBtn = document.getElementById('toggleCockpitSidebarBtn');
+    const modeDesktopBtn = document.getElementById('modeDesktopBtn');
+    const modeLaptopBtn = document.getElementById('modeLaptopBtn');
+    const modeMobileBtn = document.getElementById('modeMobileBtn');
+
+    // Sidebar rail toggle
+    toggleCockpitSidebarBtn.addEventListener('click', () => {
+      cockpitSidebar.classList.toggle('is-rail');
+    });
+
+    // Device Mode Switcher
+    const modeButtons = [modeDesktopBtn, modeLaptopBtn, modeMobileBtn];
+    function setCockpitMode(mode) {
+      modeButtons.forEach(b => b.classList.remove('r-ui-btn-primary'));
+      cockpitDemo.classList.remove('is-mobile-view');
+      cockpitSidebar.classList.remove('is-rail', 'is-hidden');
+
+      if (mode === 'desktop') {
+        modeDesktopBtn.classList.add('r-ui-btn-primary');
+      } else if (mode === 'laptop') {
+        modeLaptopBtn.classList.add('r-ui-btn-primary');
+        cockpitSidebar.classList.add('is-rail');
+      } else if (mode === 'mobile') {
+        modeMobileBtn.classList.add('r-ui-btn-primary');
+        cockpitDemo.classList.add('is-mobile-view');
+        cockpitSidebar.classList.add('is-hidden');
+      }
+    }
+
+    modeDesktopBtn.addEventListener('click', () => setCockpitMode('desktop'));
+    modeLaptopBtn.addEventListener('click', () => setCockpitMode('laptop'));
+    modeMobileBtn.addEventListener('click', () => setCockpitMode('mobile'));
+    setCockpitMode('desktop');
+
+    // Fade-Masked Scroll Rail Navigation
+    const railTrack = document.getElementById('railTrack');
+    const railPrevBtn = document.getElementById('railPrevBtn');
+    const railNextBtn = document.getElementById('railNextBtn');
+
+    railPrevBtn.addEventListener('click', () => {
+      railTrack.scrollBy({ left: -140, behavior: 'smooth' });
+    });
+    railNextBtn.addEventListener('click', () => {
+      railTrack.scrollBy({ left: 140, behavior: 'smooth' });
+    });
+
+    // Rail pill selection
+    const railPills = document.querySelectorAll('.r-ui-rail-pill');
+    railPills.forEach(pill => {
+      pill.addEventListener('click', () => {
+        railPills.forEach(p => p.classList.remove('is-active'));
+        pill.classList.add('is-active');
+      });
+    });
+
+    // Popover Dropdown Interaction
+    const demoPopoverTrigger = document.getElementById('demoPopoverTrigger');
+    const demoPopoverMenu = document.getElementById('demoPopoverMenu');
+    const popoverLabel = document.getElementById('popoverLabel');
+    const popoverItems = document.querySelectorAll('.r-ui-popover-item');
+
+    demoPopoverTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = demoPopoverMenu.classList.toggle('is-open');
+      demoPopoverTrigger.setAttribute('aria-expanded', String(isOpen));
+    });
+
+    popoverItems.forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        popoverLabel.textContent = 'Region: ' + item.getAttribute('data-val');
+        popoverItems.forEach(i => i.classList.remove('is-selected'));
+        item.classList.add('is-selected');
+        demoPopoverMenu.classList.remove('is-open');
+        demoPopoverTrigger.setAttribute('aria-expanded', 'false');
+      });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!demoPopoverMenu.contains(e.target) && e.target !== demoPopoverTrigger) {
+        demoPopoverMenu.classList.remove('is-open');
+        demoPopoverTrigger.setAttribute('aria-expanded', 'false');
       }
     });
   </script>

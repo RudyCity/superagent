@@ -70,6 +70,11 @@ Enterprise-grade application scaffold framework.
 ### 1.4 Master-Detail Splitter & Right Inspector Drawer
 - Splits workspace into primary entity list and quick inspection panel on the right with zero page reload (*zero context loss*).
 
+### 1.5 Viewport-Fit Cockpit Shell & Zero-Spill Architecture
+- Root container strictly locked to `100dvh` (`overflow: hidden`).
+- Eliminates page-level vertical scrollbar; data grids and inspectors utilize bounded inner scroll zones (`overflow-y: auto; scrollbar-width: thin;`).
+- Compact header (48px) and auto-collapsing sidebar (240px to 60px mini-rail) ensure maximum display density on laptop and desktop screens alike.
+
 ---
 
 ## PILLAR 2: METRICS & TELEMETRY DISPLAYS
@@ -234,6 +239,11 @@ Lightning-fast contextual navigation for power users.
 
 ### 7.3 Multi-Step Wizard / Stepper (`.r-ui-stepper`)
 - Sequential progress bar (*Step 1 of 4*) with completed checkmarks, active step ring, and connecting progress track.
+
+### 7.4 Horizontal Icon & Tab Scroll Rail (`.r-ui-fade-rail`)
+- Eliminates multiline tag wrap in dense toolbars and category filters.
+- Uses smooth horizontal overflow with CSS gradient edge masks (`mask-image: linear-gradient(...)`) and compact chevron buttons for precision mouse navigation.
+- Preserves single-screen vertical containment across desktop and mobile.
 
 ---
 

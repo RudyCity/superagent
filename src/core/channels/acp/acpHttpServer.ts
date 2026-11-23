@@ -25,6 +25,8 @@ export class AcpHttpServer {
   public readonly runtime: AcpRuntime;
   private httpServer: http.Server | null = null;
   private sseClients = new Set<{ res: http.ServerResponse; sessionId?: string }>();
+  private recentSessionUpdates = new Map<string, string[]>();
+  private sessionTurnState = new Map<string, "thinking" | "done" | "error">();
 
   // Streams for ACP stdio simulation inside the HTTP adapter
   private clientToServer = new PassThrough();
@@ -55,15 +57,62 @@ export class AcpHttpServer {
     });
   }
 
+  private recordSessionUpdate(parsed: any, ssePayload: string): void {
+    const sessionId = parsed?.params?.sessionId;
+    if (typeof sessionId !== "string" || !sessionId) return;
+
+    const queue = this.recentSessionUpdates.get(sessionId) ?? [];
+    queue.push(ssePayload);
+    if (queue.length > 100) {
+      queue.splice(0, queue.length - 100);
+    }
+    this.recentSessionUpdates.set(sessionId, queue);
+
+    const update = parsed?.params?.update;
+    if (update?.kind === "status_change") {
+      if (update.status === "thinking") {
+        this.sessionTurnState.set(sessionId, "thinking");
+      } else if (update.status === "done" || update.status === "error") {
+        this.sessionTurnState.set(sessionId, update.status);
+      }
+    }
+  }
+
+  private replayBufferedUpdates(res: http.ServerResponse, sessionId?: string): void {
+    if (!sessionId || res.destroyed || res.writableEnded) return;
+    const buffered = this.recentSessionUpdates.get(sessionId);
+    if (buffered && buffered.length > 0) {
+      for (const payload of buffered) {
+        res.write(payload);
+      }
+    }
+    const terminalStatus = this.sessionTurnState.get(sessionId);
+    if (terminalStatus === "done" || terminalStatus === "error") {
+      const fallbackFrame = JSON.stringify({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId,
+          update: {
+            kind: "status_change",
+            status: terminalStatus,
+            summary: terminalStatus === "done" ? "Completed turn" : "Execution error",
+          },
+        },
+      });
+      res.write(`event: session/update\ndata: ${fallbackFrame}\n\n`);
+    }
+  }
+
   private broadcastSse(rawJson: string): void {
     try {
       const parsed = JSON.parse(rawJson);
       const eventName = parsed.method || (parsed.id ? "response" : "message");
       const ssePayload = `event: ${eventName}\ndata: ${rawJson}\n\n`;
+      this.recordSessionUpdate(parsed, ssePayload);
 
       for (const client of this.sseClients) {
         if (!client.res.destroyed && !client.res.writableEnded) {
-          // If client specified sessionId, filter updates
           if (
             !client.sessionId ||
             !parsed.params?.sessionId ||
@@ -123,6 +172,7 @@ export class AcpHttpServer {
       const client = { res, sessionId };
       this.sseClients.add(client);
       res.write(": heartbeat\n\n");
+      this.replayBufferedUpdates(res, sessionId);
 
       req.on("close", () => {
         this.sseClients.delete(client);
@@ -209,13 +259,4 @@ export class AcpHttpServer {
       this.httpServer = null;
     }
   }
-}
-
-/**
- * Helper to launch ACP HTTP/SSE server.
- */
-export async function startAcpHttpServer(options?: AcpHttpServerOptions): Promise<AcpHttpServer> {
-  const server = new AcpHttpServer(options);
-  await server.start();
-  return server;
 }
