@@ -146,6 +146,20 @@ async function traySettingsSave(event) {
 function traySettingsRestoreDefaults() {
   if (traySettingsBusy) return;
   traySettingsDisplay(traySettingsDefault);
+  const themeSelect = traySettingsElement("settings-theme-canvas");
+  const accentSelect = traySettingsElement("settings-theme-accent");
+  if (themeSelect) themeSelect.value = "dark-nebula";
+  if (accentSelect) accentSelect.value = "cyan";
+  if (typeof document !== "undefined" && document.documentElement) {
+    document.documentElement.setAttribute("data-r-ui-theme", "dark-nebula");
+    document.documentElement.setAttribute("data-r-ui-accent", "cyan");
+  }
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem("superagent_tray_theme", "dark-nebula");
+      window.localStorage.setItem("superagent_tray_accent", "cyan");
+    }
+  } catch (_) {}
   const feedback = traySettingsElement("settings-feedback");
   if (feedback) feedback.textContent = "Defaults loaded into the form. Press Save Settings to apply them.";
   notifySettings("info", "Defaults loaded in the form. Press Save to apply.");
@@ -486,7 +500,54 @@ function settingsSwitchTab(tabName) {
 }
 window.settingsSwitchTab = settingsSwitchTab;
 
+function rUiThemeInit() {
+  const themeSelect = traySettingsElement("settings-theme-canvas");
+  const accentSelect = traySettingsElement("settings-theme-accent");
+
+  let currentTheme = "dark-nebula";
+  let currentAccent = "cyan";
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      currentTheme = window.localStorage.getItem("superagent_tray_theme") || "dark-nebula";
+      currentAccent = window.localStorage.getItem("superagent_tray_accent") || "cyan";
+    }
+  } catch (_) {}
+
+  if (themeSelect) {
+    themeSelect.value = currentTheme;
+    themeSelect.addEventListener("change", (e) => {
+      const val = e.target.value;
+      if (typeof document !== "undefined" && document.documentElement) {
+        document.documentElement.setAttribute("data-r-ui-theme", val);
+      }
+      try {
+        if (typeof window !== "undefined" && window.localStorage) {
+          window.localStorage.setItem("superagent_tray_theme", val);
+        }
+      } catch (_) {}
+      notifySettings("info", `Canvas theme changed to ${val}`);
+    });
+  }
+
+  if (accentSelect) {
+    accentSelect.value = currentAccent;
+    accentSelect.addEventListener("change", (e) => {
+      const val = e.target.value;
+      if (typeof document !== "undefined" && document.documentElement) {
+        document.documentElement.setAttribute("data-r-ui-accent", val);
+      }
+      try {
+        if (typeof window !== "undefined" && window.localStorage) {
+          window.localStorage.setItem("superagent_tray_accent", val);
+        }
+      } catch (_) {}
+      notifySettings("info", `Accent color changed to ${val}`);
+    });
+  }
+}
+
 function traySettingsInstall() {
+  rUiThemeInit();
   traySettingsElement("tray-settings-form")?.addEventListener("submit", traySettingsSave);
   traySettingsElement("settings-defaults")?.addEventListener("click", traySettingsRestoreDefaults);
   traySettingsElement("muse-telegram-settings-form")?.addEventListener("submit", museTelegramSave);

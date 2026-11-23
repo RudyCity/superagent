@@ -1,32 +1,37 @@
-/* Hallmark · component: Security Approval Manager — Trusted Desktop Input
- * states: default · hover · focus · active · disabled · loading · error · success
- * contrast: WCAG AA pass · design tokens: native Tray system
- * critique: P5 H5 E5 S5 R5 V4
- */
+/* ==========================================================================
+   SuperAgent Tray · Security Approval Manager — Trusted Desktop Input
+   Refactored to r-ui design standards (Anti-Slop, Calibrated Optical Indicators)
+   ========================================================================== */
 
 .desktop-trust-panel {
   max-width: 960px;
   margin-bottom: 24px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-container, 12px);
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
+  box-shadow: var(--r-ui-shadow-subtle);
+  overflow: hidden;
 }
 
 .desktop-trust-panel .desktop-trust-header {
-  padding: 22px 26px;
+  padding: 24px 28px;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 18px;
   flex-wrap: wrap;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
 }
 
 .desktop-trust-panel .desktop-trust-header .panel-eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: var(--accent, #38bdf8);
+  text-transform: uppercase;
+  color: var(--r-ui-color-accent-primary, #38bdf8);
   margin-bottom: 6px;
 }
 
@@ -35,14 +40,14 @@
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--text-primary, #f8fafc);
+  color: var(--r-ui-color-text-primary, #f8fafc);
 }
 
 .desktop-trust-panel .desktop-trust-header p {
   margin: 0;
   font-size: 12.5px;
   line-height: 1.6;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, #94a3b8);
   max-width: 68ch;
 }
 
@@ -51,52 +56,54 @@
   align-items: center;
   gap: 7px;
   padding: 5px 12px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-secondary, #94a3b8);
-  background: var(--bg-surface-raised, #141c2e);
-  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
-  border-radius: var(--radius-pill, 9999px);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--r-ui-color-text-secondary, #94a3b8);
+  background: var(--r-ui-color-canvas-surface, #141c2e);
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));
+  border-radius: var(--r-ui-radius-pill, 9999px);
   white-space: nowrap;
 }
 
 .desktop-trust-panel .subtle-badge::before {
   content: "";
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 6.5px;
+  height: 6.5px;
   border-radius: 50%;
-  background: var(--warning, #f59e0b);
-  box-shadow: 0 0 6px var(--warning-glow, rgba(245, 158, 11, 0.4));
-  transition: all var(--transition-fast, 150ms ease);
+  background: var(--r-ui-color-warning, #f59e0b);
+  box-shadow: 0 0 0 2px var(--r-ui-color-warning-soft, rgba(245, 158, 11, 0.25));
+  transition: all var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .desktop-trust-panel[data-mode="trusted"] .subtle-badge {
-  color: #34d399;
-  border-color: rgba(16, 185, 129, 0.3);
-  background: var(--success-muted, rgba(16, 185, 129, 0.1));
+  color: var(--r-ui-color-success, #34d399);
+  border-color: var(--r-ui-color-success-border, rgba(16, 185, 129, 0.3));
+  background: var(--r-ui-color-success-soft, rgba(16, 185, 129, 0.1));
 }
 
 .desktop-trust-panel[data-mode="trusted"] .subtle-badge::before {
-  background: var(--success, #10b981);
-  box-shadow: 0 0 8px var(--success-glow, rgba(16, 185, 129, 0.5));
+  background: var(--r-ui-color-success, #10b981);
+  box-shadow: 0 0 0 2px var(--r-ui-color-success-soft, rgba(16, 185, 129, 0.35));
 }
 
 .desktop-trust-panel[data-mode="off"] .subtle-badge {
-  color: var(--text-muted, #64748b);
-  border-color: var(--border-subtle, rgba(255, 255, 255, 0.07));
-  background: var(--bg-surface, #0f1523);
+  color: var(--r-ui-color-text-muted, #64748b);
+  border-color: var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.07));
+  background: var(--r-ui-color-canvas-surface, #0f1523);
 }
 
 .desktop-trust-panel[data-mode="off"] .subtle-badge::before {
-  background: var(--text-dim, #475569);
+  background: var(--r-ui-color-text-muted, #475569);
   box-shadow: none;
 }
 
 /* Sections inside panel */
 .desktop-trust-section {
-  padding: 22px 26px;
-  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.07));
+  padding: 24px 28px;
+  border-top: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.07));
   display: grid;
   gap: 16px;
 }
@@ -112,16 +119,16 @@
 .desktop-trust-section-info h3 {
   margin: 0 0 4px;
   font-size: 14px;
-  font-weight: 650;
-  color: var(--text-primary, #f8fafc);
+  font-weight: 700;
+  color: var(--r-ui-color-text-primary, #f8fafc);
   letter-spacing: -0.01em;
 }
 
 .desktop-trust-section-info p {
   margin: 0;
   font-size: 12px;
-  color: var(--text-secondary, #94a3b8);
-  line-height: 1.5;
+  color: var(--r-ui-color-text-secondary, #94a3b8);
+  line-height: 1.55;
 }
 
 /* Mode configuration row */
@@ -133,7 +140,7 @@
 .desktop-trust-mode-input-wrap {
   display: flex;
   align-items: flex-end;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
 }
 
@@ -147,8 +154,8 @@
 .desktop-trust-field .field-label {
   font-size: 11.5px;
   font-weight: 650;
-  color: var(--text-secondary, #94a3b8);
-  letter-spacing: 0.02em;
+  color: var(--r-ui-color-text-secondary, #94a3b8);
+  letter-spacing: 0.01em;
 }
 
 /* Custom styled select box */
@@ -163,29 +170,30 @@
   width: 100%;
   appearance: none;
   -webkit-appearance: none;
-  background: var(--bg-surface-raised, #141c2e);
-  color: var(--text-primary, #f8fafc);
-  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
-  border-radius: var(--radius-sm, 6px);
+  background: var(--r-ui-color-canvas-surface, #141c2e);
+  color: var(--r-ui-color-text-primary, #f8fafc);
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));
+  border-radius: var(--r-ui-radius-element, 6px);
   min-height: 38px;
   padding: 8px 36px 8px 12px;
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
   outline: none;
-  transition: border-color var(--transition-fast, 150ms ease),
-              box-shadow var(--transition-fast, 150ms ease),
-              background var(--transition-fast, 150ms ease);
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              background var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .desktop-trust-panel .select-container select:hover:not(:disabled) {
-  border-color: var(--border-strong, rgba(255, 255, 255, 0.2));
-  background: var(--bg-surface-elevated, #1a243a);
+  border-color: var(--r-ui-color-border-hover, rgba(255, 255, 255, 0.2));
+  background: var(--r-ui-color-canvas-surface-raised, #1a243a);
 }
 
 .desktop-trust-panel .select-container select:focus-visible {
-  border-color: var(--border-focus, #3b82f6);
-  box-shadow: 0 0 0 2px var(--accent-glow, rgba(59, 130, 246, 0.3));
+  border-color: var(--r-ui-color-accent-primary, #3b82f6);
+  outline: 2px solid var(--r-ui-color-accent-primary, #3b82f6);
+  outline-offset: 1px;
 }
 
 .desktop-trust-panel .select-container select:disabled {
@@ -197,12 +205,12 @@
   position: absolute;
   right: 12px;
   pointer-events: none;
-  color: var(--text-muted, #64748b);
-  transition: color var(--transition-fast, 150ms ease);
+  color: var(--r-ui-color-text-muted, #64748b);
+  transition: color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .desktop-trust-panel .select-container:hover .select-arrow {
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, #94a3b8);
 }
 
 /* Callout explainer */
@@ -211,22 +219,22 @@
   align-items: flex-start;
   gap: 12px;
   padding: 12px 16px;
-  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
-  border-radius: var(--radius-sm, 6px);
-  background: var(--bg-surface-raised, #141c2e);
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));
+  border-radius: var(--r-ui-radius-element, 6px);
+  background: var(--r-ui-color-canvas-surface, #141c2e);
 }
 
 .desktop-trust-callout .callout-icon {
   flex-shrink: 0;
   margin-top: 2px;
-  color: var(--accent, #38bdf8);
+  color: var(--r-ui-color-accent-primary, #38bdf8);
 }
 
 .desktop-trust-callout .desktop-trust-explainer {
   margin: 0;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, #94a3b8);
 }
 
 /* 2-column input grid for authorization */
@@ -251,7 +259,7 @@
 
 .desktop-trust-action-note {
   font-size: 11.5px;
-  color: var(--text-muted, #64748b);
+  color: var(--r-ui-color-text-muted, #64748b);
   line-height: 1.4;
 }
 
@@ -280,16 +288,19 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 14px;
-  background: var(--bg-surface-raised, #141c2e);
-  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
-  border-radius: var(--radius-md, 10px);
+  background: var(--r-ui-color-canvas-surface, #141c2e);
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));
+  border-radius: var(--r-ui-radius-element, 8px);
   padding: 14px 18px;
-  transition: all var(--transition-fast, 150ms ease);
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .desktop-trust-panel .desktop-trust-target:hover {
-  background: var(--bg-surface-elevated, #1a243a);
-  border-color: var(--border-strong, rgba(255, 255, 255, 0.2));
+  background: var(--r-ui-color-canvas-surface-raised, #1a243a);
+  border-color: var(--r-ui-color-border-hover, rgba(255, 255, 255, 0.2));
+  box-shadow: var(--r-ui-shadow-card);
 }
 
 .desktop-trust-panel .desktop-trust-target-detail {
@@ -302,14 +313,14 @@
 .desktop-trust-panel .desktop-trust-target-detail strong {
   font-size: 13.5px;
   font-weight: 650;
-  color: var(--text-primary, #f8fafc);
+  color: var(--r-ui-color-text-primary, #f8fafc);
   overflow-wrap: anywhere;
 }
 
 .desktop-trust-panel .desktop-trust-target-detail small {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--r-ui-font-family-mono, var(--font-mono, monospace));
   font-size: 11px;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, #94a3b8);
   overflow-wrap: anywhere;
 }
 
@@ -322,10 +333,10 @@
   text-align: center;
   gap: 8px;
   padding: 32px 24px;
-  background: var(--bg-surface-raised, #141c2e);
-  border: 1px dashed var(--border-medium, rgba(255, 255, 255, 0.15));
-  border-radius: var(--radius-md, 10px);
-  color: var(--text-secondary, #94a3b8);
+  background: var(--r-ui-color-canvas-surface, #141c2e);
+  border: 1px dashed var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.15));
+  border-radius: var(--r-ui-radius-element, 8px);
+  color: var(--r-ui-color-text-muted, #94a3b8);
   font-size: 12.5px;
   line-height: 1.5;
 }
@@ -336,7 +347,7 @@
   width: 32px;
   height: 32px;
   margin-bottom: 2px;
-  background-color: var(--text-muted, #64748b);
+  background-color: var(--r-ui-color-text-muted, #64748b);
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Ccircle cx='12' cy='11' r='3'/%3E%3C/svg%3E") no-repeat center / contain;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Ccircle cx='12' cy='11' r='3'/%3E%3C/svg%3E") no-repeat center / contain;
   opacity: 0.6;
@@ -344,9 +355,9 @@
 
 /* Danger section */
 .desktop-trust-danger-section {
-  padding: 18px 26px;
-  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.07));
-  background: rgba(239, 68, 68, 0.03);
+  padding: 20px 28px;
+  border-top: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.07));
+  background: var(--r-ui-color-danger-soft, rgba(239, 68, 68, 0.04));
 }
 
 .desktop-trust-danger-card {
@@ -367,14 +378,14 @@
 .desktop-trust-danger-info .danger-icon {
   flex-shrink: 0;
   margin-top: 2px;
-  color: var(--danger, #ef4444);
+  color: var(--r-ui-color-danger, #ef4444);
 }
 
 .desktop-trust-danger-info strong {
   display: block;
-  font-size: 12.5px;
-  font-weight: 650;
-  color: var(--text-primary, #f8fafc);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--r-ui-color-text-primary, #f8fafc);
   margin-bottom: 2px;
 }
 
@@ -382,14 +393,14 @@
   margin: 0;
   font-size: 11.5px;
   line-height: 1.5;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, #94a3b8);
 }
 
 /* Footer live feedback */
 .desktop-trust-footer {
-  padding: 12px 26px;
-  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.07));
-  background: var(--bg-surface-elevated, #1a243a);
+  padding: 14px 28px;
+  border-top: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.07));
+  background: var(--r-ui-color-canvas-sidebar, #1a243a);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -403,18 +414,18 @@
 }
 
 .desktop-trust-feedback-dot {
-  width: 6px;
-  height: 6px;
+  width: 6.5px;
+  height: 6.5px;
   border-radius: 50%;
-  background: var(--accent, #38bdf8);
-  box-shadow: 0 0 6px var(--accent-glow, rgba(56, 189, 248, 0.4));
+  background: var(--r-ui-color-accent-primary, #38bdf8);
+  box-shadow: 0 0 0 2px var(--r-ui-color-accent-soft, rgba(56, 189, 248, 0.25));
   flex-shrink: 0;
 }
 
 .desktop-trust-panel #desktop-trust-feedback {
   margin: 0;
   min-height: 1.25rem;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, #94a3b8);
   font-size: 12px;
   line-height: 1.4;
   overflow-wrap: anywhere;

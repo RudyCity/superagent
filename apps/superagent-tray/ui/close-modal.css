@@ -1,28 +1,29 @@
 /* ==========================================================================
    SuperAgent Tray · Close Confirmation & Exit Options Modal
-   Strict anti-slop, high-contrast dark cyberpunk HUD aesthetics
+   Refactored to r-ui design standards (Anti-Slop Visual Laws, Clean Multi-Layer Elevations)
    ========================================================================== */
 
 .close-options-modal {
   max-width: 640px;
   width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: #0d121f;
-  box-shadow: 0 24px 60px -10px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));
+  background: var(--r-ui-color-canvas-surface-raised, #0d121f);
+  border-radius: var(--r-ui-radius-container, 12px);
+  box-shadow: var(--r-ui-shadow-popover);
 }
 
 .close-options-subtitle {
   margin: 6px 0 0;
   font-size: 13px;
-  color: var(--text-secondary, #94a3b8);
-  line-height: 1.45;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
+  line-height: 1.5;
 }
 
 .close-options-body {
-  padding: 22px 24px;
+  padding: 24px 26px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
 }
 
 .close-options-grid {
@@ -36,60 +37,64 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 18px;
-  border-radius: var(--radius-md, 8px);
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 20px;
+  border-radius: var(--r-ui-radius-element, 8px);
+  background: var(--r-ui-color-canvas-surface, rgba(15, 23, 42, 0.65));
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.08));
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: transform var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
   cursor: pointer;
   user-select: none;
 }
 
 .close-option-card:focus-visible {
-  outline: 2px solid var(--accent-cyan, #06b6d4);
+  outline: 2px solid var(--r-ui-color-accent-primary, #06b6d4);
   outline-offset: 2px;
 }
 
 /* Standby / Tray Card */
 .close-option-card.close-option-tray {
-  border-color: rgba(56, 189, 248, 0.2);
+  border-color: var(--r-ui-color-accent-border, rgba(56, 189, 248, 0.25));
 }
 
 .close-option-card.close-option-tray:hover {
-  background: rgba(15, 23, 42, 0.9);
-  border-color: rgba(56, 189, 248, 0.45);
+  background: var(--r-ui-color-accent-soft, rgba(56, 189, 248, 0.06));
+  border-color: var(--r-ui-color-accent-primary, #38bdf8);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px -6px rgba(56, 189, 248, 0.15);
+  box-shadow: var(--r-ui-shadow-card);
 }
 
 /* Drain / Complete Stop Card */
 .close-option-card.close-option-daemon {
-  border-color: rgba(239, 68, 68, 0.25);
+  border-color: var(--r-ui-color-danger-border, rgba(239, 68, 68, 0.25));
 }
 
 .close-option-card.close-option-daemon:hover {
-  background: rgba(24, 18, 28, 0.85);
-  border-color: rgba(239, 68, 68, 0.55);
+  background: var(--r-ui-color-danger-soft, rgba(239, 68, 68, 0.08));
+  border-color: var(--r-ui-color-danger, #ef4444);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px -6px rgba(239, 68, 68, 0.2);
+  box-shadow: var(--r-ui-shadow-card);
 }
 
 /* Badges */
 .close-option-badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-family: var(--font-mono, monospace);
+  gap: 6px;
+  font-family: var(--r-ui-font-family-mono, var(--font-mono, monospace));
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #38bdf8;
+  color: var(--r-ui-color-accent-primary, #38bdf8);
   margin-bottom: 12px;
 }
 
 .close-option-badge.danger {
-  color: #f87171;
+  color: var(--r-ui-color-danger, #f87171);
 }
 
 .close-option-badge::before {
@@ -113,33 +118,33 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 8px;
-  background: rgba(56, 189, 248, 0.12);
-  border: 1px solid rgba(56, 189, 248, 0.25);
-  color: #38bdf8;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-ui-radius-element, 8px);
+  background: var(--r-ui-color-accent-soft, rgba(56, 189, 248, 0.12));
+  border: 1px solid var(--r-ui-color-accent-border, rgba(56, 189, 248, 0.25));
+  color: var(--r-ui-color-accent-primary, #38bdf8);
   flex-shrink: 0;
 }
 
 .close-option-icon.danger {
-  background: rgba(239, 68, 68, 0.14);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #ef4444;
+  background: var(--r-ui-color-danger-soft, rgba(239, 68, 68, 0.14));
+  border-color: var(--r-ui-color-danger-border, rgba(239, 68, 68, 0.3));
+  color: var(--r-ui-color-danger, #ef4444);
 }
 
 .close-option-title {
   margin: 0;
   font-size: 15px;
-  font-weight: 600;
-  color: #f8fafc;
-  letter-spacing: -0.01em;
+  font-weight: 700;
+  color: var(--r-ui-color-text-primary, #f8fafc);
+  letter-spacing: -0.015em;
 }
 
 .close-option-desc {
-  margin: 0 0 14px;
-  font-size: 12px;
-  color: var(--text-secondary, #94a3b8);
+  margin: 0 0 16px;
+  font-size: 12.5px;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
   line-height: 1.5;
   flex-grow: 1;
 }
@@ -147,23 +152,23 @@
 /* Features List */
 .close-option-features {
   list-style: none;
-  margin: 0 0 16px;
-  padding: 0;
+  margin: 0 0 18px;
+  padding: 12px 0 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 11.5px;
-  color: var(--text-muted, #64748b);
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  padding-top: 10px;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--r-ui-color-text-muted, var(--text-muted, #64748b));
+  border-top: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.05));
 }
 
 .close-option-features li {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 }
 
+/* Optical Indicators without neon blur */
 .close-option-features .dot {
   width: 6px;
   height: 6px;
@@ -172,27 +177,27 @@
 }
 
 .close-option-features .dot.active {
-  background: #10b981;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+  background: var(--r-ui-color-success, #10b981);
+  box-shadow: 0 0 0 2px var(--r-ui-color-success-soft, rgba(16, 185, 129, 0.25));
 }
 
 .close-option-features .dot.stopped {
-  background: #ef4444;
-  box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+  background: var(--r-ui-color-danger, #ef4444);
+  box-shadow: 0 0 0 2px var(--r-ui-color-danger-soft, rgba(239, 68, 68, 0.25));
 }
 
 /* Buttons */
 .close-btn-secondary {
   width: 100%;
-  background: rgba(56, 189, 248, 0.1);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  color: #38bdf8;
+  background: var(--r-ui-color-accent-soft, rgba(56, 189, 248, 0.1));
+  border: 1px solid var(--r-ui-color-accent-border, rgba(56, 189, 248, 0.3));
+  color: var(--r-ui-color-accent-primary, #38bdf8);
   font-size: 12.5px;
   font-weight: 600;
-  padding: 8px 14px;
-  border-radius: var(--radius-sm, 6px);
+  padding: 9px 15px;
+  border-radius: var(--r-ui-radius-element, 6px);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -200,23 +205,28 @@
 }
 
 .close-btn-secondary:hover:not(:disabled) {
-  background: rgba(56, 189, 248, 0.2);
-  border-color: rgba(56, 189, 248, 0.5);
-  color: #ffffff;
+  background: var(--r-ui-color-accent-primary, #38bdf8);
+  border-color: var(--r-ui-color-accent-primary, #38bdf8);
+  color: #07090e;
+  box-shadow: var(--r-ui-shadow-subtle);
+}
+
+.close-btn-secondary:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .close-btn-danger {
   width: 100%;
-  background: #dc2626;
-  border: 1px solid #ef4444;
+  background: var(--r-ui-color-danger, #dc2626);
+  border: 1px solid var(--r-ui-color-danger, #ef4444);
   color: #ffffff;
   font-size: 12.5px;
   font-weight: 600;
-  padding: 8px 14px;
-  border-radius: var(--radius-sm, 6px);
+  padding: 9px 15px;
+  border-radius: var(--r-ui-radius-element, 6px);
   cursor: pointer;
-  transition: all 0.15s ease;
-  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+  transition: all var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
+  box-shadow: var(--r-ui-shadow-subtle);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -224,9 +234,13 @@
 }
 
 .close-btn-danger:hover:not(:disabled) {
-  background: #b91c1c;
-  border-color: #dc2626;
-  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.55);
+  background: var(--r-ui-color-danger-hover, #b91c1c);
+  border-color: var(--r-ui-color-danger-hover, #dc2626);
+  box-shadow: var(--r-ui-shadow-card);
+}
+
+.close-btn-danger:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 /* Progress / Feedback */
@@ -235,17 +249,17 @@
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: var(--radius-sm, 6px);
+  background: var(--r-ui-color-canvas-surface, rgba(15, 23, 42, 0.85));
+  border: 1px solid var(--r-ui-color-danger-border, rgba(239, 68, 68, 0.3));
+  border-radius: var(--r-ui-radius-element, 6px);
   animation: fadeIn 0.2s ease;
 }
 
 .close-options-spinner {
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(239, 68, 68, 0.25);
-  border-top-color: #ef4444;
+  border: 2px solid var(--r-ui-color-border-standard, rgba(239, 68, 68, 0.25));
+  border-top-color: var(--r-ui-color-danger, #ef4444);
   border-radius: 50%;
   animation: closeSpin 0.75s linear infinite;
   flex-shrink: 0;
@@ -262,8 +276,8 @@
 
 #close-options-status-text {
   font-size: 12.5px;
-  color: #f1f5f9;
-  font-weight: 500;
+  color: var(--r-ui-color-text-primary, #f1f5f9);
+  font-weight: 550;
 }
 
 /* Footer */
@@ -271,12 +285,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 24px;
-  background: rgba(0, 0, 0, 0.25);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 16px 26px;
+  background: var(--r-ui-color-canvas-sidebar, rgba(0, 0, 0, 0.25));
+  border-top: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.06));
 }
 
 .close-options-hint {
   font-size: 11.5px;
-  color: var(--text-muted, #64748b);
+  color: var(--r-ui-color-text-muted, var(--text-muted, #64748b));
 }

@@ -4,11 +4,13 @@
 .op-head {display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
 .op-head h3 {font-size:14px;font-weight:700;margin:0;color:var(--text-primary)}
 .op-head p {font-size:11px;line-height:1.5;color:var(--text-muted);margin:4px 0 0}
-.op-frame {background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:16px;min-width:0}
+.op-frame {background:var(--r-ui-color-canvas-surface, #0f1523);border:1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));border-radius:var(--r-ui-radius-md, 8px);padding:16px;min-width:0;box-shadow:var(--r-ui-shadow-subtle);transition:border-color var(--r-ui-transition-fast, 160ms cubic-bezier(0.16, 1, 0.3, 1))}
+.op-frame:hover {border-color:var(--r-ui-color-border-medium, rgba(255, 255, 255, 0.16))}
 .op-row {display:grid;grid-template-columns:minmax(0,1.35fr) repeat(2,minmax(0,1fr));gap:12px}
 .op-pair {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .op-metrics {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
-.op-stat {min-width:0;padding:10px;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);background:var(--bg-surface-raised)}
+.op-stat {min-width:0;padding:10px 12px;border:1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));border-radius:var(--r-ui-radius-sm, 6px);background:var(--r-ui-color-canvas-surface-raised, #141c2e);transition:transform var(--r-ui-transition-fast, 160ms cubic-bezier(0.16, 1, 0.3, 1)),border-color var(--r-ui-transition-fast, 160ms cubic-bezier(0.16, 1, 0.3, 1))}
+.op-stat:hover {border-color:var(--r-ui-color-border-strong, rgba(255, 255, 255, 0.24));transform:translateY(-1px)}
 .op-stat span {display:block;color:var(--text-muted);font-size:10px;line-height:1.4}
 .op-stat strong {display:block;margin-top:3px;color:var(--text-primary);font-size:16px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .op-service-list {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:600px;overflow-y:auto}

@@ -27,17 +27,17 @@
    1. Hero Cockpit Ribbon
    ========================================================================== */
 .overview-hero-ribbon {
-  background: linear-gradient(135deg, rgba(15, 21, 35, 0.95) 0%, rgba(20, 28, 46, 0.85) 100%);
-  border: 1px solid var(--border-medium);
-  border-radius: var(--radius-lg);
-  padding: 20px 24px;
+  background: var(--r-ui-color-canvas-surface-raised, #141c2e);
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));
+  border-radius: var(--r-ui-radius-lg, 12px);
+  padding: 18px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: var(--r-ui-shadow-card, 0 2px 6px -1px rgba(0, 0, 0, 0.32));
 }
 
 .overview-hero-ribbon::before {
@@ -47,8 +47,8 @@
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, #38bdf8 0%, #3b82f6 50%, #10b981 100%);
-  opacity: 0.85;
+  background: linear-gradient(90deg, var(--r-ui-color-accent-primary, #38bdf8) 0%, var(--r-ui-color-info, #38bdf8) 50%, var(--r-ui-color-success, #10b981) 100%);
+  opacity: 0.9;
 }
 
 .overview-hero-left {
@@ -60,11 +60,11 @@
 
 .overview-status-beacon {
   position: relative;
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-md);
-  background: var(--bg-surface-elevated);
-  border: 1px solid var(--border-strong);
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-ui-radius-md, 8px);
+  background: var(--r-ui-color-canvas-surface-elevated, #1a243a);
+  border: 1px solid var(--r-ui-color-border-medium, rgba(255, 255, 255, 0.16));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -72,39 +72,39 @@
 }
 
 .overview-beacon-dot {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background: var(--success);
-  box-shadow: 0 0 12px var(--success);
-  transition: all var(--transition-normal);
+  background: var(--r-ui-color-success, #10b981);
+  box-shadow: 0 0 0 3px var(--r-ui-color-success-soft, rgba(16, 185, 129, 0.16));
+  transition: all var(--r-ui-transition-normal, 220ms cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .overview-beacon-dot.offline {
-  background: var(--danger);
-  box-shadow: 0 0 12px var(--danger);
+  background: var(--r-ui-color-danger, #f43f5e);
+  box-shadow: 0 0 0 3px var(--r-ui-color-danger-soft, rgba(244, 63, 94, 0.16));
 }
 
 .overview-beacon-dot.degraded {
-  background: var(--warning);
-  box-shadow: 0 0 12px var(--warning);
+  background: var(--r-ui-color-warning, #f59e0b);
+  box-shadow: 0 0 0 3px var(--r-ui-color-warning-soft, rgba(245, 158, 11, 0.16));
 }
 
 .overview-beacon-ring {
   position: absolute;
-  inset: -4px;
-  border-radius: calc(var(--radius-md) + 4px);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  animation: beaconPulse 2.8s ease-in-out infinite;
+  inset: -3px;
+  border-radius: calc(var(--r-ui-radius-md, 8px) + 3px);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  animation: beaconPulse 2.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
   pointer-events: none;
 }
 
 .overview-beacon-dot.offline + .overview-beacon-ring {
-  border-color: rgba(239, 68, 68, 0.3);
+  border-color: rgba(244, 63, 94, 0.25);
 }
 
 .overview-beacon-dot.degraded + .overview-beacon-ring {
-  border-color: rgba(245, 158, 11, 0.3);
+  border-color: rgba(245, 158, 11, 0.25);
 }
 
 @keyframes beaconPulse {
@@ -208,38 +208,92 @@
 }
 
 /* ==========================================================================
-   2. KPI Metric Bento Grid
+   2. KPI Metric Bento Grid (Law 2: Asymmetric 2:1 Visual Hierarchy)
    ========================================================================== */
 .overview-kpis {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(12, 1fr);
   gap: 12px;
 }
 
 .overview-kpi-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  background: var(--r-ui-color-canvas-surface, #0f1523);
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));
+  border-radius: var(--r-ui-radius-md, 8px);
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 10px;
-  transition: all var(--transition-fast);
+  transition: all var(--r-ui-transition-fast, 160ms cubic-bezier(0.16, 1, 0.3, 1));
   cursor: pointer;
   position: relative;
   overflow: hidden;
+  box-shadow: var(--r-ui-shadow-subtle, 0 1px 2px rgba(0, 0, 0, 0.22));
+}
+
+/* Primary Telemetry Cards have wider 2:1 visual weight */
+.overview-kpi-card:nth-child(1),
+.overview-kpi-card:nth-child(6) {
+  grid-column: span 3;
+  background: var(--r-ui-color-canvas-surface-raised, #141c2e);
+  border-color: var(--r-ui-color-border-medium, rgba(255, 255, 255, 0.16));
+}
+
+.overview-kpi-card:nth-child(2),
+.overview-kpi-card:nth-child(3),
+.overview-kpi-card:nth-child(4),
+.overview-kpi-card:nth-child(5) {
+  grid-column: span 3;
+}
+
+@media (max-width: 1100px) {
+  .overview-kpi-card:nth-child(1),
+  .overview-kpi-card:nth-child(2),
+  .overview-kpi-card:nth-child(3),
+  .overview-kpi-card:nth-child(4),
+  .overview-kpi-card:nth-child(5),
+  .overview-kpi-card:nth-child(6) {
+    grid-column: span 4;
+  }
+}
+
+@media (max-width: 768px) {
+  .overview-kpi-card:nth-child(1),
+  .overview-kpi-card:nth-child(2),
+  .overview-kpi-card:nth-child(3),
+  .overview-kpi-card:nth-child(4),
+  .overview-kpi-card:nth-child(5),
+  .overview-kpi-card:nth-child(6) {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 480px) {
+  .overview-kpi-card:nth-child(1),
+  .overview-kpi-card:nth-child(2),
+  .overview-kpi-card:nth-child(3),
+  .overview-kpi-card:nth-child(4),
+  .overview-kpi-card:nth-child(5),
+  .overview-kpi-card:nth-child(6) {
+    grid-column: span 12;
+  }
 }
 
 .overview-kpi-card:hover {
-  background: var(--bg-surface-raised);
-  border-color: var(--border-medium);
+  background: var(--r-ui-color-canvas-surface-raised, #141c2e);
+  border-color: var(--r-ui-color-border-strong, rgba(255, 255, 255, 0.24));
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px -4px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--r-ui-shadow-card, 0 2px 6px -1px rgba(0, 0, 0, 0.32));
 }
 
 .overview-kpi-card:active {
   transform: scale(0.985);
+}
+
+.overview-kpi-card:focus-visible {
+  outline: 2px solid var(--r-ui-color-accent-primary, #38bdf8);
+  outline-offset: 2px;
 }
 
 .overview-kpi-top {
@@ -560,13 +614,13 @@
   flex-shrink: 0;
 }
 
-.overview-activity-tag.core { color: #38bdf8; border-color: rgba(56, 189, 248, 0.3); }
-.overview-activity-tag.cron { color: #a78bfa; border-color: rgba(167, 139, 250, 0.3); }
-.overview-activity-tag.delegate { color: #34d399; border-color: rgba(52, 211, 153, 0.3); }
-.overview-activity-tag.mcp { color: #f59e0b; border-color: rgba(245, 158, 11, 0.3); }
-.overview-activity-tag.terminal { color: #ec4899; border-color: rgba(236, 72, 153, 0.3); }
-.overview-activity-tag.lan { color: #60a5fa; border-color: rgba(96, 165, 250, 0.3); }
-.overview-activity-tag.security { color: #f43f5e; border-color: rgba(244, 63, 94, 0.3); }
+.overview-activity-tag.core { color: var(--r-ui-color-accent-primary, #38bdf8); border-color: rgba(var(--r-ui-color-accent-primary-rgb, 56, 189, 248), 0.3); }
+.overview-activity-tag.cron { color: var(--r-ui-color-info, #38bdf8); border-color: rgba(56, 189, 248, 0.3); }
+.overview-activity-tag.delegate { color: var(--r-ui-color-success, #10b981); border-color: rgba(16, 185, 129, 0.3); }
+.overview-activity-tag.mcp { color: var(--r-ui-color-warning, #f59e0b); border-color: rgba(245, 158, 11, 0.3); }
+.overview-activity-tag.terminal { color: var(--r-ui-color-accent-hover, #7dd3fc); border-color: rgba(125, 211, 252, 0.3); }
+.overview-activity-tag.lan { color: var(--r-ui-color-accent-primary, #38bdf8); border-color: rgba(56, 189, 248, 0.3); }
+.overview-activity-tag.security { color: var(--r-ui-color-danger, #f43f5e); border-color: rgba(244, 63, 94, 0.3); }
 
 .overview-activity-info {
   display: flex;

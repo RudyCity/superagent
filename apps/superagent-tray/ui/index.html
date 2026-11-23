@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background-color: #07090e; color: #f8fafc;">
+<html lang="en" data-r-ui-theme="dark-nebula" data-r-ui-accent="cyan" style="background-color: #07090e; color: #f8fafc;">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -2348,6 +2348,34 @@
             <span class="subtle-badge">Local · versioned</span>
           </div>
           <form id="tray-settings-form">
+            <div class="tray-settings-section">
+              <h3>Appearance &amp; Theming (r-ui Engine)</h3>
+              <label class="tray-field-row">
+                <span><strong>Canvas Theme</strong>
+                  <small>Dual-layer background canvas and high-contrast surface palette.</small></span>
+                <select id="settings-theme-canvas">
+                  <option value="dark-nebula" selected>Dark Nebula (Cyberpunk Deep Base)</option>
+                  <option value="clean-light">Clean Light (High-Clarity Minimalist)</option>
+                  <option value="slate-obsidian">Slate Obsidian (Ultra-Low Luminance)</option>
+                  <option value="warm-sepia">Warm Sepia (Editorial Warm Slate)</option>
+                  <option value="glass-frosted">Glass Frosted (Aero Frosted Glass)</option>
+                </select>
+              </label>
+              <label class="tray-field-row">
+                <span><strong>Color Accent</strong>
+                  <small>Calibrated semantic accent tokens for focus rings, status badges, and optical beacons.</small></span>
+                <select id="settings-theme-accent">
+                  <option value="cyan" selected>Cyan (#00f0ff · SuperAgent Electric)</option>
+                  <option value="emerald">Emerald (#10b981 · Safe / Production)</option>
+                  <option value="violet">Violet (#8b5cf6 · Deep Violet Spectrum)</option>
+                  <option value="crimson">Crimson (#f43f5e · High Attention Red)</option>
+                  <option value="amber">Amber (#f59e0b · Industrial Warning)</option>
+                  <option value="monochrome">Monochrome (#e2e8f0 · Minimal Platinum)</option>
+                  <option value="frost">Frost (#38bdf8 · Cool Sky Crisp)</option>
+                  <option value="coral">Coral (#ff6b6b · Warm Organic Punch)</option>
+                </select>
+              </label>
+            </div>
             <div class="tray-settings-section">
               <h3>Startup &amp; Window</h3>
               <label class="tray-switch-row">

@@ -1,51 +1,287 @@
-/* Bounded, accessible native service supervisor section. */
+/* ==========================================================================
+   SuperAgent Tray · Service Lifecycle Supervisor Stylesheet
+   Refactored to r-ui design standards (Anti-Slop, 100% Componentized Controls)
+   ========================================================================== */
+
 .lifecycle-console {
-  margin-top:22px; padding:20px; border:1px solid var(--border-medium,#334155);
-  border-radius:13px;background:var(--bg-surface-raised,#131f30);
+  margin-top: 24px;
+  padding: 24px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium, #334155));
+  border-radius: var(--r-ui-radius-container, 12px);
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised, #131f30));
+  box-shadow: var(--r-ui-shadow-subtle);
 }
-.lifecycle-heading {display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-.lifecycle-heading h3 {margin:6px 0 4px;font-size:17px}
-.lifecycle-heading p,.lifecycle-hint {color:var(--text-secondary,#94a3b8);font-size:12px;line-height:1.55}
-.lifecycle-feedback {margin:14px 0;padding:10px 12px;border-radius:8px;background:rgba(56,189,248,.07);
- font-size:12px;color:var(--text-secondary,#a5b4c9);overflow-wrap:anywhere}
-.lifecycle-error {color:#fb7185;background:rgba(244,63,94,.08)}
-.lifecycle-metrics {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-.lifecycle-metrics>div {background:rgba(15,23,42,.4);border:1px solid var(--border-medium,#334155);
- border-radius:9px;padding:12px;display:flex;flex-direction:column;gap:4px}
-.lifecycle-metrics strong {font-size:20px;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
-.lifecycle-metrics small {color:var(--text-secondary,#94a3b8);font-size:11px}
-.lifecycle-layout {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}
-.lifecycle-pane {min-width:0;border:1px solid var(--border-medium,#334155);border-radius:10px;padding:14px}
-.lifecycle-pane h4 {font-size:13px;margin:0 0 12px}
-.lifecycle-service-list,.lifecycle-event-list {max-height:365px;overflow:auto;display:flex;flex-direction:column;gap:9px}
-.lifecycle-service-card,.lifecycle-event {padding:10px;border-radius:7px;background:rgba(15,23,42,.32);
- border:1px solid rgba(148,163,184,.1);min-width:0;overflow-wrap:anywhere}
-.lifecycle-service-head {display:flex;align-items:center;justify-content:space-between;gap:9px}
-.lifecycle-service-head strong,.lifecycle-event strong {font-size:12px}
-.lifecycle-chip {font-size:10px;font-weight:600;border-radius:12px;padding:3px 7px;white-space:nowrap}
-.lifecycle-chip.success{color:#86efac;background:rgba(34,197,94,.12)}
-.lifecycle-chip.warning{color:#fcd34d;background:rgba(234,179,8,.12)}
-.lifecycle-chip.muted{color:#94a3b8;background:rgba(100,116,139,.15)}
-.lifecycle-service-note {display:block;margin-top:5px;color:var(--text-secondary,#94a3b8);
- font-size:11px;line-height:1.45}
-.lifecycle-event {display:flex;flex-direction:column;gap:4px}
-.lifecycle-event-time {font-size:11px;color:var(--text-secondary,#94a3b8)}
-.lifecycle-field {display:flex;flex-direction:column;gap:5px;margin:10px 0;color:var(--text-secondary,#94a3b8);font-size:12px}
-.lifecycle-field .select-wrapper {width:100%}
-.lifecycle-field input,.lifecycle-field select {
- color:var(--text-primary,#e2e8f0);background:var(--bg-base,#0f172a);
- border:1px solid var(--border-medium,#334155);border-radius:7px;padding:9px;
- min-width:0;width:100%;box-sizing:border-box;
+
+.lifecycle-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
 }
-.lifecycle-check {display:flex;gap:9px;align-items:center;margin:13px 0;font-size:12px}
-.lifecycle-check input {width:16px;height:16px}
-.lifecycle-buttons {display:flex;flex-wrap:wrap;gap:9px;margin:12px 0}
-.lifecycle-plan-details {white-space:pre-wrap;font-size:11px;line-height:1.65;padding:10px;
- background:rgba(15,23,42,.35);border-radius:7px;color:var(--text-secondary,#94a3b8);
- overflow-wrap:anywhere}
-.lifecycle-console button:disabled {opacity:.5;cursor:not-allowed}
-@media(max-width:800px) {
- .lifecycle-layout {grid-template-columns:1fr}
- .lifecycle-metrics {grid-template-columns:repeat(2,minmax(0,1fr))}
- .lifecycle-heading {flex-wrap:wrap}
+
+.lifecycle-heading h3 {
+  margin: 4px 0 4px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--r-ui-color-text-primary, #f8fafc);
+}
+
+.lifecycle-heading p,
+.lifecycle-hint {
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.lifecycle-feedback {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-radius: var(--r-ui-radius-element, 8px);
+  background: var(--r-ui-color-accent-soft, rgba(56, 189, 248, 0.07));
+  border: 1px solid var(--r-ui-color-accent-border, rgba(56, 189, 248, 0.2));
+  font-size: 12px;
+  color: var(--r-ui-color-text-primary, #a5b4c9);
+  overflow-wrap: anywhere;
+}
+
+.lifecycle-error {
+  color: var(--r-ui-color-danger, #fb7185);
+  background: var(--r-ui-color-danger-soft, rgba(244, 63, 94, 0.08));
+  border-color: var(--r-ui-color-danger-border, rgba(244, 63, 94, 0.25));
+}
+
+.lifecycle-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.lifecycle-metrics > div {
+  background: var(--r-ui-color-canvas-surface, rgba(15, 23, 42, 0.4));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium, #334155));
+  border-radius: var(--r-ui-radius-element, 8px);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.lifecycle-metrics > div:hover {
+  border-color: var(--r-ui-color-border-hover, #64748b);
+}
+
+.lifecycle-metrics strong {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--r-ui-color-text-primary, #f8fafc);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lifecycle-metrics small {
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
+  font-size: 11px;
+}
+
+.lifecycle-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.lifecycle-pane {
+  min-width: 0;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium, #334155));
+  border-radius: var(--r-ui-radius-element, 8px);
+  padding: 16px;
+  background: var(--r-ui-color-canvas-surface, rgba(15, 23, 42, 0.35));
+  box-shadow: var(--r-ui-shadow-subtle);
+}
+
+.lifecycle-pane h4 {
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0 0 12px;
+  color: var(--r-ui-color-text-primary, #f8fafc);
+}
+
+.lifecycle-service-list,
+.lifecycle-event-list {
+  max-height: 365px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.lifecycle-service-card,
+.lifecycle-event {
+  padding: 12px;
+  border-radius: var(--r-ui-radius-element, 6px);
+  background: var(--r-ui-color-canvas-surface-raised, rgba(15, 23, 42, 0.32));
+  border: 1px solid var(--r-ui-color-border-standard, rgba(148, 163, 184, 0.1));
+  min-width: 0;
+  overflow-wrap: anywhere;
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.lifecycle-service-card:hover,
+.lifecycle-event:hover {
+  border-color: var(--r-ui-color-border-hover, #64748b);
+}
+
+.lifecycle-service-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+}
+
+.lifecycle-service-head strong,
+.lifecycle-event strong {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--r-ui-color-text-primary, #f8fafc);
+}
+
+.lifecycle-chip {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: var(--r-ui-radius-pill, 9999px);
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.lifecycle-chip.success {
+  color: var(--r-ui-color-success, #86efac);
+  background: var(--r-ui-color-success-soft, rgba(34, 197, 94, 0.12));
+  border: 1px solid var(--r-ui-color-success-border, rgba(34, 197, 94, 0.25));
+}
+
+.lifecycle-chip.warning {
+  color: var(--r-ui-color-warning, #fcd34d);
+  background: var(--r-ui-color-warning-soft, rgba(234, 179, 8, 0.12));
+  border: 1px solid var(--r-ui-color-warning-border, rgba(234, 179, 8, 0.25));
+}
+
+.lifecycle-chip.muted {
+  color: var(--r-ui-color-text-muted, #94a3b8);
+  background: var(--r-ui-color-canvas-surface, rgba(100, 116, 139, 0.15));
+  border: 1px solid var(--r-ui-color-border-standard, rgba(100, 116, 139, 0.25));
+}
+
+.lifecycle-service-note {
+  display: block;
+  margin-top: 6px;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.lifecycle-event {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lifecycle-event-time {
+  font-size: 11px;
+  color: var(--r-ui-color-text-muted, var(--text-secondary, #94a3b8));
+}
+
+.lifecycle-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lifecycle-field .select-wrapper {
+  width: 100%;
+}
+
+.lifecycle-field input,
+.lifecycle-field select {
+  color: var(--r-ui-color-text-primary, var(--text-primary, #e2e8f0));
+  background: var(--r-ui-color-canvas-surface, var(--bg-base, #0f172a));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium, #334155));
+  border-radius: var(--r-ui-radius-element, 6px);
+  padding: 9px 12px;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 12.5px;
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.lifecycle-field input:focus-visible,
+.lifecycle-field select:focus-visible {
+  outline: 2px solid var(--r-ui-color-accent-primary, #38bdf8);
+  outline-offset: 1px;
+}
+
+.lifecycle-check {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin: 14px 0;
+  font-size: 12px;
+  color: var(--r-ui-color-text-secondary, #94a3b8);
+}
+
+.lifecycle-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--r-ui-color-accent-primary, #38bdf8);
+}
+
+.lifecycle-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.lifecycle-plan-details {
+  white-space: pre-wrap;
+  font-size: 11.5px;
+  line-height: 1.65;
+  padding: 12px;
+  background: var(--r-ui-color-canvas-surface-raised, rgba(15, 23, 42, 0.35));
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.08));
+  border-radius: var(--r-ui-radius-element, 6px);
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
+  overflow-wrap: anywhere;
+  font-family: var(--r-ui-font-family-mono, monospace);
+}
+
+.lifecycle-console button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 800px) {
+  .lifecycle-layout {
+    grid-template-columns: 1fr;
+  }
+  .lifecycle-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .lifecycle-heading {
+    flex-wrap: wrap;
+  }
 }

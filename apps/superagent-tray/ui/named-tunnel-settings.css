@@ -1,122 +1,195 @@
+/* ==========================================================================
+   SuperAgent Tray · Named Tunnel Settings & Ingress Stylesheet
+   Refactored to r-ui design standards (Anti-Slop, Micro-Elevation, Crisp Borders)
+   ========================================================================== */
 
-/* Hallmark · component: Named Tunnel settings · existing Tray theme and spacing.
- * P5 H4 E5 S5 R5 V4 · no standalone visual palette.
- */
 .runtime-named-tunnel-entry {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
   flex-wrap: wrap;
-  padding: 15px 18px;
+  padding: 16px 20px;
   margin: 0;
-  border: 1px solid var(--border-medium);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface-elevated);
-  transition: border-color var(--transition-fast);
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-md, 8px));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-elevated));
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
+
 .runtime-named-tunnel-entry:hover {
-  border-color: var(--border-strong);
+  border-color: var(--r-ui-color-border-hover, var(--border-strong));
+  box-shadow: var(--r-ui-shadow-card);
 }
-.runtime-named-tunnel-entry[hidden] { display: none !important; }
+
+.runtime-named-tunnel-entry[hidden] {
+  display: none !important;
+}
+
 .runtime-named-tunnel-entry > div {
   display: flex;
   flex-direction: column;
   min-width: 0;
   gap: 5px;
 }
-.runtime-named-tunnel-entry strong { font-size: 13px; color: var(--text-primary); }
-.runtime-named-tunnel-entry small {
-  color: var(--text-secondary);
-  line-height: 1.5;
+
+.runtime-named-tunnel-entry strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--r-ui-color-text-primary, var(--text-primary));
 }
+
+.runtime-named-tunnel-entry small {
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  line-height: 1.5;
+  font-size: 11.5px;
+}
+
 .named-tunnel-settings .panel-head p {
   max-width: 68ch;
 }
+
 .named-tunnel-settings .tray-field-row input[type="number"] {
   font-variant-numeric: tabular-nums;
 }
+
 .named-tunnel-settings .tray-field-row input {
   min-width: 0;
 }
+
 .named-tunnel-settings [hidden] {
   display: none !important;
 }
+
 .named-tunnel-settings .named-tunnel-safety-note {
   margin: 18px 0 0;
 }
+
 .named-tunnel-readiness {
-  margin: 0 26px 24px;
-  padding: 13px 15px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface-elevated);
-  color: var(--text-secondary);
+  margin: 0 28px 24px;
+  padding: 14px 18px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-elevated));
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
   line-height: 1.6;
   font-size: 12px;
 }
+
 .named-tunnel-readiness[data-state="success"] {
-  border-color: var(--border-medium);
+  border-color: var(--r-ui-color-success-border, var(--border-medium));
+  color: var(--r-ui-color-success);
 }
+
 .named-tunnel-readiness[data-state="warning"] {
-  color: var(--text-secondary);
+  border-color: var(--r-ui-color-warning-border);
+  color: var(--r-ui-color-warning);
 }
+
 #named-tunnel-feedback {
   overflow-wrap: anywhere;
   max-width: 500px;
 }
+
 #named-tunnel-save:disabled,
 #named-tunnel-check:disabled {
   cursor: wait;
-  opacity: .7;
+  opacity: 0.7;
 }
+
 #named-tunnel-save[data-loading="true"] {
-  opacity: .75;
+  opacity: 0.75;
 }
 
-/* Hallmark · connector operations · Tray tokens · P5 H4 E5 S5 R5 V4 */
 .named-tunnel-setup-step {
-  border-top: 1px solid var(--border-subtle);
-  padding: 18px 0 22px;
+  border-top: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  padding: 20px 0 24px;
 }
+
 .named-tunnel-setup-step h3 {
-  margin: 0 0 6px; font-size: 13px; color: var(--text-primary);
+  margin: 0 0 6px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--r-ui-color-text-primary, var(--text-primary));
 }
+
 .named-tunnel-setup-step p {
-  margin: 0 0 12px; max-width: 70ch;
-  color: var(--text-secondary); font-size: 12px; line-height: 1.65;
+  margin: 0 0 14px;
+  max-width: 70ch;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  font-size: 12px;
+  line-height: 1.65;
 }
+
 #named-tunnel-token-feedback {
-  display: block; max-width: 65ch; overflow-wrap: anywhere;
-  color: var(--text-secondary); font-size: 12px; margin: 10px 0 0;
+  display: block;
+  max-width: 65ch;
+  overflow-wrap: anywhere;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  font-size: 12px;
+  margin: 10px 0 0;
 }
+
 .named-tunnel-health {
-  margin: 0 26px 24px; border: 1px solid var(--border-medium);
-  border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-surface);
+  margin: 0 28px 24px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  overflow: hidden;
+  background: var(--r-ui-color-canvas-surface, var(--bg-surface));
+  box-shadow: var(--r-ui-shadow-subtle);
 }
+
 .named-tunnel-health-row {
-  display: flex; gap: 16px; align-items: center; justify-content: space-between;
-  padding: 10px 15px; border-top: 1px solid var(--border-subtle); font-size: 12px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 16px;
+  border-top: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  font-size: 12px;
 }
-.named-tunnel-health-row:first-child { border-top: 0; }
-.named-tunnel-health-row span { color: var(--text-secondary); }
+
+.named-tunnel-health-row:first-child {
+  border-top: 0;
+}
+
+.named-tunnel-health-row span {
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+}
+
 .named-tunnel-health-row strong {
-  color: var(--text-primary); font-family: var(--font-mono); font-size: 11.5px;
-  text-align: right; overflow-wrap: anywhere;
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  font-family: var(--r-ui-font-family-mono, var(--font-mono));
+  font-size: 11.5px;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
+
 #named-tunnel-health-reason {
-  margin: 0; padding: 12px 15px;
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-secondary); font-size: 12px; line-height: 1.65;
+  margin: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  font-size: 12px;
+  line-height: 1.65;
 }
+
 #named-tunnel-start[data-loading="true"],
-#named-tunnel-stop[data-loading="true"] { opacity: .65; }
-@media (max-width: 750px) {
-  .named-tunnel-health-row { flex-direction: column; align-items: flex-start; gap: 4px; }
-  .named-tunnel-health-row strong { text-align: left; }
+#named-tunnel-stop[data-loading="true"] {
+  opacity: 0.65;
 }
 
 @media (max-width: 750px) {
+  .named-tunnel-health-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .named-tunnel-health-row strong {
+    text-align: left;
+  }
   .named-tunnel-settings .tray-field-row {
     align-items: stretch;
   }

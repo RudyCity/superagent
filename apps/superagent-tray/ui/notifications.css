@@ -1,19 +1,19 @@
 /* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 */
 /* SuperAgent Tray Notification Center · Utilitarian Triage console aligned to Tray tokens. */
 :root {
-  --notif-edge: var(--border-subtle, rgba(255, 255, 255, 0.07));
-  --notif-edge-strong: var(--border-medium, rgba(255, 255, 255, 0.12));
-  --notif-surface: var(--bg-surface, #0f1523);
-  --notif-surface-raised: var(--bg-surface-raised, #141c2e);
-  --notif-surface-elevated: var(--bg-surface-elevated, #1a243a);
-  --notif-surface-sunken: var(--bg-base, #07090e);
-  --notif-text: var(--text-primary, #f8fafc);
-  --notif-muted: var(--text-secondary, #94a3b8);
-  --notif-accent: var(--accent-hover, #60a5fa);
-  --notif-info: #38bdf8;
-  --notif-warning: #fbbf24;
-  --notif-critical: #f87171;
-  --notif-success: #34d399;
+  --notif-edge: var(--r-ui-color-border-subtle, rgba(255, 255, 255, 0.07));
+  --notif-edge-strong: var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));
+  --notif-surface: var(--r-ui-color-canvas-surface, #0f1523);
+  --notif-surface-raised: var(--r-ui-color-canvas-surface-raised, #141c2e);
+  --notif-surface-elevated: var(--r-ui-color-canvas-surface-elevated, #1a243a);
+  --notif-surface-sunken: var(--r-ui-color-canvas-base, #07090e);
+  --notif-text: var(--r-ui-color-text-primary, #f8fafc);
+  --notif-muted: var(--r-ui-color-text-secondary, #94a3b8);
+  --notif-accent: var(--r-ui-color-accent-hover, #7dd3fc);
+  --notif-info: var(--r-ui-color-info, #38bdf8);
+  --notif-warning: var(--r-ui-color-warning, #f59e0b);
+  --notif-critical: var(--r-ui-color-danger, #f43f5e);
+  --notif-success: var(--r-ui-color-success, #10b981);
 }
 
 /* Header Bell & Quick-Preview Popover */
@@ -66,9 +66,9 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--notif-edge-strong);
-  border-radius: var(--radius-lg, 14px);
+  border-radius: var(--r-ui-radius-lg, 12px);
   background: var(--notif-surface-raised);
-  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.65);
+  box-shadow: var(--r-ui-shadow-popover, 0 16px 36px -6px rgba(0, 0, 0, 0.58));
   overflow: hidden;
 }
 .notification-popover-head {

@@ -1,8 +1,8 @@
 ---
 name: r-ui
-description: Universal UI/UX Design System, Multi-Theme, Modular Color Accent, 9-Pillar Complete Dashboard Kit Architecture (45+ Production Components), Spatial Harmony & Layout Precision Doctrine, Color Science & Palette Architecture (60-30-10, Tonal Ramps, Undertones), Typographic Composition Doctrine (3-Tier Font Pairing, Modular Scale, Leading Ratios, Tracking Inversion, 3-Weight Discipline), Kinetic Physics & Micro-Interactions (Designspells Delight, Spring Curves, Tactile Press), Accessibility & Keyboard Spatial Navigation (WCAG 2.2 AAA Double-Ring Focus, Roving Tabindex, ARIA Live Regions), Component State Machine Exhaustiveness (6 Universal Visual States), Project-Adaptive & Live Playground Architecture Skill. Enforces anti-slop aesthetic standards (11 Anti-Slop Visual Laws: zero thick asymmetric left borders, crisp 1px uniform perimeter, zero generic purple haze, zero neon, zero heavy shadows), anti-rigid project adaptation (5 project archetypes & 4 visual dials), visual-first density, dual-layer theming (5 Canvas Themes + 8 Calibrated Color Themes), strict componentized form policy (zero raw native forms), headless/unstyled component flexibility, live interactive showcase, multi-framework integration (React, Next.js, Tailwind v3/v4, Vue, Svelte, Ink CLI), fluid cross-platform responsiveness (Web, Windows, macOS, Linux, Android, iOS, Foldables, Smart TV), and integration with curated design references (jiro.build, designspells.com, styles.refero.design, supahero.io, mobbin.com).
+description: Universal UI/UX Design System, Multi-Theme, Modular Color Accent, 9-Pillar Complete Dashboard Kit Architecture (45+ Production Components), Spatial Harmony & Layout Precision Doctrine, Color Science & Palette Architecture (60-30-10, Tonal Ramps, Undertones), Typographic Composition Doctrine (3-Tier Font Pairing, Modular Scale, Leading Ratios, Tracking Inversion, 3-Weight Discipline), Kinetic Physics & Micro-Interactions (Designspells Delight, Spring Curves, Tactile Press), Accessibility & Keyboard Spatial Navigation (WCAG 2.2 AAA Double-Ring Focus, Roving Tabindex, ARIA Live Regions), Component State Machine Exhaustiveness (6 Universal Visual States), Unified Canvas & Line-less Workspace Doctrine (Seamless Master-Detail, Unified Title Bar & Floating Action Dock), On-Demand Bespoke SVG Icon Crafting Doctrine (24x24 Optical Grid, 1.5px Geometry, Zero-Dependency Theme Reactivity), Project-Adaptive & Live Playground Architecture Skill. Enforces anti-slop aesthetic standards (11 Anti-Slop Visual Laws: zero thick asymmetric left borders, crisp 1px uniform perimeter, zero generic purple haze, zero neon, zero heavy shadows), anti-rigid project adaptation (5 project archetypes & 4 visual dials), visual-first density, dual-layer theming (5 Canvas Themes + 8 Calibrated Color Themes), strict componentized form policy (zero raw native forms), headless/unstyled component flexibility, live interactive showcase, multi-framework integration (React, Next.js, Tailwind v3/v4, Vue, Svelte, Ink CLI), fluid cross-platform responsiveness (Web, Windows, macOS, Linux, Android, iOS, Foldables, Smart TV), and integration with curated design references (jiro.build, designspells.com, styles.refero.design, supahero.io, mobbin.com).
 when_to_use: Use whenever designing, building, auditing, refactoring, or reviewing user interfaces (UI), user experiences (UX), dashboard kits, admin consoles, SaaS platforms, responsive layouts, design systems, design tokens, micro-interactions, components, color themes, project adaptation, interactive showcases, or cross-platform web/app experiences.
-version: 3.1.0
+version: 3.3.0
 ---
 
 # r-ui: Universal UI/UX Design System & Visual-First Architecture
@@ -119,6 +119,7 @@ When designing, reviewing, or refactoring UI/UX, verify patterns against the 5 e
 ## 6. MODULAR CODE DELIVERABLES
 
 - 🏛️ **Master Blueprint Dashboard Kit (9 Pillars & 45+ Components)**: [r-ui-dashboard-kit-spec.md](references/r-ui-dashboard-kit-spec.md)
+- 🎯 **On-Demand Bespoke SVG Icon Crafting Specification**: [r-ui-on-demand-icon-crafting.md](references/r-ui-on-demand-icon-crafting.md)
 - ⚡ **Kinetic Interaction, Accessibility & State Spec**: [r-ui-interaction-and-accessibility-spec.md](references/r-ui-interaction-and-accessibility-spec.md)
 - 🎨 **Color Science & Typographic Composition Doctrine**: [r-ui-color-and-typography-doctrine.md](references/r-ui-color-and-typography-doctrine.md)
 - 📜 **TypeScript Contract Types Boilerplate**: [r-ui-contract-types.ts](references/r-ui-contract-types.ts)
@@ -133,6 +134,7 @@ When designing, reviewing, or refactoring UI/UX, verify patterns against the 5 e
 ## 7. COMPLETE TECHNICAL REFERENCES
 
 - 🏛️ **Complete Dashboard Kit Specification**: [r-ui-dashboard-kit-spec.md](references/r-ui-dashboard-kit-spec.md)
+- 🎯 **On-Demand SVG Icon Crafting Protocol**: [r-ui-on-demand-icon-crafting.md](references/r-ui-on-demand-icon-crafting.md)
 - ⚡ **Interaction Physics & Accessibility Specification**: [r-ui-interaction-and-accessibility-spec.md](references/r-ui-interaction-and-accessibility-spec.md)
 - 🎨 **Color Science & Typographic Composition Specification**: [r-ui-color-and-typography-doctrine.md](references/r-ui-color-and-typography-doctrine.md)
 - 🎨 **Standard Design Tokens**: [r-ui-tokens.css](references/r-ui-tokens.css)
@@ -143,7 +145,7 @@ When designing, reviewing, or refactoring UI/UX, verify patterns against the 5 e
 
 ---
 
-## 8. PRE-FLIGHT UI/UX AUDIT CHECKLIST (26-Point Master Gate)
+## 8. PRE-FLIGHT UI/UX AUDIT CHECKLIST (28-Point Master Gate)
 
 ```text
 [ ] 1.  Anti-Slop Check: Free of AI-purple mesh gradients, monotonous uniform bentos, & "Lorem Ipsum" dummy text.
@@ -172,6 +174,8 @@ When designing, reviewing, or refactoring UI/UX, verify patterns against the 5 e
 [ ] 24. Accessibility & Keyboard Spatial Navigation: Passes WCAG 2.2 AAA focus-visible criteria (2px ring + 2px offset + 4px canvas shadow); roving tabindex on toolbars/tabs; overlays trap focus and restore it on Escape.
 [ ] 25. State Machine Exhaustiveness: 100% of interactive components explicitly define all 6 universal states (Idle, Hover, Active, Focus-Visible, Disabled, Loading/Skeleton) with zero visual ambiguity.
 [ ] 26. Anti-Thick Left Border & Asymmetric Strip Check: 100% free of asymmetric border-l-4 / border-l-2 or thick accent bars on rounded cards, callouts, and active items; strictly utilizes crisp 1px uniform perimeter borders and soft background tint or decoupled floating indicators.
+[ ] 27. Unified Canvas & Line-less Workspace Check: For modern productivity/developer tools and AI workspaces, validates seamless canvas integration without boxy hard dividers between sidebar and workspace, unified compact header/titlebar, floating action dock, and Gestalt negative-space separation.
+[ ] 28. On-Demand Bespoke SVG Icon Check: When icons are needed, validates that icons are crafted on a 24x24 optical grid (2px margin) with crisp 1.5px stroke, stroke="currentColor", round linecap/linejoin, zero neon filter slop, and proper WCAG accessibility (aria-hidden="true" on decorative icons, aria-label on interactive controls).
 ```
 
 ---
@@ -583,3 +587,134 @@ No component is declared complete until all **6 universal states** are formally 
 - **Form Error State**: Invalid inputs declare `.is-error` with semantic border color, error tint, and an accompanying message with icon (`role="alert"`).
 
 *Complete interaction, accessibility & state specifications:* [r-ui-interaction-and-accessibility-spec.md](references/r-ui-interaction-and-accessibility-spec.md).
+
+---
+
+## 18. UNIFIED CANVAS & LINE-LESS WORKSPACE DOCTRINE (Seamless Master-Detail, Unified Title Bar & Border-Free Layout)
+
+Modern pro-tier developer environments, creative suites, and AI workspaces (Linear, Raycast, Cursor, Antigravity, T-Line Desktop) have evolved beyond traditional boxy, heavily segmented desktop layouts. Instead of confining navigation, menus, and content into isolated, high-contrast bordered panels, they adopt a **Unified Canvas Architecture**:
+
+```text
++---------------------------------------------------------------------------------------------------+
+|                                 UNIFIED CANVAS & LINE-LESS WORKSPACE                              |
++---------------------------------------------------------------------------------------------------+
+|  [Menu] [Breadcrumb / Workspace Location]                          [_] [□] [X]  <-- UNIFIED TITLE |
++---------------------------------------------------------------------------------------------------+
+|  SIDEBAR / SESSION RAIL          |  PRIMARY WORKSPACE & CANVAS                                    |
+|  - Muted secondary typography    |  - High-contrast active stage                                  |
+|  - Zero hard border-right divider|  - Proportional 4pt/8pt negative space                         |
+|  - Soft-tint interactive hover   |  - Full-bleed monolithic canvas surface                        |
+|  - Flush with main canvas        |                                                                |
+|                                  |        +---------------------------------------------+         |
+|                                  |        |  (•) Floating Island / Action Prompt Dock   |         |
+|                                  |        +---------------------------------------------+         |
++----------------------------------+----------------------------------------------------------------+
+```
+
+### 18.1. Monolithic Canvas & Line-less Split View (Anti-Boxy Architecture)
+- **The Visual Defect of Legacy Boxy Layouts**: Placing high-contrast vertical line dividers (`border-right: 1px solid #333` or 2px beveled splitters) between the sidebar and the main content creates visual claustrophobia. It partitions the screen into rigid visual cages and distracts the eye.
+- **The Monolithic Canvas Principle**: The sidebar (navigation/session history) and the primary workspace share the **exact same root canvas surface background** (`--r-ui-color-canvas` / `--background`) or an ultra-subtle tonal delta (less than 2% luminance shift).
+- **Zero Hard Vertical Divider**: Remove rigid full-height `border-right` dividers between master (sidebar) and detail (workspace). Visual division is achieved entirely through **Gestalt Proximity**, **Negative Space**, and **Luminance Contrast Hierarchy**.
+
+### 18.2. Unified Title Bar & Client-Side Decoration (CSD / Extended Title Bar)
+Traditional desktop interfaces waste valuable vertical real estate by stacking an OS title bar, an application menu bar, and a navigation bar into 3 separate vertical tiers (consuming 90px–120px).
+- **The Unified Header Standard**: Merge the Menu Bar (`Window`, `File`, `View`), Breadcrumb Trail / Current Context (`workspace / task / file`), and Window Controls (`Minimize`, `Maximize`, `Close`) into a **single 36px–42px unified header row**.
+- **Cross-Platform Implementation**:
+  - *Electron / Tauri / Desktop*: Utilize `titleBarStyle: 'hidden'` with inset traffic lights/controls or custom client-side window buttons.
+  - *Web & SaaS Workspaces*: Position breadcrumbs, workspace selectors, and top-level menu triggers inline within the master header strip.
+  - *Vertical Space Conservation*: Returns 30px–60px of vertical working room directly to the user's primary focus area.
+
+### 18.3. Floating Action & Input Dock (Capsule Island Architecture)
+Rather than pinning input bars and primary action strips rigidly against the bottom edge of the viewport with a full-width border-top divider:
+- **Detached Floating Dock**: Elevate primary command inputs, chat prompts, or batch actions into a floating pill/capsule dock centered horizontally over the canvas.
+- **Craft Constraints**:
+  - Bound width proportionally (`max-width: 640px` to `768px`).
+  - Use a subtle backdrop blur (`backdrop-filter: blur(8px)`), a crisp 1px hairline border (`border: 1px solid var(--r-ui-color-border-standard)`), and micro-elevation (`box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15)`).
+  - Provide comfortable bottom clearance (`margin-bottom: 24px` to `32px`) so content can breathe beneath it.
+
+### 18.4. How to Separate Navigation and Workspace Without Lines
+When border dividers are eliminated, layout clarity is maintained through 3 strict optical rules:
+1. **Typographic Luminance Contrast**:
+   - Sidebar item labels and metadata use secondary/muted luminance (`--r-ui-color-text-secondary` or `--r-ui-color-text-tertiary`, 50%–65% contrast).
+   - Main workspace headings and active editor text use primary luminance (`--r-ui-color-text-primary`, 100% legibility).
+2. **Negative Space Gutters (Gestalt Continuity)**:
+   - Enforce an uninterrupted vertical column gap (`padding: 16px` to `24px`) between the rightmost edge of sidebar text and the leftmost edge of workspace content.
+3. **Soft-Tint Interactive Surfaces**:
+   - Hover and selected states in the sidebar use gentle translucent tint fills (`rgba(var(--r-ui-color-accent-primary-rgb), 0.08)` or subtle surface highlights) with uniform 1px border or decoupled pill indicators, preserving seamless boundary integration.
+
+---
+
+## 19. ON-DEMAND BESPOKE SVG ICON CRAFTING DOCTRINE (Zero-Dependency Just-In-Time Iconography)
+
+Rather than installing bloated third-party icon packages (Lucide, FontAwesome, Heroicons) that introduce hundreds of unused glyphs and lack project-specific domain iconography, agents and developers using `r-ui` **MUST CRAFT BESPOKE SVG ICONS ON-DEMAND** according to the exact functional needs of the interface being built.
+
+```text
++---------------------------------------------------------------------------------------------------+
+|                        ON-DEMAND BESPOKE SVG ICON CRAFTING PROTOCOL                               |
++---------------------------------------------------------------------------------------------------+
+| 1. THE 24×24 OPTICAL GRID  ──► 2px exterior margin; 20×20px live drawing bounds                   |
+| 2. UNIFORM 1.5PX STROKE    ──► stroke-width: 1.5; stroke-linecap: round; integer coordinate snap  |
+| 3. 100% CURRENTCOLOR       ──► Zero rogue hex; inherits text color & responds to active theme     |
+| 4. ZERO NEON BLUR SLOP     ──► Ban <filter>, drop-shadow blur inside SVG; clean vectors only      |
+| 5. MULTI-CHANNEL SEMANTICS ──► Never convey status by color alone; pair with semantic icon glyph  |
+| 6. WCAG 2.2 AAA ACCESSIBLE ──► aria-hidden="true" on decorative; aria-label on interactive button |
++---------------------------------------------------------------------------------------------------+
+```
+
+### 19.1. Anti-Third-Party Icon Bloat Mandate
+1. **Zero External Icon Libraries**: Never install external NPM icon packages for a few simple buttons or navigation items.
+2. **Context-Driven Just-In-Time Crafting**: Craft only the exact SVG glyphs needed by the component. If a component needs a search trigger, write an inline `<svg>` with a clean lens and stem. If an AI status bar needs a token gauge, craft an authentic 24×24 gauge path directly.
+3. **No Decorative Clutter**: Do not sprinkle random icons purely as visual noise. Every icon must serve a distinct navigational, semantic, or action purpose.
+
+### 19.2. The 24×24 Optical Grid & Geometry Standard
+- **Primary Canvas**: `viewBox="0 0 24 24"`.
+- **Live Drawing Area**: $20 \times 20\text{px}$ bounded between $x \in [2, 22]$ and $y \in [2, 22]$ (2px outer margin).
+- **Micro / Tabular Variant**: `viewBox="0 0 16 16"` with 1px outer margin and `stroke-width="1.75"` or `2.0`.
+- **Stroke Uniformity**: `stroke-width="1.5"`, `stroke-linecap="round"`, `stroke-linejoin="round"`, `fill="none"`.
+- **Pixel Snapping**: Coordinate points must be integers or exact half-pixels (`0.5`) to eliminate anti-aliasing fuzziness.
+
+### 19.3. 100% Theme Reactivity Contract (`currentColor`)
+- **No Rogue Hex in Vectors**: Never write `stroke="#38bdf8"` or `fill="#000000"` inside an SVG path.
+- **Inherited Chromatic Harmony**: Always set `stroke="currentColor"` (and `fill="currentColor"` for duotone or solid elements). When a user switches between `dark-nebula`, `clean-light`, or any accent theme (`cyan`, `emerald`, `crimson`), the icon automatically inherits the container's typography or accent tokens without manual CSS overrides.
+
+### 19.4. Zero-Dependency Inline Component Wrapper
+When writing components, use this lightweight inline wrapper pattern:
+```tsx
+const RUiIcon = ({ size = 20, label, children, ...props }) => (
+  <svg
+    viewBox="0 0 24 24"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden={!label}
+    role={label ? "img" : "presentation"}
+    focusable="false"
+    style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0 }}
+    {...props}
+  >
+    {label && <title>{label}</title>}
+    {children}
+  </svg>
+);
+```
+
+### 19.5. On-Demand Geometric Primitives Reference
+- *Chevron Down*: `<path d="m6 9 6 6 6-6" />`
+- *Arrow Right*: `<path d="M5 12h14M12 5l7 7-7 7" />`
+- *Search*: `<circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />`
+- *Close*: `<path d="M18 6 6 18M6 6l12 12" />`
+- *Checkmark*: `<path d="M5 13l4 4L19 7" />`
+- *Terminal*: `<path d="m4 17 6-6-6-6M12 19h8" />`
+- *Pulse Activity*: `<path d="M22 12h-4l-3 9L9 3l-3 9H2" />`
+- *Warning Triangle*: `<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3ZM12 9v4M12 17h.01" />`
+
+### 19.6. Kinetic Micro-Interactions & State Morphing (Designspells Delight)
+- **Haptic Pop & Draw**: Pair success states (like copying tokens) with a tactile scale pop `scale(1.15)` and self-drawing stroke animation (`stroke-dashoffset`).
+- **Center-Axis Spring Rotation**: Animate disclosure chevrons using `transform-origin: 12px 12px; transform: rotate(180deg)` with spring physics `cubic-bezier(0.16, 1, 0.3, 1)` (180ms–240ms duration) to eliminate layout jitter.
+- **Dynamic Masking & Radar Pulses**: Support live status telemetry with expanding radar ripple rings and animated secret reveal lines.
+
+*Complete on-demand recipes, kinetic morphing kit & optical balance guide:* [r-ui-on-demand-icon-crafting.md](references/r-ui-on-demand-icon-crafting.md).

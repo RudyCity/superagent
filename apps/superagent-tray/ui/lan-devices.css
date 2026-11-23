@@ -1,88 +1,424 @@
-/* Hallmark · pre-emit critique: P4 H5 E4 S5 R5 V4 */
-/* LAN Client manager adopts existing SuperAgent Tray tokens. */
-.lan-overview { display:flex; justify-content:space-between; gap:24px; padding:26px 28px; border:1px solid var(--border-medium); background:var(--bg-surface); border-radius:var(--radius-lg); margin-bottom:20px; }
-.lan-overview-title { min-width:0; max-width:590px; }
-.lan-kicker { color:var(--cyan); font-size:10px; font-weight:700; letter-spacing:.14em; }
-.lan-overview h2 { margin:8px 0 10px; font-size:22px; font-weight:650; line-height:1.25; color:var(--text-primary); overflow-wrap:anywhere; }
-.lan-overview p { margin:0; font-size:13px; line-height:1.65; color:var(--text-secondary); }
-.lan-overview-steps { display:flex; flex-direction:column; justify-content:center; gap:12px; min-width:150px; color:var(--text-secondary); font-size:12px; }
-.lan-overview-steps span { display:flex; align-items:center; gap:12px; }
-.lan-overview-steps b { font-family:var(--font-mono); color:var(--accent-hover); font-size:12px; }
-.lan-panel { margin-bottom:18px; }
-.lan-device-list { padding:18px 22px 22px; display:grid; gap:10px; }
-.lan-empty { border:1px dashed var(--border-medium); border-radius:var(--radius-md); padding:24px; font-size:13px; line-height:1.6; color:var(--text-muted); }
-.lan-device { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; border:1px solid var(--border-subtle); background:var(--bg-surface-raised); padding:15px; border-radius:var(--radius-md); }
-.lan-device[aria-selected="true"] { border-color:var(--accent); background:var(--accent-muted); }
-.lan-device-info { min-width:0; flex:1 1 190px; display:flex; flex-direction:column; gap:5px; }
-.lan-device-info strong { color:var(--text-primary); font-size:14px; overflow-wrap:anywhere; }
-.lan-device-meta { font-size:12px; color:var(--text-secondary); overflow-wrap:anywhere; font-family:var(--font-mono); }
-.lan-device-state { font-size:11px; color:var(--text-muted); }
-.lan-device-state.connected { color:var(--success); }
-.lan-device-actions { display:flex; gap:7px; flex-wrap:wrap; }
-.lan-device-actions .button { font-size:11px; padding:8px 10px; white-space:nowrap; }
-.lan-device-actions .danger { color:var(--danger); }
-.lan-pair-grid { padding:20px 22px 0; display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1.25fr) minmax(0,1.5fr); gap:12px; }
-.lan-pair-grid label, #lan-command-form label { display:flex; flex-direction:column; gap:8px; font-size:12px; font-weight:600; color:var(--text-secondary); min-width:0; }
-.lan-pair-grid .lan-wide { grid-column:1/-1; }
-.lan-pair-grid input, #lan-command { box-sizing:border-box; width:100%; min-width:0; border-radius:var(--radius-sm); background:var(--bg-base); border:1px solid var(--border-medium); padding:11px 12px; font-size:13px; color:var(--text-primary); outline:0; font-family:var(--font-sans); }
-.lan-pair-grid input:focus-visible, #lan-command:focus-visible { border-color:var(--border-focus); box-shadow:0 0 0 2px var(--accent-muted); }
-.lan-mono { font-family:var(--font-mono) !important; font-size:11px !important; }
-.lan-verify { margin:15px 22px 0; display:flex; align-items:flex-start; gap:10px; color:var(--text-secondary); font-size:12px; line-height:1.6; }
-.lan-verify input { margin-top:3px; accent-color:var(--accent); }
-.lan-form-actions { display:flex; align-items:center; gap:16px; padding:16px 22px 22px; flex-wrap:wrap; }
-.lan-help { font-size:12px; color:var(--text-muted); }
-.lan-help code { font-family:var(--font-mono); }
-.lan-pair-status { margin:0 22px 20px; padding:10px 12px; border:1px solid var(--border-medium); border-radius:var(--radius-sm); color:var(--text-secondary); background:var(--bg-base); font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
-.lan-pair-status.error { color:var(--danger); border-color:var(--danger); }
-.lan-pair-grid input[aria-invalid="true"] { border-color:var(--danger); }
-.lan-verify input[aria-invalid="true"] { outline:2px solid var(--danger); outline-offset:2px; }
-#lan-command-form { padding:18px 22px 12px; }
-.lan-command-row { display:flex; gap:10px; margin-top:8px; }
-.lan-command-row input { flex:1; font-family:var(--font-mono) !important; }
-.lan-command-row .button { white-space:nowrap; }
-#lan-command:disabled { opacity:.55; }
-.lan-output-head { padding:0 22px 8px; display:flex; align-items:center; justify-content:space-between; color:var(--text-secondary); font-size:12px; }
-.lan-output { margin:0 22px 16px; padding:16px; max-height:300px; min-height:120px; box-sizing:border-box; overflow:auto; white-space:pre-wrap; word-break:break-word; border:1px solid var(--border-medium); border-radius:var(--radius-sm); background:var(--bg-base); color:var(--text-primary); font-family:var(--font-mono); font-size:12px; line-height:1.6; user-select:text; }
-.lan-security-note { margin:0; padding:0 22px 20px; color:var(--text-muted); font-size:11px; line-height:1.6; }
-#lan-banner { margin-bottom:14px; }
-@media(max-width:850px){ .lan-overview{ flex-direction:column; gap:16px; } .lan-overview-steps{ flex-direction:row; flex-wrap:wrap; gap:15px; } .lan-pair-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media(max-width:570px){ .lan-overview{padding:20px;} .lan-pair-grid{grid-template-columns:minmax(0,1fr);} .lan-command-row{flex-direction:column;} .lan-device-actions .button{flex:1;} }
+/* ==========================================================================
+   SuperAgent Tray · LAN Devices & Mobile Node Management Stylesheet
+   Refactored to r-ui design standards (Anti-Slop Visual Laws, Decoupled Floating Indicator)
+   ========================================================================== */
+
+.lan-overview {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 26px 28px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  background: var(--r-ui-color-canvas-surface, var(--bg-surface));
+  border-radius: var(--r-ui-radius-container, var(--radius-lg, 12px));
+  box-shadow: var(--r-ui-shadow-subtle);
+  margin-bottom: 22px;
+}
+
+.lan-overview-title {
+  min-width: 0;
+  max-width: 590px;
+}
+
+.lan-kicker {
+  color: var(--r-ui-color-accent-primary, var(--cyan));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.lan-overview h2 {
+  margin: 6px 0 10px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  overflow-wrap: anywhere;
+}
+
+.lan-overview p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+}
+
+.lan-overview-steps {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  min-width: 150px;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  font-size: 12px;
+}
+
+.lan-overview-steps span {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lan-overview-steps b {
+  font-family: var(--r-ui-font-family-mono, var(--font-mono));
+  color: var(--r-ui-color-accent-primary, var(--accent-hover));
+  font-size: 12px;
+}
+
+.lan-panel {
+  margin-bottom: 20px;
+}
+
+.lan-device-list {
+  padding: 18px 24px 22px;
+  display: grid;
+  gap: 12px;
+}
+
+.lan-empty {
+  border: 1px dashed var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-md, 8px));
+  padding: 26px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--r-ui-color-text-muted, var(--text-muted));
+  text-align: center;
+}
+
+.lan-device {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
+  padding: 16px 18px;
+  border-radius: var(--r-ui-radius-element, var(--radius-md, 8px));
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.lan-device:hover {
+  border-color: var(--r-ui-color-border-hover, var(--border-strong));
+  box-shadow: var(--r-ui-shadow-card);
+}
+
+.lan-device[aria-selected="true"] {
+  border-color: var(--r-ui-color-accent-primary, var(--accent));
+  background: var(--r-ui-color-accent-soft, var(--accent-muted));
+}
+
+.lan-device-info {
+  min-width: 0;
+  flex: 1 1 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.lan-device-info strong {
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.lan-device-meta {
+  font-size: 11.5px;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  overflow-wrap: anywhere;
+  font-family: var(--r-ui-font-family-mono, var(--font-mono));
+}
+
+.lan-device-state {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--r-ui-color-text-muted, var(--text-muted));
+}
+
+.lan-device-state.connected {
+  color: var(--r-ui-color-success, var(--success));
+}
+
+.lan-device-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lan-device-actions .button {
+  font-size: 11px;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.lan-device-actions .danger {
+  color: var(--r-ui-color-danger, var(--danger));
+}
+
+.lan-pair-grid {
+  padding: 22px 24px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1.5fr);
+  gap: 14px;
+}
+
+.lan-pair-grid label,
+#lan-command-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  min-width: 0;
+}
+
+.lan-pair-grid .lan-wide {
+  grid-column: 1 / -1;
+}
+
+.lan-pair-grid input,
+#lan-command {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  background: var(--r-ui-color-canvas-surface, var(--bg-base));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  outline: 0;
+  font-family: var(--r-ui-font-family-base, var(--font-sans));
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.lan-pair-grid input:focus-visible,
+#lan-command:focus-visible {
+  border-color: var(--r-ui-color-accent-primary, var(--border-focus));
+  outline: 2px solid var(--r-ui-color-accent-primary, var(--border-focus));
+  outline-offset: 1px;
+}
+
+.lan-mono {
+  font-family: var(--r-ui-font-family-mono, var(--font-mono)) !important;
+  font-size: 11.5px !important;
+}
+
+.lan-verify {
+  margin: 16px 24px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.lan-verify input {
+  margin-top: 3px;
+  accent-color: var(--r-ui-color-accent-primary, var(--accent));
+}
+
+.lan-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 24px 24px;
+  flex-wrap: wrap;
+}
+
+.lan-help {
+  font-size: 12px;
+  color: var(--r-ui-color-text-muted, var(--text-muted));
+}
+
+.lan-help code {
+  font-family: var(--r-ui-font-family-mono, var(--font-mono));
+}
+
+.lan-pair-status {
+  margin: 0 24px 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  background: var(--r-ui-color-canvas-surface, var(--bg-base));
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.lan-pair-status.error {
+  color: var(--r-ui-color-danger, var(--danger));
+  border-color: var(--r-ui-color-danger-border, var(--danger));
+  background: var(--r-ui-color-danger-soft, rgba(239, 68, 68, 0.08));
+}
+
+.lan-pair-grid input[aria-invalid="true"] {
+  border-color: var(--r-ui-color-danger, var(--danger));
+}
+
+.lan-verify input[aria-invalid="true"] {
+  outline: 2px solid var(--r-ui-color-danger, var(--danger));
+  outline-offset: 2px;
+}
+
+#lan-command-form {
+  padding: 20px 24px 14px;
+}
+
+.lan-command-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.lan-command-row input {
+  flex: 1;
+  font-family: var(--r-ui-font-family-mono, var(--font-mono)) !important;
+}
+
+.lan-command-row .button {
+  white-space: nowrap;
+}
+
+#lan-command:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.lan-output-head {
+  padding: 0 24px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  font-size: 12px;
+}
+
+.lan-output {
+  margin: 0 24px 18px;
+  padding: 16px;
+  max-height: 300px;
+  min-height: 120px;
+  box-sizing: border-box;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  background: var(--r-ui-color-canvas-surface-sunken, var(--bg-base));
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  font-family: var(--r-ui-font-family-mono, var(--font-mono));
+  font-size: 12px;
+  line-height: 1.6;
+  user-select: text;
+}
+
+.lan-security-note {
+  margin: 0;
+  padding: 0 24px 22px;
+  color: var(--r-ui-color-text-muted, var(--text-muted));
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+#lan-banner {
+  margin-bottom: 16px;
+}
+
+@media (max-width: 850px) {
+  .lan-overview {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .lan-overview-steps {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 15px;
+  }
+  .lan-pair-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 570px) {
+  .lan-overview {
+    padding: 20px;
+  }
+  .lan-pair-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lan-command-row {
+    flex-direction: column;
+  }
+  .lan-device-actions .button {
+    flex: 1;
+  }
+}
 
 .lan-command-presets {
-  display:block; width:100%; box-sizing:border-box; margin:11px 0 0;
-  border:1px solid var(--border-medium); border-radius:var(--radius-sm);
-  background:var(--bg-surface-raised); color:var(--text-primary);
-  padding:11px 12px; font:12px var(--font-mono); outline:0;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 12px 0 0;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  padding: 10px 12px;
+  font: 12px var(--r-ui-font-family-mono, var(--font-mono));
+  outline: 0;
 }
-.lan-command-presets:focus-visible { border-color:var(--border-focus); box-shadow:0 0 0 2px var(--accent-muted); }
-.lan-command-presets:disabled { opacity:.55; }
 
-/* Android consent-based live screen viewer. No persistent frame storage. */
+.lan-command-presets:focus-visible {
+  border-color: var(--r-ui-color-accent-primary, var(--border-focus));
+  outline: 2px solid var(--r-ui-color-accent-primary, var(--border-focus));
+  outline-offset: 1px;
+}
+
+.lan-command-presets:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Screen Viewer */
 .lan-screen-layout {
   display: grid;
-  grid-template-columns: minmax(260px, 1.3fr) minmax(240px, .75fr);
+  grid-template-columns: minmax(260px, 1.3fr) minmax(240px, 0.75fr);
   gap: 20px;
-  padding: 20px 22px 24px;
+  padding: 20px 24px 26px;
 }
+
 .lan-screen-display {
-  background: var(--bg-base);
-  border: 1px solid var(--border-medium);
-  border-radius: 14px;
+  background: var(--r-ui-color-canvas-surface-sunken, var(--bg-base));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-container, 14px);
   min-height: 330px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  box-shadow: var(--r-ui-shadow-subtle);
 }
+
 .lan-screen-placeholder {
   padding: 44px 25px;
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--r-ui-color-text-muted, var(--text-muted));
   text-align: center;
   line-height: 1.7;
   max-width: 390px;
 }
+
 #lan-screen-image {
   width: 100%;
   height: auto;
@@ -93,74 +429,97 @@
   user-select: none;
   background: #0a111e;
 }
-#lan-screen-image[hidden] { display: none !important; }
+
+#lan-screen-image[hidden] {
+  display: none !important;
+}
+
 .lan-screen-caption {
   margin: 0;
   padding: 10px 12px;
-  color: var(--text-muted);
+  color: var(--r-ui-color-text-muted, var(--text-muted));
   font-size: 11px;
   line-height: 1.5;
   text-align: center;
 }
+
 .lan-screen-controls {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
+
 .lan-screen-controls > .button {
   width: 100%;
   justify-content: center;
 }
-.lan-screen-controls .button:disabled { opacity: .55; cursor: not-allowed; }
+
+.lan-screen-controls .button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .lan-screen-keypad {
   display: flex;
   gap: 6px;
 }
+
 .lan-screen-keypad .button {
   flex: 1;
   min-width: 0;
   justify-content: center;
 }
+
 .lan-screen-control-label {
-  color: var(--text-secondary);
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
 }
+
 #lan-screen-text {
   resize: vertical;
   min-height: 62px;
   padding: 10px 12px;
   box-sizing: border-box;
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  border: 1px solid var(--border-medium);
-  color: var(--text-primary);
-  font: 12px var(--font-mono);
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  background: var(--r-ui-color-canvas-surface, var(--bg-base));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  font: 12px var(--r-ui-font-family-mono, var(--font-mono));
 }
+
 #lan-screen-text:focus-visible {
-  outline: 2px solid var(--border-focus);
+  outline: 2px solid var(--r-ui-color-accent-primary, var(--border-focus));
   outline-offset: 1px;
 }
+
 .lan-screen-controls .lan-security-note {
   padding: 0;
   margin: 8px 0 0;
 }
-@media(max-width: 860px) {
-  .lan-screen-layout { grid-template-columns: minmax(0,1fr); }
-  .lan-screen-display { min-height: 250px; }
+
+@media (max-width: 860px) {
+  .lan-screen-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lan-screen-display {
+    min-height: 250px;
+  }
 }
 
 .lan-schema-info {
-  padding: 13px;
-  border: 1px solid var(--border-medium);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
+  padding: 14px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  background: var(--r-ui-color-canvas-surface, var(--bg-base));
 }
+
 .lan-schema-status {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
   margin-bottom: 10px;
 }
+
 .lan-schema-list {
   display: flex;
   flex-direction: column;
@@ -168,126 +527,429 @@
   max-height: 360px;
   overflow-y: auto;
 }
+
 .lan-schema-node {
   width: 100%;
   display: flex;
   justify-content: space-between;
   gap: 8px;
   text-align: left;
-  padding: 9px 10px;
-  background: var(--bg-surface-raised);
-  border: 1px solid var(--border-medium);
-  border-radius: 8px;
-  color: var(--text-primary);
-  font: 12px var(--font-mono);
+  padding: 9px 12px;
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, 8px);
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  font: 12px var(--r-ui-font-family-mono, var(--font-mono));
 }
-.lan-schema-node:hover:enabled { border-color: var(--border-focus); }
-.lan-schema-node:disabled { opacity: .6; cursor: default; }
-.lan-schema-id { font-size: 10px; color: var(--text-muted); }
 
-.lan-transfer-panel { padding: 20px 22px 24px; display: flex; flex-direction: column; gap: 12px; }
-.lan-file-source { color: var(--text-primary); width: 100%; padding: 12px;
-  border: 1px solid var(--border-medium); border-radius: var(--radius-sm); box-sizing: border-box; }
-.lan-transfer-actions { display: flex; flex-wrap: wrap; gap: 9px; }
-.lan-transfer-actions .button { flex: 1 1 145px; justify-content: center; }
-.lan-file-progress { width: 100%; height: 12px; }
-.lan-file-info { font-size: 12px; color: var(--text-secondary); margin: 0; line-height: 1.6; }
-.lan-relay-panel {
-  display: flex; flex-direction: column; gap: 9px; min-width: 0;
-  padding: 14px; border: 1px solid var(--border-medium);
-  background: var(--bg-surface-raised); border-radius: var(--radius-sm);
+.lan-schema-node:hover:enabled {
+  border-color: var(--r-ui-color-accent-primary, var(--border-focus));
 }
-.lan-relay-panel select { min-width: 0; max-width: 100%; width: 100%; border-radius: var(--radius-sm); }
-.lan-relay-panel :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+.lan-schema-node:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.lan-schema-id {
+  font-size: 10px;
+  color: var(--r-ui-color-text-muted, var(--text-muted));
+}
+
+.lan-transfer-panel {
+  padding: 22px 24px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lan-file-source {
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  box-sizing: border-box;
+}
+
+.lan-transfer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.lan-transfer-actions .button {
+  flex: 1 1 145px;
+  justify-content: center;
+}
+
+.lan-file-progress {
+  width: 100%;
+  height: 12px;
+}
+
+.lan-file-info {
+  font-size: 12px;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  margin: 0;
+  line-height: 1.6;
+}
+
+.lan-relay-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+}
+
+.lan-relay-panel select {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+}
+
+.lan-relay-panel :focus-visible {
+  outline: 2px solid var(--r-ui-color-accent-primary);
+  outline-offset: 1px;
+}
 
 .lan-transfer-history {
-  display: flex; flex-direction: column; gap: 7px; min-width: 0;
-  border-top: 1px solid var(--border-medium); padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  border-top: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  padding-top: 14px;
 }
+
 .lan-transfer-history-list {
-  white-space: pre-line; overflow-wrap: anywhere; max-height: 145px;
-  overflow-y: auto; border-radius: var(--radius-sm);
-  padding: 10px 12px; background: var(--bg-surface-raised);
-  border: 1px solid var(--border-medium);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  max-height: 145px;
+  overflow-y: auto;
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  padding: 10px 14px;
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
 }
 
-
-/* Explicit per-segment discovery: empty/malformed segment is not a scan-all fallback. */
 .lan-segment-control {
-  display: inline-flex; flex-direction: column; gap: 5px; min-width: 180px;
-  font-size: 11px; font-weight: 600; color: var(--text-secondary);
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
 }
+
 #lan-segment-name {
-  box-sizing: border-box; min-width: 180px; max-width: 245px;
-  background: var(--bg-base); color: var(--text-primary);
-  border: 1px solid var(--border-medium); border-radius: var(--radius-sm);
-  padding: 8px 10px; font: 12px var(--font-mono);
+  box-sizing: border-box;
+  min-width: 180px;
+  max-width: 245px;
+  background: var(--r-ui-color-canvas-surface, var(--bg-base));
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  padding: 8px 11px;
+  font: 12px var(--r-ui-font-family-mono, var(--font-mono));
 }
+
 #lan-segment-name:focus-visible {
-  outline: 2px solid var(--border-focus); outline-offset: 2px;
+  outline: 2px solid var(--r-ui-color-accent-primary, var(--border-focus));
+  outline-offset: 1px;
 }
-#lan-segment-name:invalid:not(:placeholder-shown) { border-color: var(--danger); }
+
+#lan-segment-name:invalid:not(:placeholder-shown) {
+  border-color: var(--r-ui-color-danger, var(--danger));
+}
+
 .lan-folder-picker {
-  display: flex; flex-direction: column; gap: 10px;
-  padding: 14px; border: 1px dashed var(--border-medium);
-  border-radius: var(--radius-sm); background: var(--bg-surface-raised);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px dashed var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
 }
-.lan-folder-picker .button { align-self: flex-start; }
-.lan-folder-picker .button:disabled { opacity: .55; cursor: not-allowed; }
+
+.lan-folder-picker .button {
+  align-self: flex-start;
+}
+
+.lan-folder-picker .button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 @media (max-width: 620px) {
-  .lan-folder-picker .button { width: 100%; }
-  .lan-segment-control, #lan-segment-name { min-width: 0; width: 100%; max-width: none; }
+  .lan-folder-picker .button {
+    width: 100%;
+  }
+  .lan-segment-control,
+  #lan-segment-name {
+    min-width: 0;
+    width: 100%;
+    max-width: none;
+  }
 }
 
-.lan-tunnel-qr-card { margin:0 22px 14px; padding:18px; display:flex; gap:18px; align-items:center; border:1px solid var(--border-medium); border-radius:var(--radius-md); background:var(--bg-base); }
-.lan-tunnel-qr-card[hidden] { display:none; }
-.lan-tunnel-qr { width:220px; height:220px; max-width:42vw; max-height:42vw; display:block; background:#fff; border-radius:12px; padding:10px; image-rendering:pixelated; }
-.lan-tunnel-qr-card strong { display:block; color:var(--text-primary); margin-bottom:6px; }
-.lan-tunnel-qr-card p { margin:0; color:var(--text-secondary); font-size:12px; line-height:1.6; }
-@media (max-width:720px) { .lan-tunnel-qr-card { flex-direction:column; text-align:center; } .lan-tunnel-qr { max-width:70vw; max-height:70vw; } }
+.lan-tunnel-qr-card {
+  margin: 0 24px 16px;
+  padding: 20px;
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-container, var(--radius-md, 10px));
+  background: var(--r-ui-color-canvas-surface, var(--bg-base));
+  box-shadow: var(--r-ui-shadow-subtle);
+}
 
-.lan-tunnel-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
-.lan-apk-meta { font-family:var(--font-mono); overflow-wrap:anywhere; }
-@media (max-width:720px) { .lan-tunnel-actions { width:100%; justify-content:stretch; } .lan-tunnel-actions .button { flex:1 1 180px; justify-content:center; } }
+.lan-tunnel-qr-card[hidden] {
+  display: none;
+}
 
-/* Connection-method chooser: Direct LAN and Device Tunnel never share discovery controls. */
-.lan-route-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:0 0 10px; }
+.lan-tunnel-qr {
+  width: 220px;
+  height: 220px;
+  max-width: 42vw;
+  max-height: 42vw;
+  display: block;
+  background: #fff;
+  border-radius: var(--r-ui-radius-container, 12px);
+  padding: 10px;
+  image-rendering: pixelated;
+}
+
+.lan-tunnel-qr-card strong {
+  display: block;
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.lan-tunnel-qr-card p {
+  margin: 0;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (max-width: 720px) {
+  .lan-tunnel-qr-card {
+    flex-direction: column;
+    text-align: center;
+  }
+  .lan-tunnel-qr {
+    max-width: 70vw;
+    max-height: 70vw;
+  }
+}
+
+.lan-tunnel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.lan-apk-meta {
+  font-family: var(--r-ui-font-family-mono, var(--font-mono));
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .lan-tunnel-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .lan-tunnel-actions .button {
+    flex: 1 1 180px;
+    justify-content: center;
+  }
+}
+
+/* Connection-method chooser */
+.lan-route-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0 0 12px;
+}
+
 .lan-route-tab {
-  appearance:none; display:grid; align-content:start; justify-items:start; gap:8px; min-width:0;
-  padding:19px 22px; text-align:left; cursor:pointer; font-family:var(--font-sans);
-  border:1px solid var(--border-medium); border-radius:var(--radius-lg);
-  color:var(--text-secondary); background:var(--bg-surface);
-  transition:border-color .16s ease,background-color .16s ease;
+  appearance: none;
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 20px 22px;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--r-ui-font-family-base, var(--font-sans));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-container, var(--radius-lg, 12px));
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  background: var(--r-ui-color-canvas-surface, var(--bg-surface));
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
-.lan-route-tab strong { color:var(--text-primary); font-size:19px; font-weight:650; line-height:1.2; }
-.lan-route-tab > span:not(.lan-route-eyebrow) { font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
-.lan-route-eyebrow { color:var(--text-muted); font:700 10px var(--font-mono); letter-spacing:.1em; }
-.lan-route-tab small { margin-top:3px; padding:5px 9px; color:var(--text-secondary); background:var(--bg-base); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); font:11px var(--font-mono); }
-.lan-route-tab:hover { border-color:var(--border-focus); }
-.lan-route-tab[aria-selected="true"] { border-color:var(--accent); background:var(--accent-muted); }
-.lan-route-tab[aria-selected="true"] .lan-route-eyebrow { color:var(--cyan); }
-.lan-route-tab:focus-visible { outline:2px solid var(--border-focus); outline-offset:3px; }
-.lan-route-pane[hidden], .lan-direct-toolbar[hidden],
-#lan-pair-form[hidden], .lan-route-pair-waiting[hidden], .lan-pair-network-field[hidden] { display:none !important; }
-.lan-route-description { font-size:12px; line-height:1.6; color:var(--text-secondary); margin:0 2px 20px; }
-.lan-active-route {
-  display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:7px 16px;
-  margin:4px 0 14px; padding:13px 16px; border:1px solid var(--border-medium);
-  border-left:3px solid var(--accent); border-radius:var(--radius-sm); background:var(--bg-surface);
-}
-.lan-active-route span:first-child { font-size:13px; font-weight:650; color:var(--text-primary); }
-.lan-active-route span:last-child { font-size:12px; color:var(--text-secondary); line-height:1.5; }
-.lan-route-pair-waiting { margin:0 22px 22px; padding:18px; border:1px dashed var(--border-medium); border-radius:var(--radius-sm); background:var(--bg-base); color:var(--text-secondary); font-size:13px; line-height:1.6; }
-.lan-direct-toolbar { display:flex; align-items:flex-end; flex-wrap:wrap; gap:10px; min-width:0; }
-@media (max-width:700px) {
-  .lan-route-tabs { grid-template-columns:minmax(0,1fr); }
-  .lan-route-tab { padding:17px 18px; }
-  .lan-direct-toolbar { width:100%; }
-}
-@media (prefers-reduced-motion:reduce) { .lan-route-tab { transition:none; } }
 
-/* LAN discovery toolbar: balanced controls and responsive actions. */
-/* Hallmark: restrained, modern-minimal; reuses existing Tray design tokens. */
+.lan-route-tab strong {
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.lan-route-tab > span:not(.lan-route-eyebrow) {
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.lan-route-eyebrow {
+  color: var(--r-ui-color-text-muted, var(--text-muted));
+  font: 700 10px var(--r-ui-font-family-mono, var(--font-mono));
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.lan-route-tab small {
+  margin-top: 4px;
+  padding: 4px 8px;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-base));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  font: 11px var(--r-ui-font-family-mono, var(--font-mono));
+}
+
+.lan-route-tab:hover {
+  border-color: var(--r-ui-color-border-hover, var(--border-focus));
+  transform: translateY(-1px);
+  box-shadow: var(--r-ui-shadow-card);
+}
+
+.lan-route-tab[aria-selected="true"] {
+  border-color: var(--r-ui-color-accent-primary, var(--accent));
+  background: var(--r-ui-color-accent-soft, var(--accent-muted));
+}
+
+.lan-route-tab[aria-selected="true"] .lan-route-eyebrow {
+  color: var(--r-ui-color-accent-primary, var(--cyan));
+}
+
+.lan-route-tab:focus-visible {
+  outline: 2px solid var(--r-ui-color-accent-primary, var(--border-focus));
+  outline-offset: 1px;
+}
+
+.lan-route-pane[hidden],
+.lan-direct-toolbar[hidden],
+#lan-pair-form[hidden],
+.lan-route-pair-waiting[hidden],
+.lan-pair-network-field[hidden] {
+  display: none !important;
+}
+
+.lan-route-description {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  margin: 0 2px 20px;
+}
+
+/* Law 11 Compliant Active Route: Decoupled Floating Indicator Pill */
+.lan-active-route {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 4px 0 16px;
+  padding: 14px 18px 14px 28px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  background: var(--r-ui-color-accent-soft, var(--bg-surface));
+  box-shadow: var(--r-ui-shadow-subtle);
+}
+
+.lan-active-route::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: var(--r-ui-radius-pill, 9999px);
+  background: var(--r-ui-color-accent-primary, var(--accent));
+}
+
+.lan-active-route span:first-child {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+}
+
+.lan-active-route span:last-child {
+  font-size: 12px;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  line-height: 1.5;
+}
+
+.lan-route-pair-waiting {
+  margin: 0 24px 22px;
+  padding: 18px;
+  border: 1px dashed var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  background: var(--r-ui-color-canvas-surface, var(--bg-base));
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.lan-direct-toolbar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+@media (max-width: 700px) {
+  .lan-route-tabs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lan-route-tab {
+    padding: 17px 18px;
+  }
+  .lan-direct-toolbar {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lan-route-tab {
+    transition: none;
+  }
+}
+
+/* LAN discovery toolbar */
 #actions-lan-devices {
   align-items: flex-end;
   flex-wrap: wrap;
@@ -295,6 +957,7 @@
   min-width: 0;
   max-width: 100%;
 }
+
 #actions-lan-devices .lan-direct-toolbar {
   display: grid;
   grid-template-columns: repeat(2, minmax(185px, 1fr)) auto;
@@ -303,6 +966,7 @@
   gap: 12px;
   min-width: 0;
 }
+
 #actions-lan-devices .lan-segment-control {
   display: flex;
   flex-direction: column;
@@ -312,6 +976,7 @@
   font-size: 12px;
   line-height: 1.25;
 }
+
 #actions-lan-devices #lan-segment-name,
 #actions-lan-devices #lan-direct-ip {
   box-sizing: border-box;
@@ -319,63 +984,98 @@
   width: 100%;
   min-width: 0;
   max-width: none;
-  height: 46px;
+  height: 44px;
   padding: 0 13px;
-  border: 1px solid var(--border-medium);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  color: var(--text-primary);
-  font: 13px var(--font-mono);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  background: var(--r-ui-color-canvas-surface, var(--bg-base));
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  font: 13px var(--r-ui-font-family-mono, var(--font-mono));
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
+
 #actions-lan-devices input::placeholder {
-  color: var(--text-muted);
+  color: var(--r-ui-color-text-muted, var(--text-muted));
   opacity: 1;
 }
-#actions-lan-devices input:hover:not(:disabled) { border-color: var(--border-strong); }
-#actions-lan-devices input:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 2px;
+
+#actions-lan-devices input:hover:not(:disabled) {
+  border-color: var(--r-ui-color-border-hover, var(--border-strong));
 }
-#actions-lan-devices input:disabled { opacity: .55; cursor: not-allowed; }
+
+#actions-lan-devices input:focus-visible {
+  outline: 2px solid var(--r-ui-color-accent-primary, var(--border-focus));
+  outline-offset: 1px;
+}
+
+#actions-lan-devices input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 #actions-lan-devices #lan-segment-name:invalid:not(:placeholder-shown),
-#actions-lan-devices #lan-direct-ip[aria-invalid="true"] { border-color: var(--danger); }
+#actions-lan-devices #lan-direct-ip[aria-invalid="true"] {
+  border-color: var(--r-ui-color-danger, var(--danger));
+}
+
 #actions-lan-devices .button {
   box-sizing: border-box;
-  min-height: 46px;
+  min-height: 44px;
   padding: 0 18px;
   justify-content: center;
-  font-size: 13px;
+  font-size: 12.5px;
 }
+
 #actions-lan-devices .button:disabled {
-  opacity: .55;
+  opacity: 0.55;
   cursor: not-allowed;
   box-shadow: none;
 }
-#actions-lan-devices #lan-paired-refresh { min-width: 156px; }
+
+#actions-lan-devices #lan-paired-refresh {
+  min-width: 156px;
+}
+
 @media (max-width: 880px) {
   .header-actions:has(#actions-lan-devices:not([hidden])) {
     width: 100%;
     min-width: 0;
     flex: 1 1 100%;
   }
-  #actions-lan-devices { width: 100%; }
-  #actions-lan-devices .lan-direct-toolbar { flex-basis: 100%; }
-  #actions-lan-devices #lan-paired-refresh { margin-left: auto; }
-}
-@media (max-width: 700px) {
-  #actions-lan-devices .lan-direct-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #actions-lan-devices #lan-discovery-scan { grid-column: 1 / -1; }
-  #actions-lan-devices #lan-paired-refresh { width: 100%; margin-left: 0; }
-}
-@media (max-width: 430px) {
-  #actions-lan-devices .lan-direct-toolbar { grid-template-columns: minmax(0, 1fr); }
-  #actions-lan-devices #lan-discovery-scan { grid-column: auto; }
+  #actions-lan-devices {
+    width: 100%;
+  }
+  #actions-lan-devices .lan-direct-toolbar {
+    flex-basis: 100%;
+  }
+  #actions-lan-devices #lan-paired-refresh {
+    margin-left: auto;
+  }
 }
 
-/* ==========================================================================
-   Sub-Menu Navigation for LAN Support Manager
-   ========================================================================== */
+@media (max-width: 700px) {
+  #actions-lan-devices .lan-direct-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  #actions-lan-devices #lan-discovery-scan {
+    grid-column: 1 / -1;
+  }
+  #actions-lan-devices #lan-paired-refresh {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 430px) {
+  #actions-lan-devices .lan-direct-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #actions-lan-devices #lan-discovery-scan {
+    grid-column: auto;
+  }
+}
+
+/* Sub-Menu Navigation */
 .lan-subnav {
   display: flex;
   align-items: center;
@@ -383,63 +1083,75 @@
   padding: 6px;
   margin-bottom: 22px;
   max-width: 960px;
-  background: var(--bg-surface-raised, #141c2e);
-  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
-  border-radius: var(--radius-md, 10px);
+  background: var(--r-ui-color-canvas-surface-raised, #141c2e);
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));
+  border-radius: var(--r-ui-radius-container, 10px);
   overflow-x: auto;
+  box-shadow: var(--r-ui-shadow-subtle);
 }
+
 .lan-subnav-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 15px;
+  padding: 8px 16px;
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, #94a3b8);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--r-ui-radius-element, 6px);
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
-  transition: all var(--transition-fast, 150ms ease);
+  transition: all var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
+
 .lan-subnav-btn:hover {
-  color: var(--text-primary, #f8fafc);
-  background: var(--bg-surface-elevated, #1a243a);
+  color: var(--r-ui-color-text-primary, #f8fafc);
+  background: var(--r-ui-color-canvas-surface, #1a243a);
 }
+
 .lan-subnav-btn:active {
-  transform: translateY(1px);
+  transform: scale(0.98);
 }
+
 .lan-subnav-btn:focus-visible {
-  outline: 2px solid var(--border-focus, #3b82f6);
+  outline: 2px solid var(--r-ui-color-accent-primary, #3b82f6);
   outline-offset: -1px;
 }
+
 .lan-subnav-btn.active {
   color: #ffffff;
-  background: var(--bg-surface-elevated, #1a243a);
-  border-color: var(--border-strong, rgba(255, 255, 255, 0.2));
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  background: var(--r-ui-color-canvas-surface, #1a243a);
+  border-color: var(--r-ui-color-accent-border, rgba(255, 255, 255, 0.2));
+  box-shadow: var(--r-ui-shadow-subtle);
 }
+
 .lan-subnav-btn .subnav-icon {
   width: 15px;
   height: 15px;
   flex-shrink: 0;
-  color: var(--text-muted, #64748b);
-  transition: color var(--transition-fast, 150ms ease);
+  color: var(--r-ui-color-text-muted, #64748b);
+  transition: color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
+
 .lan-subnav-btn:hover .subnav-icon {
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, #94a3b8);
 }
+
 .lan-subnav-btn.active .subnav-icon {
-  color: var(--accent, #38bdf8);
+  color: var(--r-ui-color-accent-primary, #38bdf8);
 }
+
 .lan-subpage {
   animation: lanSubpageFade 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 .lan-subpage[hidden] {
   display: none !important;
 }
+
 @keyframes lanSubpageFade {
   from {
     opacity: 0;
@@ -450,6 +1162,7 @@
     transform: translateY(0);
   }
 }
+
 @media (max-width: 720px) {
   .lan-subnav {
     gap: 4px;
@@ -461,83 +1174,189 @@
   }
 }
 
-
-/* Attended Windows terminal task, visually separated from one-off diagnostics. */
+/* Attended Windows terminal task */
 .lan-terminal-task {
-  margin: 8px 22px 20px;
-  padding: 17px;
-  border: 1px solid var(--border-medium);
-  background: var(--bg-surface-raised);
-  border-radius: var(--radius-md);
+  margin: 8px 24px 22px;
+  padding: 20px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
+  border-radius: var(--r-ui-radius-container, var(--radius-md, 10px));
+  box-shadow: var(--r-ui-shadow-subtle);
   min-width: 0;
 }
-.lan-terminal-task[hidden] { display: none !important; }
+
+.lan-terminal-task[hidden] {
+  display: none !important;
+}
+
 .lan-terminal-task-head {
-  display: flex; flex-wrap: wrap; gap: 16px;
-  align-items: flex-start; justify-content: space-between;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
 }
-.lan-terminal-task-head > div:first-child { flex: 1 1 310px; min-width: 0; }
-.lan-terminal-task-head h3 { color: var(--text-primary); font-size: 16px; font-weight: 650; margin: 7px 0; }
-.lan-terminal-task-head p { font-size: 12px; line-height: 1.6; color: var(--text-secondary); margin: 0; max-width: 570px; }
-.lan-terminal-task-controls { display: flex; gap: 8px; flex-wrap: wrap; }
-.lan-terminal-task-controls .button { font-size: 11px; }
+
+.lan-terminal-task-head > div:first-child {
+  flex: 1 1 310px;
+  min-width: 0;
+}
+
+.lan-terminal-task-head h3 {
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 4px 0 6px;
+}
+
+.lan-terminal-task-head p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  margin: 0;
+  max-width: 570px;
+}
+
+.lan-terminal-task-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lan-terminal-task-controls .button {
+  font-size: 11px;
+}
+
 .lan-terminal-task-status {
-  background: var(--bg-base); color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
-  padding: 10px 12px; border-radius: var(--radius-sm);
-  font: 12px/1.5 var(--font-mono); overflow-wrap: anywhere;
+  background: var(--r-ui-color-canvas-surface, var(--bg-base));
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  padding: 10px 14px;
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  font: 12px / 1.5 var(--r-ui-font-family-mono, var(--font-mono));
+  overflow-wrap: anywhere;
 }
-.lan-terminal-task-status.error { color: var(--danger); border-color: var(--danger); }
+
+.lan-terminal-task-status.error {
+  color: var(--r-ui-color-danger, var(--danger));
+  border-color: var(--r-ui-color-danger-border, var(--danger));
+  background: var(--r-ui-color-danger-soft, rgba(239, 68, 68, 0.08));
+}
+
 .lan-terminal-task-output-head {
-  display: flex; justify-content: space-between; align-items: center;
-  font-size: 12px; color: var(--text-secondary);
-  padding-bottom: 7px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  padding-bottom: 8px;
 }
+
 .lan-terminal-task .lan-terminal-task-output {
-  margin: 0 0 14px; max-height: 350px; min-height: 145px;
-  white-space: pre-wrap; overflow-wrap: anywhere;
+  margin: 0 0 16px;
+  max-height: 350px;
+  min-height: 145px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
+
 .lan-terminal-task-input-row label {
-  display: block; color: var(--text-secondary);
-  font-size: 12px; font-weight: 600;
+  display: block;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  font-size: 12px;
+  font-weight: 650;
 }
-.lan-terminal-task-input-row .lan-command-row { margin-top: 8px; }
+
+.lan-terminal-task-input-row .lan-command-row {
+  margin-top: 8px;
+}
+
 #lan-terminal-task-input {
-  flex: 1; min-width: 0; font: 12px var(--font-mono);
-  color: var(--text-primary); background: var(--bg-base);
-  border: 1px solid var(--border-medium);
-  border-radius: var(--radius-sm); padding: 10px 11px;
+  flex: 1;
+  min-width: 0;
+  font: 12px var(--r-ui-font-family-mono, var(--font-mono));
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  background: var(--r-ui-color-canvas-surface, var(--bg-base));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  padding: 10px 12px;
 }
-#lan-terminal-task-input:focus-visible { border-color: var(--border-focus); outline: 2px solid var(--accent-muted); }
+
+#lan-terminal-task-input:focus-visible {
+  border-color: var(--r-ui-color-accent-primary, var(--border-focus));
+  outline: 2px solid var(--r-ui-color-accent-primary, var(--border-focus));
+  outline-offset: 1px;
+}
+
 .lan-terminal-task-input-row .lan-terminal-task-newline {
-  display: inline-flex; gap: 8px; align-items: center; margin-top: 10px;
-  font-size: 11px; color: var(--text-secondary);
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
 }
-.lan-terminal-task-newline input { accent-color: var(--accent); }
+
+.lan-terminal-task-newline input {
+  accent-color: var(--r-ui-color-accent-primary, var(--accent));
+}
+
 .lan-terminal-task-pty-controls {
-  display: flex; gap: 10px; align-items: end; flex-wrap: wrap;
-  margin-top: 14px; border-top: 1px solid var(--border-subtle); padding-top: 12px;
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  border-top: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  padding-top: 14px;
 }
+
 .lan-terminal-task-pty-controls label {
-  display: grid; gap: 5px; font-size: 11px; font-weight: 600;
-  color: var(--text-secondary);
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
 }
+
 .lan-terminal-task-pty-controls input,
 .lan-terminal-task-pty-controls select {
-  border: 1px solid var(--border-medium);
-  border-radius: var(--radius-sm); background: var(--bg-base);
-  color: var(--text-primary); font: 12px var(--font-mono);
-  padding: 8px 9px; min-height: 34px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  background: var(--r-ui-color-canvas-surface, var(--bg-base));
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  font: 12px var(--r-ui-font-family-mono, var(--font-mono));
+  padding: 8px 10px;
+  min-height: 36px;
 }
-.lan-terminal-task-pty-controls input { width: 84px; }
-.lan-terminal-task-pty-controls select { min-width: 120px; }
-.lan-terminal-task-pty-controls .button { min-height: 34px; }
+
+.lan-terminal-task-pty-controls input {
+  width: 84px;
+}
+
+.lan-terminal-task-pty-controls select {
+  min-width: 120px;
+}
+
+.lan-terminal-task-pty-controls .button {
+  min-height: 36px;
+}
+
 .lan-terminal-task-pty-controls :is(input, select, button):focus-visible {
-  outline: 2px solid var(--accent-muted); outline-offset: 2px;
+  outline: 2px solid var(--r-ui-color-accent-primary);
+  outline-offset: 1px;
 }
 
 @media (max-width: 570px) {
-  .lan-terminal-task { margin: 8px 14px 18px; padding: 14px; }
-  .lan-terminal-task-controls { width: 100%; }
-  .lan-terminal-task-controls .button { flex: 1 1 auto; }
+  .lan-terminal-task {
+    margin: 8px 14px 18px;
+    padding: 16px;
+  }
+  .lan-terminal-task-controls {
+    width: 100%;
+  }
+  .lan-terminal-task-controls .button {
+    flex: 1 1 auto;
+  }
 }

@@ -1,5 +1,19 @@
 "use strict";
 
+// Restore r-ui theme and accent immediately on boot before render completes
+try {
+  if (typeof window !== "undefined" && window.localStorage) {
+    const savedTheme = window.localStorage.getItem("superagent_tray_theme");
+    const savedAccent = window.localStorage.getItem("superagent_tray_accent");
+    if (savedTheme && typeof document !== "undefined" && document.documentElement) {
+      document.documentElement.setAttribute("data-r-ui-theme", savedTheme);
+    }
+    if (savedAccent && typeof document !== "undefined" && document.documentElement) {
+      document.documentElement.setAttribute("data-r-ui-accent", savedAccent);
+    }
+  }
+} catch (_) {}
+
 /**
  * Frameless SuperAgent Tray window chrome.
  *

@@ -1,13 +1,14 @@
-/* SuperAgent Tray · Multi-Tab Orchestrator & Managed CDP Agent Activity Stylesheet
- * High-craft modern dark UI for multi-tab browser automation, CDP supervision, and live diagnostics.
- */
+/* ==========================================================================
+   SuperAgent Tray · Multi-Tab Orchestrator & Managed CDP Supervision Stylesheet
+   Refactored to r-ui design standards (Anti-Slop Visual Laws, Decoupled Floating Indicators)
+   ========================================================================== */
 
 .delegate-multitab-panel {
   margin-top: 24px;
 }
 
 /* ==========================================================================
-   Panel Body Container (Ensures consistent padding & vertical rhythm)
+   Panel Body Container
    ========================================================================== */
 
 .delegate-multitab-body {
@@ -23,7 +24,6 @@
   margin-bottom: 0;
 }
 
-/* Fallback for direct children if not wrapped in .delegate-multitab-body */
 .delegate-multitab-panel > :not(.panel-head):not(.delegate-multitab-body) {
   margin-left: 24px;
   margin-right: 24px;
@@ -43,12 +43,12 @@
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  background: linear-gradient(180deg, rgba(17, 24, 39, 0.6) 0%, rgba(11, 16, 28, 0.75) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-md);
+  background: var(--r-ui-color-canvas-surface, rgba(17, 24, 39, 0.6));
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.08));
+  border-radius: var(--r-ui-radius-element, var(--radius-md, 8px));
   margin: 14px 0 16px;
   min-height: 44px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: var(--r-ui-shadow-subtle);
 }
 
 .multitab-summary span {
@@ -59,17 +59,17 @@
   font-size: 11.5px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  border-radius: var(--radius-pill);
-  background: var(--bg-surface-raised);
-  border: 1px solid var(--border-medium);
-  color: #e2e8f0;
+  border-radius: var(--r-ui-radius-pill, 9999px);
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  color: var(--r-ui-color-text-primary, #e2e8f0);
   letter-spacing: 0.01em;
-  transition: all var(--transition-fast);
+  transition: all var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .multitab-summary span:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: var(--bg-surface-elevated);
+  border-color: var(--r-ui-color-border-hover, rgba(255, 255, 255, 0.2));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-elevated));
 }
 
 .multitab-summary span::before {
@@ -78,53 +78,51 @@
   width: 6.5px;
   height: 6.5px;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--r-ui-color-text-muted, var(--text-muted));
   flex-shrink: 0;
 }
 
-/* Specific Pill Color Coding */
 #multitab-count-tabs::before {
-  background: var(--cyan);
+  background: var(--r-ui-color-accent-primary, var(--cyan));
 }
 
 #multitab-count-active::before {
-  background: var(--success);
-  box-shadow: 0 0 6px var(--success-glow);
+  background: var(--r-ui-color-success, var(--success));
 }
 
 #multitab-count-queued::before {
-  background: var(--accent);
+  background: var(--r-ui-color-accent-primary, var(--accent));
 }
 
 #multitab-count-unknown::before {
-  background: var(--warning);
+  background: var(--r-ui-color-warning, var(--warning));
 }
 
 @keyframes cdp-live-pulse {
-  0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.7); }
-  70% { transform: scale(1.15); box-shadow: 0 0 0 5px rgba(6, 182, 212, 0); }
-  100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0); }
+  0% { transform: scale(0.9); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(0.9); }
 }
 
 #cdp-presence-state::before {
-  background: var(--cyan);
+  background: var(--r-ui-color-accent-primary, var(--cyan));
   animation: cdp-live-pulse 2.2s infinite ease-in-out;
 }
 
 #cdp-presence-agents::before {
-  background: var(--accent);
+  background: var(--r-ui-color-accent-primary, var(--accent));
 }
 
 #cdp-presence-tabs::before {
-  background: var(--cyan);
+  background: var(--r-ui-color-accent-primary, var(--cyan));
 }
 
 #cdp-presence-queued::before {
-  background: var(--warning);
+  background: var(--r-ui-color-warning, var(--warning));
 }
 
 /* ==========================================================================
-   Header Buttons with Resilient CSS Icons
+   Header Buttons
    ========================================================================== */
 
 #multitab-refresh,
@@ -133,7 +131,7 @@
   align-items: center;
   gap: 7px;
   font-weight: 600;
-  transition: all var(--transition-fast);
+  transition: all var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 #multitab-refresh:active,
@@ -151,7 +149,7 @@
   background-size: contain;
   background-repeat: no-repeat;
   flex-shrink: 0;
-  transition: transform var(--transition-fast);
+  transition: transform var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 #multitab-refresh:hover::before,
@@ -243,16 +241,16 @@
 .multitab-feedback-banner,
 p#multitab-feedback {
   margin: 10px 0 18px;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  background: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.25);
-  color: #93c5fd;
+  padding: 12px 16px;
+  border-radius: var(--r-ui-radius-element, 6px);
+  background: var(--r-ui-color-accent-soft, rgba(59, 130, 246, 0.08));
+  border: 1px solid var(--r-ui-color-accent-border, rgba(59, 130, 246, 0.25));
+  color: var(--r-ui-color-accent-primary, #93c5fd);
   font-size: 12px;
   line-height: 1.5;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   overflow-wrap: anywhere;
 }
 
@@ -270,9 +268,9 @@ p#multitab-feedback::before {
 
 .multitab-feedback.error,
 p#multitab-feedback.error {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #fca5a5;
+  background: var(--r-ui-color-danger-soft, rgba(239, 68, 68, 0.1));
+  border-color: var(--r-ui-color-danger-border, rgba(239, 68, 68, 0.3));
+  color: var(--r-ui-color-danger, #fca5a5);
   white-space: pre-wrap;
 }
 
@@ -289,19 +287,19 @@ p#multitab-feedback.error::before {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
   gap: 20px;
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 .multitab-card {
   min-width: 0;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: 20px 22px;
+  background: var(--r-ui-color-canvas-surface, var(--bg-surface));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  border-radius: var(--r-ui-radius-container, var(--radius-lg, 12px));
+  padding: 22px 24px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--r-ui-shadow-subtle);
 }
 
 .multitab-card-header {
@@ -316,13 +314,13 @@ p#multitab-feedback.error::before {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
-  letter-spacing: -0.2px;
-  color: var(--text-primary);
+  letter-spacing: -0.015em;
+  color: var(--r-ui-color-text-primary, var(--text-primary));
 }
 
 .multitab-divider {
   height: 1px;
-  background: var(--border-subtle);
+  background: var(--r-ui-color-border-standard, var(--border-subtle));
   margin: 6px 0;
 }
 
@@ -340,9 +338,9 @@ p#multitab-feedback.error::before {
 
 .multitab-card label {
   font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  letter-spacing: 0.02em;
+  font-weight: 650;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
+  letter-spacing: 0.01em;
 }
 
 .multitab-card input,
@@ -350,29 +348,30 @@ p#multitab-feedback.error::before {
 .multitab-card select {
   width: 100%;
   min-width: 0;
-  background: var(--bg-surface-raised);
-  color: var(--text-primary);
-  border: 1px solid var(--border-medium);
-  border-radius: var(--radius-sm);
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
   padding: 9px 12px;
   font: inherit;
   font-size: 12.5px;
   box-sizing: border-box;
   outline: none;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .multitab-card input:focus,
 .multitab-card textarea:focus,
 .multitab-card select:focus {
-  border-color: var(--border-focus);
-  box-shadow: 0 0 0 2px var(--accent-glow);
+  border-color: var(--r-ui-color-accent-primary, var(--border-focus));
+  outline: 2px solid var(--r-ui-color-accent-primary, var(--border-focus));
+  outline-offset: 1px;
 }
 
 .multitab-card textarea {
   resize: vertical;
   line-height: 1.5;
-  font-family: var(--font-mono);
+  font-family: var(--r-ui-font-family-mono, var(--font-mono));
 }
 
 .multitab-controls {
@@ -403,16 +402,16 @@ p#multitab-feedback.error::before {
   padding: 4px 2px 6px;
 }
 
-/* Empty State Placeholders - Crafted Anti-Slop Component */
+/* Empty State Placeholders */
 .multitab-items > p.text-secondary {
   margin: 6px 0;
   padding: 32px 20px;
-  background: radial-gradient(ellipse at 50% 0%, rgba(26, 38, 64, 0.4) 0%, rgba(12, 17, 29, 0.8) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-lg);
-  color: #f1f5f9;
+  background: var(--r-ui-color-canvas-surface-raised, rgba(12, 17, 29, 0.8));
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.08));
+  border-radius: var(--r-ui-radius-container, var(--radius-lg, 12px));
+  color: var(--r-ui-color-text-primary, #f1f5f9);
   font-size: 13.5px;
-  font-weight: 600;
+  font-weight: 650;
   line-height: 1.5;
   text-align: center;
   display: flex;
@@ -420,8 +419,8 @@ p#multitab-feedback.error::before {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 4px 16px rgba(0, 0, 0, 0.25);
-  transition: all var(--transition-fast);
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: all var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .multitab-items > p.text-secondary::before {
@@ -431,19 +430,18 @@ p#multitab-feedback.error::before {
   justify-content: center;
   width: 44px;
   height: 44px;
-  border-radius: 12px;
+  border-radius: var(--r-ui-radius-element, 12px);
   margin-bottom: 2px;
   background-position: center;
   background-repeat: no-repeat;
   background-size: 22px 22px;
-  border: 1px solid var(--border-subtle);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  box-shadow: var(--r-ui-shadow-subtle);
 }
 
 #multitab-tabs > p.text-secondary::before {
-  background-color: rgba(56, 189, 248, 0.08);
-  border-color: rgba(56, 189, 248, 0.25);
-  box-shadow: 0 0 16px rgba(56, 189, 248, 0.12);
+  background-color: var(--r-ui-color-accent-soft, rgba(56, 189, 248, 0.08));
+  border-color: var(--r-ui-color-accent-border, rgba(56, 189, 248, 0.25));
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='3' width='20' height='14' rx='2' ry='2'/%3E%3Cline x1='8' y1='21' x2='16' y2='21'/%3E%3Cline x1='12' y1='17' x2='12' y2='21'/%3E%3C/svg%3E");
 }
 
@@ -452,15 +450,14 @@ p#multitab-feedback.error::before {
   display: block;
   font-size: 12px;
   font-weight: 400;
-  color: var(--text-muted);
+  color: var(--r-ui-color-text-muted, var(--text-muted));
   max-width: 420px;
   line-height: 1.45;
 }
 
 #multitab-tasks > p.text-secondary::before {
-  background-color: rgba(96, 165, 250, 0.08);
-  border-color: rgba(96, 165, 250, 0.25);
-  box-shadow: 0 0 16px rgba(96, 165, 250, 0.12);
+  background-color: var(--r-ui-color-accent-soft, rgba(96, 165, 250, 0.08));
+  border-color: var(--r-ui-color-accent-border, rgba(96, 165, 250, 0.25));
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2360a5fa' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 11l3 3L22 4'/%3E%3Cpath d='M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11'/%3E%3C/svg%3E");
 }
 
@@ -469,15 +466,14 @@ p#multitab-feedback.error::before {
   display: block;
   font-size: 12px;
   font-weight: 400;
-  color: var(--text-muted);
+  color: var(--r-ui-color-text-muted, var(--text-muted));
   max-width: 420px;
   line-height: 1.45;
 }
 
 #cdp-presence-sessions > p.text-secondary::before {
-  background-color: rgba(6, 182, 212, 0.08);
-  border-color: rgba(6, 182, 212, 0.25);
-  box-shadow: 0 0 16px rgba(6, 182, 212, 0.15);
+  background-color: var(--r-ui-color-accent-soft, rgba(6, 182, 212, 0.08));
+  border-color: var(--r-ui-color-accent-border, rgba(6, 182, 212, 0.25));
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2306b6d4' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cline x1='4.93' y1='4.93' x2='9.17' y2='9.17'/%3E%3Cline x1='14.83' y1='14.83' x2='19.07' y2='19.07'/%3E%3Cline x1='14.83' y1='9.17' x2='19.07' y2='4.93'/%3E%3Cline x1='4.93' y1='19.07' x2='9.17' y2='14.83'/%3E%3C/svg%3E");
 }
 
@@ -486,15 +482,14 @@ p#multitab-feedback.error::before {
   display: block;
   font-size: 12px;
   font-weight: 400;
-  color: var(--text-muted);
+  color: var(--r-ui-color-text-muted, var(--text-muted));
   max-width: 440px;
   line-height: 1.45;
 }
 
 #cdp-replay-approvals > p.text-secondary::before {
-  background-color: rgba(16, 185, 129, 0.08);
-  border-color: rgba(16, 185, 129, 0.25);
-  box-shadow: 0 0 16px rgba(16, 185, 129, 0.15);
+  background-color: var(--r-ui-color-success-soft, rgba(16, 185, 129, 0.08));
+  border-color: var(--r-ui-color-success-border, rgba(16, 185, 129, 0.25));
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E");
 }
 
@@ -503,7 +498,7 @@ p#multitab-feedback.error::before {
   display: block;
   font-size: 12px;
   font-weight: 400;
-  color: var(--text-muted);
+  color: var(--r-ui-color-text-muted, var(--text-muted));
   max-width: 440px;
   line-height: 1.45;
 }
@@ -511,9 +506,9 @@ p#multitab-feedback.error::before {
 .multitab-profile-title {
   font-weight: 700;
   font-size: 12px;
-  color: var(--accent);
+  color: var(--r-ui-color-accent-primary, var(--accent));
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   margin-top: 8px;
   margin-bottom: 2px;
   overflow-wrap: anywhere;
@@ -528,44 +523,46 @@ p#multitab-feedback.error::before {
   flex-direction: column;
   text-align: left;
   gap: 6px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-surface-raised);
-  color: var(--text-primary);
-  border-radius: var(--radius-md);
-  padding: 12px 14px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  border-radius: var(--r-ui-radius-element, var(--radius-md, 8px));
+  padding: 13px 16px;
   min-width: 0;
   cursor: pointer;
   width: 100%;
-  transition: all var(--transition-fast);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .multitab-tab:hover {
-  background: var(--bg-surface-elevated);
-  border-color: var(--border-medium);
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-elevated));
+  border-color: var(--r-ui-color-border-hover, var(--border-medium));
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--r-ui-shadow-card);
 }
 
 .multitab-tab.selected {
-  border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.08);
-  box-shadow: 0 0 0 1px var(--accent), 0 4px 14px rgba(59, 130, 246, 0.2);
+  border-color: var(--r-ui-color-accent-primary, var(--accent));
+  background: var(--r-ui-color-accent-soft, rgba(59, 130, 246, 0.08));
+  box-shadow: var(--r-ui-shadow-card);
 }
 
 .multitab-tab:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--border-focus);
+  outline: 2px solid var(--r-ui-color-accent-primary, var(--border-focus));
+  outline-offset: 1px;
 }
 
 .multitab-name {
   font-size: 13.5px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--r-ui-color-text-primary, #ffffff);
   overflow-wrap: anywhere;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 }
 
 .multitab-name::before {
@@ -581,81 +578,95 @@ p#multitab-feedback.error::before {
 
 .multitab-status {
   font-size: 11px;
-  font-weight: 600;
-  color: var(--cyan);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--r-ui-color-accent-primary, var(--cyan));
   overflow-wrap: anywhere;
 }
 
 .multitab-detail {
   font-size: 11.5px;
   line-height: 1.45;
-  color: var(--text-secondary);
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
   overflow-wrap: anywhere;
   white-space: normal;
 }
 
 .multitab-warning {
-  color: #fbbf24;
-  font-weight: 550;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  border-radius: var(--radius-xs);
+  color: var(--r-ui-color-warning, #fbbf24);
+  font-weight: 600;
+  background: var(--r-ui-color-warning-soft, rgba(245, 158, 11, 0.1));
+  border: 1px solid var(--r-ui-color-warning-border, rgba(245, 158, 11, 0.25));
+  border-radius: var(--r-ui-radius-element, 4px);
   padding: 4px 8px;
   margin-top: 2px;
 }
 
 /* ==========================================================================
-   Task Item Card (.multitab-task)
+   Task Item Card (.multitab-task) - Law 11 Compliant Floating Indicator
    ========================================================================== */
 
 .multitab-task {
+  position: relative;
   display: flex;
   flex-direction: column;
   text-align: left;
   gap: 8px;
-  border: 1px solid var(--border-subtle);
-  border-inline-start: 4px solid var(--border-strong);
-  background: var(--bg-surface-raised);
-  color: var(--text-primary);
-  border-radius: var(--radius-md);
-  padding: 14px 16px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
+  color: var(--r-ui-color-text-primary, var(--text-primary));
+  border-radius: var(--r-ui-radius-element, var(--radius-md, 8px));
+  padding: 14px 16px 14px 28px;
   min-width: 0;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-  transition: all var(--transition-fast);
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.multitab-task::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 18px;
+  width: 3px;
+  height: 16px;
+  border-radius: var(--r-ui-radius-pill, 9999px);
+  background: var(--r-ui-color-border-standard, var(--border-strong));
 }
 
 .multitab-task:hover {
-  border-color: var(--border-medium);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  border-color: var(--r-ui-color-border-hover, var(--border-medium));
+  box-shadow: var(--r-ui-shadow-card);
 }
 
-.multitab-task[data-state="completed"] {
-  border-inline-start-color: var(--success);
+.multitab-task[data-state="completed"]::before {
+  background: var(--r-ui-color-success, var(--success));
 }
 
-.multitab-task[data-state="monitoring"],
-.multitab-task[data-state="sending"] {
-  border-inline-start-color: var(--accent);
+.multitab-task[data-state="monitoring"]::before,
+.multitab-task[data-state="sending"]::before {
+  background: var(--r-ui-color-accent-primary, var(--accent));
 }
 
-.multitab-task[data-state="queued"] {
-  border-inline-start-color: var(--cyan);
+.multitab-task[data-state="queued"]::before {
+  background: var(--r-ui-color-accent-primary, var(--cyan));
 }
 
-.multitab-task[data-state="uncertain"],
-.multitab-task[data-state="interrupted"],
-.multitab-task[data-state="needs_review"] {
-  border-inline-start-color: var(--warning);
+.multitab-task[data-state="uncertain"]::before,
+.multitab-task[data-state="interrupted"]::before,
+.multitab-task[data-state="needs_review"]::before {
+  background: var(--r-ui-color-warning, var(--warning));
 }
 
-.multitab-task[data-state="failed"] {
-  border-inline-start-color: var(--danger);
+.multitab-task[data-state="failed"]::before {
+  background: var(--r-ui-color-danger, var(--danger));
 }
 
 .multitab-task strong {
   font-size: 13.5px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--r-ui-color-text-primary, #ffffff);
   overflow-wrap: anywhere;
 }
 
@@ -667,22 +678,22 @@ p#multitab-feedback.error::before {
 }
 
 .multitab-result {
-  font-family: var(--font-mono);
+  font-family: var(--r-ui-font-family-mono, var(--font-mono));
   font-size: 11.5px;
   line-height: 1.45;
-  background: #060911;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xs);
+  background: var(--r-ui-color-canvas-surface-sunken, #060911);
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  border-radius: var(--r-ui-radius-element, 4px);
   padding: 8px 12px;
   max-height: 120px;
   overflow: auto;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  color: #cbd5e1;
+  color: var(--r-ui-color-text-secondary, #cbd5e1);
 }
 
 /* ==========================================================================
-   Managed CDP Presence & Supervision Styles
+   Managed CDP Presence & Supervision Styles - Law 11 Compliant
    ========================================================================== */
 
 .cdp-toolbar {
@@ -691,11 +702,11 @@ p#multitab-feedback.error::before {
   gap: 12px;
   margin: 14px 0 16px;
   padding: 8px 14px;
-  background: rgba(15, 23, 42, 0.45);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  background: var(--r-ui-color-canvas-surface, rgba(15, 23, 42, 0.45));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  border-radius: var(--r-ui-radius-element, var(--radius-md, 8px));
   flex-wrap: wrap;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  box-shadow: var(--r-ui-shadow-subtle);
 }
 
 .cdp-toolbar-label {
@@ -704,11 +715,11 @@ p#multitab-feedback.error::before {
   gap: 7px;
   font-size: 12px;
   font-weight: 600;
-  color: #cbd5e1;
+  color: var(--r-ui-color-text-primary, #cbd5e1);
 }
 
 .cdp-toolbar-label svg {
-  color: var(--cyan);
+  color: var(--r-ui-color-accent-primary, var(--cyan));
   flex-shrink: 0;
 }
 
@@ -723,16 +734,16 @@ p#multitab-feedback.error::before {
   width: 100%;
   min-height: 34px;
   padding: 6px 32px 6px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-medium);
-  background: var(--bg-surface-raised);
-  color: #f8fafc;
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
+  color: var(--r-ui-color-text-primary, #f8fafc);
   font: inherit;
   font-size: 12.5px;
   font-weight: 500;
   outline: none;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: all var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2394a3b8' stroke-width='1.5'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -741,32 +752,45 @@ p#multitab-feedback.error::before {
 }
 
 .cdp-presence-follow:hover {
-  border-color: rgba(255, 255, 255, 0.25);
-  background-color: var(--bg-surface-elevated);
+  border-color: var(--r-ui-color-border-hover, rgba(255, 255, 255, 0.25));
+  background-color: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-elevated));
 }
 
 .cdp-presence-follow:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-glow);
+  border-color: var(--r-ui-color-accent-primary, var(--accent));
+  outline: 2px solid var(--r-ui-color-accent-primary);
+  outline-offset: 1px;
 }
 
 .cdp-presence-row {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  border: 1px solid var(--border-subtle);
-  border-inline-start: 4px solid var(--success);
-  border-radius: var(--radius-md);
-  padding: 14px 16px;
-  background: var(--bg-surface-raised);
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  border-radius: var(--r-ui-radius-element, var(--radius-md, 8px));
+  padding: 14px 16px 14px 28px;
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
   overflow-wrap: anywhere;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  transition: all var(--transition-fast);
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.cdp-presence-row::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 18px;
+  width: 3px;
+  height: 16px;
+  border-radius: var(--r-ui-radius-pill, 9999px);
+  background: var(--r-ui-color-success, var(--success));
 }
 
 .cdp-presence-row:hover {
-  border-color: var(--border-medium);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+  border-color: var(--r-ui-color-border-hover, var(--border-medium));
+  box-shadow: var(--r-ui-shadow-card);
 }
 
 .cdp-presence-row strong {
@@ -776,26 +800,29 @@ p#multitab-feedback.error::before {
   gap: 8px;
   font-size: 13.5px;
   font-weight: 700;
-  color: #ffffff;
-  border-bottom: 1px solid var(--border-subtle);
+  color: var(--r-ui-color-text-primary, #ffffff);
+  border-bottom: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
   padding-bottom: 8px;
 }
 
 .cdp-presence-row small {
   font-size: 11.5px;
-  color: var(--text-secondary);
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
   line-height: 1.45;
 }
 
-.cdp-presence-row[data-busy="true"] {
-  border-inline-start-color: var(--warning);
+.cdp-presence-row[data-busy="true"]::before {
+  background: var(--r-ui-color-warning, var(--warning));
 }
 
 .cdp-presence-row[data-paused="true"] {
   border-style: dashed;
-  border-color: rgba(245, 158, 11, 0.35);
-  border-inline-start: 4px solid var(--warning);
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, var(--bg-surface-raised) 90%);
+  border-color: var(--r-ui-color-warning-border, rgba(245, 158, 11, 0.35));
+  background: var(--r-ui-color-warning-soft, rgba(245, 158, 11, 0.05));
+}
+
+.cdp-presence-row[data-paused="true"]::before {
+  background: var(--r-ui-color-warning, var(--warning));
 }
 
 .cdp-presence-row .multitab-controls {
@@ -812,12 +839,12 @@ p#multitab-feedback.error::before {
 
 .cdp-private-preview {
   margin: 18px 0;
-  padding: 18px 20px;
-  border: 1px solid var(--border-medium);
-  background: var(--bg-surface-raised);
-  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised));
+  border-radius: var(--r-ui-radius-container, var(--radius-lg, 12px));
   min-width: 0;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--r-ui-shadow-subtle);
 }
 
 .cdp-private-preview[hidden] {
@@ -827,9 +854,9 @@ p#multitab-feedback.error::before {
 .cdp-preview-viewport {
   margin: 14px 0;
   padding: 10px;
-  background: #050811;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  background: var(--r-ui-color-canvas-surface-sunken, #050811);
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
+  border-radius: var(--r-ui-radius-element, var(--radius-md, 8px));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -841,14 +868,14 @@ p#multitab-feedback.error::before {
   max-width: 900px;
   max-height: 520px;
   object-fit: contain;
-  border-radius: var(--radius-sm);
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
   background: #080c12;
 }
 
 .cdp-private-preview p {
   margin: 8px 0 0;
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--r-ui-color-text-secondary, var(--text-secondary));
 }
 
 .cdp-private-preview .panel-head {
@@ -858,7 +885,7 @@ p#multitab-feedback.error::before {
   justify-content: space-between;
   flex-wrap: wrap;
   padding: 0 0 14px;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--r-ui-color-border-standard, var(--border-subtle));
 }
 
 /* ==========================================================================
@@ -868,7 +895,7 @@ p#multitab-feedback.error::before {
 .cdp-sub-section {
   margin-top: 28px;
   padding-top: 22px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.08));
 }
 
 .cdp-sub-section > :last-child {
@@ -880,40 +907,51 @@ p#multitab-feedback.error::before {
 }
 
 .cdp-sub-header .panel-eyebrow {
-  color: var(--success);
+  color: var(--r-ui-color-success, var(--success));
   font-size: 10px;
   letter-spacing: 0.09em;
   font-weight: 700;
+  text-transform: uppercase;
 }
 
 .cdp-sub-header h3 {
   margin: 4px 0 6px;
   font-size: 15px;
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--r-ui-color-text-primary, #f8fafc);
 }
 
-/* Hint Box with Icon */
+/* Law 11 Compliant Hint Box: Decoupled Floating Pill */
 .delegate-hint-box {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 12px 16px;
-  background: linear-gradient(90deg, rgba(56, 189, 248, 0.07) 0%, rgba(15, 23, 42, 0.45) 100%);
-  border: 1px solid rgba(56, 189, 248, 0.2);
-  border-inline-start: 3.5px solid var(--accent);
-  border-radius: var(--radius-sm);
-  color: #cbd5e1;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--r-ui-color-accent-soft, rgba(56, 189, 248, 0.07));
+  border: 1px solid var(--r-ui-color-accent-border, rgba(56, 189, 248, 0.2));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  color: var(--r-ui-color-text-primary, #cbd5e1);
   font-size: 12px;
   line-height: 1.55;
   margin: 14px 0;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--r-ui-shadow-subtle);
+}
+
+.delegate-hint-box::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 16px;
+  border-radius: var(--r-ui-radius-pill, 9999px);
+  background: var(--r-ui-color-accent-primary, var(--accent));
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .delegate-hint-box svg {
   flex-shrink: 0;
   margin-top: 2px;
-  color: var(--cyan);
+  color: var(--r-ui-color-accent-primary, var(--cyan));
 }
 
 /* ==========================================================================
@@ -951,63 +989,75 @@ p#multitab-feedback.error::before {
   gap: 8px;
   padding: 6px;
   margin: 18px 0 22px;
-  background: var(--bg-surface-raised, #141c2e);
-  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
-  border-radius: var(--radius-md, 10px);
+  background: var(--r-ui-color-canvas-surface-raised, #141c2e);
+  border: 1px solid var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.12));
+  border-radius: var(--r-ui-radius-container, 10px);
   overflow-x: auto;
+  box-shadow: var(--r-ui-shadow-subtle);
 }
+
 .delegate-subnav-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 15px;
+  padding: 8px 16px;
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, #94a3b8);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--r-ui-radius-element, 6px);
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
-  transition: all var(--transition-fast, 150ms ease);
+  transition: all var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
+
 .delegate-subnav-btn:hover {
-  color: var(--text-primary, #f8fafc);
-  background: var(--bg-surface-elevated, #1a243a);
+  color: var(--r-ui-color-text-primary, #f8fafc);
+  background: var(--r-ui-color-canvas-surface, #1a243a);
 }
+
 .delegate-subnav-btn:active {
-  transform: translateY(1px);
+  transform: scale(0.98);
 }
+
 .delegate-subnav-btn:focus-visible {
-  outline: 2px solid var(--border-focus, #3b82f6);
+  outline: 2px solid var(--r-ui-color-accent-primary, #3b82f6);
   outline-offset: -1px;
 }
+
 .delegate-subnav-btn.active {
   color: #ffffff;
-  background: var(--bg-surface-elevated, #1a243a);
-  border-color: var(--border-strong, rgba(255, 255, 255, 0.2));
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  background: var(--r-ui-color-canvas-surface, #1a243a);
+  border-color: var(--r-ui-color-accent-border, rgba(255, 255, 255, 0.2));
+  box-shadow: var(--r-ui-shadow-subtle);
 }
+
 .delegate-subnav-btn .subnav-icon {
   width: 15px;
   height: 15px;
   flex-shrink: 0;
-  color: var(--text-muted, #64748b);
-  transition: color var(--transition-fast, 150ms ease);
+  color: var(--r-ui-color-text-muted, #64748b);
+  transition: color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
+
 .delegate-subnav-btn:hover .subnav-icon {
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, #94a3b8);
 }
+
 .delegate-subnav-btn.active .subnav-icon {
-  color: var(--accent, #38bdf8);
+  color: var(--r-ui-color-accent-primary, #38bdf8);
 }
+
 .delegate-subpage {
   animation: delegateSubpageFade 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 .delegate-subpage[hidden] {
   display: none !important;
 }
+
 @keyframes delegateSubpageFade {
   from {
     opacity: 0;
@@ -1018,6 +1068,7 @@ p#multitab-feedback.error::before {
     transform: translateY(0);
   }
 }
+
 @media (max-width: 720px) {
   .delegate-subnav {
     gap: 4px;

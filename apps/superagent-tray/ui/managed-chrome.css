@@ -1,85 +1,168 @@
-/* Managed CDP uses the same neutral, compact hierarchy as Runtime Detection. */
+/* ==========================================================================
+   SuperAgent Tray · Managed Chrome / CDP Supervisor Stylesheet
+   Refactored to r-ui design standards (Anti-Slop, Clean Telemetry, Micro-Elevation)
+   ========================================================================== */
+
 .managed-chrome-card {
   margin: 0;
-  padding: 18px;
-  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
-  border-radius: var(--radius-md, 10px);
-  background: var(--bg-surface-raised, #141c2e);
+  padding: 22px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium, rgba(255, 255, 255, 0.12)));
+  border-radius: var(--r-ui-radius-container, var(--radius-md, 12px));
+  background: var(--r-ui-color-canvas-surface-raised, var(--bg-surface-raised, #141c2e));
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
+
+.managed-chrome-card:hover {
+  border-color: var(--r-ui-color-border-hover, rgba(255, 255, 255, 0.2));
+}
+
 .managed-chrome-heading {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
+  gap: 14px;
 }
-.managed-chrome-heading h4 {margin: 5px 0 4px;font-size: 15px;font-weight: 700;letter-spacing: -0.015em;color: var(--text-primary, #f8fafc);}
-.managed-chrome-heading p {margin: 0;color: var(--text-secondary, #94a3b8);font-size: 12px;line-height: 1.55;}
+
+.managed-chrome-heading h4 {
+  margin: 2px 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--r-ui-color-text-primary, var(--text-primary, #f8fafc));
+}
+
+.managed-chrome-heading p {
+  margin: 0;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
 .managed-chrome-status {
   white-space: nowrap;
-  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
-  border-radius: 999px;
-  padding: 5px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary, #94a3b8);
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium, rgba(255, 255, 255, 0.12)));
+  border-radius: var(--r-ui-radius-pill, 9999px);
+  padding: 4px 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
+  background: var(--r-ui-color-canvas-surface, rgba(15, 21, 35, 0.6));
 }
-.managed-chrome-status[data-state="healthy"] {color: #34d399;border-color: rgba(16, 185, 129, 0.35);background: rgba(16, 185, 129, 0.12);}
-.managed-chrome-status[data-state="occupied"] {color: #fbbf24;border-color: rgba(245, 158, 11, 0.35);background: rgba(245, 158, 11, 0.12);}
+
+.managed-chrome-status[data-state="healthy"] {
+  color: var(--r-ui-color-success, #34d399);
+  border-color: var(--r-ui-color-success-border, rgba(16, 185, 129, 0.35));
+  background: var(--r-ui-color-success-soft, rgba(16, 185, 129, 0.12));
+}
+
+.managed-chrome-status[data-state="occupied"] {
+  color: var(--r-ui-color-warning, #fbbf24);
+  border-color: var(--r-ui-color-warning-border, rgba(245, 158, 11, 0.35));
+  background: var(--r-ui-color-warning-soft, rgba(245, 158, 11, 0.12));
+}
+
 .managed-chrome-form {
   display: grid;
   grid-template-columns: minmax(105px, 0.7fr) minmax(155px, 1fr) minmax(220px, 2.4fr);
-  gap: 12px;
-  margin-top: 16px;
+  gap: 14px;
+  margin-top: 18px;
 }
-.managed-chrome-field {display: flex;flex-direction: column;gap: 6px;font-size: 12px;color: var(--text-secondary, #94a3b8);}
+
+.managed-chrome-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
+}
+
 .managed-chrome-field input,
 .managed-chrome-field select {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
-  border-radius: var(--radius-sm, 6px);
-  background: var(--bg-surface, #0f1523);
-  color: var(--text-primary, #f8fafc);
-  padding: 9px 10px;
+  border: 1px solid var(--r-ui-color-border-standard, var(--border-medium, rgba(255, 255, 255, 0.12)));
+  border-radius: var(--r-ui-radius-element, var(--radius-sm, 6px));
+  background: var(--r-ui-color-canvas-surface, var(--bg-surface, #0f1523));
+  color: var(--r-ui-color-text-primary, var(--text-primary, #f8fafc));
+  padding: 9px 12px;
   font: inherit;
-  font-size: 12px;
-  min-height: 36px;
+  font-size: 12.5px;
+  min-height: 38px;
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
+
 .managed-chrome-field input:focus-visible,
 .managed-chrome-field select:focus-visible,
 .managed-chrome-actions button:focus-visible {
-  outline: 2px solid var(--border-focus, #3b82f6);
-  outline-offset: 2px;
+  outline: 2px solid var(--r-ui-color-accent-primary, var(--border-focus, #3b82f6));
+  outline-offset: 1px;
 }
+
 .managed-chrome-actions {
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  margin-top: 4px;
 }
-.managed-chrome-actions button:disabled {opacity: 0.5;cursor: not-allowed;}
+
+.managed-chrome-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .managed-chrome-details {
-  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.07));
-  margin-top: 14px;
-  padding-top: 13px;
+  border-top: 1px solid var(--r-ui-color-border-standard, var(--border-subtle, rgba(255, 255, 255, 0.07)));
+  margin-top: 16px;
+  padding-top: 14px;
   display: flex;
   flex-wrap: wrap;
-  gap: 9px 19px;
-  font-size: 11px;
-  color: var(--text-secondary, #94a3b8);
+  gap: 10px 20px;
+  font-size: 11.5px;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
 }
-.managed-chrome-details strong {font-size: 12px;font-weight: 600;color: var(--text-primary, #f8fafc);}
-.managed-chrome-feedback {margin: 10px 0 0;color: var(--text-secondary, #94a3b8);font-size: 11.5px;line-height: 1.5;}
-.managed-chrome-feedback[data-error="true"] {color: var(--danger-hover, #f87171);}
+
+.managed-chrome-details strong {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--r-ui-color-text-primary, var(--text-primary, #f8fafc));
+}
+
+.managed-chrome-feedback {
+  margin: 12px 0 0;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.managed-chrome-feedback[data-error="true"] {
+  color: var(--r-ui-color-danger, var(--danger-hover, #f87171));
+}
+
 @media (max-width: 760px) {
-  .managed-chrome-form {grid-template-columns: repeat(2, minmax(0, 1fr));}
-  .managed-chrome-url {grid-column: 1 / -1;}
+  .managed-chrome-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .managed-chrome-url {
+    grid-column: 1 / -1;
+  }
 }
+
 @media (max-width: 480px) {
-  .managed-chrome-card {padding: 14px;}
-  .managed-chrome-actions {align-items: stretch;}
-  .managed-chrome-actions button {flex: 1 1 auto;}
+  .managed-chrome-card {
+    padding: 16px;
+  }
+  .managed-chrome-actions {
+    align-items: stretch;
+  }
+  .managed-chrome-actions button {
+    flex: 1 1 auto;
+  }
 }

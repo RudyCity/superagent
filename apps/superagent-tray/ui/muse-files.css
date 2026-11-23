@@ -1,24 +1,22 @@
-/* SuperAgent Tray · Muse File Transfer Manager
- * Scoped to #page-muse-files and its components.
- * Design Language: High-Precision Cyberpunk Telemetry & Engineering Workstation
- * Standards: Antislop Core Filter, WCAG AA Contrast, Hardware Acceleration, Reduced Motion
- */
+/* ==========================================================================
+   SuperAgent Tray · Muse File Transfer Manager Stylesheet
+   Refactored to r-ui design standards (Anti-Slop, Precise Telemetry, Micro-Elevation)
+   ========================================================================== */
 
 #page-muse-files {
-  --muse-accent: #38bdf8;
+  --muse-accent: var(--r-ui-color-accent-primary, #38bdf8);
   --muse-accent-rgb: 56, 189, 248;
-  --muse-accent-hover: #7dd3fc;
-  --muse-accent-glow: rgba(56, 189, 248, 0.2);
-  --muse-surface: var(--bg-surface, #0f1523);
-  --muse-surface-raised: var(--bg-surface-raised, #141c2e);
-  --muse-surface-elevated: var(--bg-surface-elevated, #1a243a);
-  --muse-surface-sunken: var(--bg-surface-sunken, #090d16);
-  --muse-border-subtle: var(--border-subtle, rgba(255, 255, 255, 0.07));
-  --muse-border-medium: var(--border-medium, rgba(255, 255, 255, 0.12));
-  --muse-border-strong: var(--border-strong, rgba(255, 255, 255, 0.2));
-  --muse-border-focus: var(--border-focus, #38bdf8);
+  --muse-accent-hover: var(--r-ui-color-accent-hover, #7dd3fc);
+  --muse-accent-glow: var(--r-ui-color-accent-soft, rgba(56, 189, 248, 0.15));
+  --muse-surface: var(--r-ui-color-canvas-surface, #0f1523);
+  --muse-surface-raised: var(--r-ui-color-canvas-surface-raised, #141c2e);
+  --muse-surface-elevated: var(--r-ui-color-canvas-surface-raised, #1a243a);
+  --muse-surface-sunken: var(--r-ui-color-canvas-surface-sunken, #090d16);
+  --muse-border-subtle: var(--r-ui-color-border-standard, rgba(255, 255, 255, 0.08));
+  --muse-border-medium: var(--r-ui-color-border-hover, rgba(255, 255, 255, 0.16));
+  --muse-border-strong: var(--r-ui-color-border-hover, rgba(255, 255, 255, 0.24));
+  --muse-border-focus: var(--r-ui-color-accent-primary, #38bdf8);
 
-  /* Max width constraint ensures comfortable wide-aspect viewing on desktop monitors */
   max-width: 1280px;
   width: 100%;
   margin: 0 auto;
@@ -32,19 +30,22 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 
 .muse-file-stats .stat-card {
   position: relative;
   background: var(--muse-surface);
   border: 1px solid var(--muse-border-subtle);
-  border-radius: var(--radius-md, 10px);
-  padding: 16px 18px;
+  border-radius: var(--r-ui-radius-container, 12px);
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: transform var(--transition-fast, 150ms ease), border-color var(--transition-fast, 150ms ease), box-shadow var(--transition-fast, 150ms ease);
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: transform var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
   overflow: hidden;
 }
 
@@ -55,15 +56,15 @@
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.4), transparent);
+  background: linear-gradient(90deg, transparent, var(--r-ui-color-accent-border, rgba(56, 189, 248, 0.4)), transparent);
   opacity: 0;
-  transition: opacity var(--transition-fast, 150ms ease);
+  transition: opacity var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .muse-file-stats .stat-card:hover {
   border-color: var(--muse-border-medium);
   transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--r-ui-shadow-card);
 }
 
 .muse-file-stats .stat-card:hover::before {
@@ -73,12 +74,12 @@
 .muse-stat-head-left {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 }
 
 .muse-stat-icon {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   color: var(--muse-accent);
   opacity: 0.9;
   flex-shrink: 0;
@@ -87,29 +88,30 @@
 .muse-file-stats .stat-label {
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.8px;
-  color: var(--text-secondary, #94a3b8);
+  letter-spacing: 0.08em;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
   text-transform: uppercase;
 }
 
 .muse-file-stats .stat-chip {
   font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.3px;
-  padding: 2px 8px;
-  border-radius: var(--radius-pill, 9999px);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: var(--r-ui-radius-pill, 9999px);
   background: var(--muse-surface-raised);
-  color: var(--text-muted, #94a3b8);
+  color: var(--r-ui-color-text-muted, var(--text-muted, #94a3b8));
   border: 1px solid var(--muse-border-subtle);
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
 }
 
 .muse-file-stats .stat-chip.success {
-  background: rgba(16, 185, 129, 0.12);
-  color: #34d399;
-  border-color: rgba(16, 185, 129, 0.3);
+  background: var(--r-ui-color-success-soft, rgba(16, 185, 129, 0.12));
+  color: var(--r-ui-color-success, #34d399);
+  border-color: var(--r-ui-color-success-border, rgba(16, 185, 129, 0.3));
 }
 
 .muse-file-stats .stat-chip.success::before {
@@ -117,23 +119,22 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #10b981;
-  box-shadow: 0 0 6px #10b981;
+  background: var(--r-ui-color-success, #10b981);
 }
 
 .muse-file-stats .stat-value {
   font-size: 24px;
   font-weight: 750;
-  letter-spacing: -0.4px;
-  color: var(--text-primary, #f8fafc);
+  letter-spacing: -0.025em;
+  color: var(--r-ui-color-text-primary, var(--text-primary, #f8fafc));
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
 }
 
 .muse-file-stats .stat-sub {
   font-size: 11.5px;
-  color: var(--text-muted, #64748b);
-  line-height: 1.4;
+  color: var(--r-ui-color-text-muted, var(--text-muted, #64748b));
+  line-height: 1.45;
   word-break: break-word;
 }
 
@@ -141,15 +142,15 @@
    2. Alert / Status Banner
    ========================================================================== */
 #muse-files-banner {
-  margin-bottom: 20px;
-  padding: 12px 18px;
-  border-radius: var(--radius-md, 10px);
+  margin-bottom: 22px;
+  padding: 13px 18px;
+  border-radius: var(--r-ui-radius-element, 8px);
   font-size: 12.5px;
   font-weight: 550;
-  line-height: 1.45;
-  background: rgba(245, 158, 11, 0.09);
-  border: 1px solid rgba(245, 158, 11, 0.32);
-  color: #fde68a;
+  line-height: 1.5;
+  background: var(--r-ui-color-warning-soft, rgba(245, 158, 11, 0.09));
+  border: 1px solid var(--r-ui-color-warning-border, rgba(245, 158, 11, 0.32));
+  color: var(--r-ui-color-warning, #fde68a);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -157,9 +158,9 @@
 }
 
 #muse-files-banner.error {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.35);
-  color: #fca5a5;
+  background: var(--r-ui-color-danger-soft, rgba(239, 68, 68, 0.1));
+  border-color: var(--r-ui-color-danger-border, rgba(239, 68, 68, 0.35));
+  color: var(--r-ui-color-danger, #fca5a5);
 }
 
 /* ==========================================================================
@@ -187,10 +188,10 @@
 .muse-files-panel {
   background: var(--muse-surface);
   border: 1px solid var(--muse-border-subtle);
-  border-radius: var(--radius-lg, 14px);
+  border-radius: var(--r-ui-radius-container, 14px);
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
-  transition: border-color var(--transition-fast, 150ms ease);
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: border-color var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .muse-files-panel:hover {
@@ -198,7 +199,7 @@
 }
 
 .muse-files-panel .panel-head {
-  padding: 18px 22px;
+  padding: 20px 24px;
   border-bottom: 1px solid var(--muse-border-subtle);
   display: flex;
   align-items: flex-start;
@@ -210,43 +211,42 @@
   margin: 2px 0 4px;
   font-size: 16.5px;
   font-weight: 700;
-  letter-spacing: -0.2px;
-  color: var(--text-primary, #f8fafc);
+  letter-spacing: -0.015em;
+  color: var(--r-ui-color-text-primary, var(--text-primary, #f8fafc));
 }
 
 .muse-files-panel .panel-head p {
   margin: 0;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 .muse-panel-body {
-  padding: 20px 22px;
+  padding: 22px 24px;
 }
 
 /* ==========================================================================
    5. Native File Picker & Staging Zone
    ========================================================================== */
 .muse-file-picker {
-  border: 1px dashed rgba(56, 189, 248, 0.35);
-  border-radius: var(--radius-md, 12px);
-  padding: 18px 20px;
-  background: radial-gradient(ellipse at top left, rgba(56, 189, 248, 0.06) 0%, rgba(15, 21, 35, 0.4) 100%);
+  border: 1px dashed var(--r-ui-color-accent-border, rgba(56, 189, 248, 0.35));
+  border-radius: var(--r-ui-radius-container, 12px);
+  padding: 20px 22px;
+  background: radial-gradient(ellipse at top left, var(--r-ui-color-accent-soft, rgba(56, 189, 248, 0.06)) 0%, var(--muse-surface) 100%);
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 16px;
-  transition: all var(--transition-fast, 150ms ease);
+  transition: all var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
   position: relative;
 }
 
 .muse-file-picker:hover,
 .muse-file-picker:focus-within {
   border-color: var(--muse-accent);
-  background: radial-gradient(ellipse at top left, rgba(56, 189, 248, 0.1) 0%, rgba(20, 28, 46, 0.6) 100%);
-  box-shadow: 0 0 20px rgba(56, 189, 248, 0.12);
+  box-shadow: var(--r-ui-shadow-subtle);
 }
 
 .muse-file-picker-main {
@@ -263,12 +263,12 @@
   flex: 0 0 46px;
   width: 46px;
   height: 46px;
-  border-radius: 10px;
+  border-radius: var(--r-ui-radius-element, 10px);
   color: var(--muse-accent);
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.14) 0%, rgba(37, 99, 235, 0.14) 100%);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  box-shadow: 0 2px 10px rgba(56, 189, 248, 0.15);
-  transition: transform var(--transition-fast, 150ms ease);
+  background: var(--r-ui-color-accent-soft, rgba(56, 189, 248, 0.14));
+  border: 1px solid var(--r-ui-color-accent-border, rgba(56, 189, 248, 0.3));
+  box-shadow: var(--r-ui-shadow-subtle);
+  transition: transform var(--r-ui-motion-duration-snappy, 160ms) var(--r-ui-motion-spring, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .muse-file-picker:hover .muse-file-picker-icon {
@@ -290,16 +290,16 @@
   display: block;
   font-size: 14px;
   font-weight: 650;
-  color: var(--text-primary, #f8fafc);
+  color: var(--r-ui-color-text-primary, var(--text-primary, #f8fafc));
   overflow-wrap: anywhere;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.01em;
 }
 
 .muse-file-picker-text p {
   margin: 3px 0 0;
-  color: var(--text-secondary, #94a3b8);
-  font-size: 11.5px;
-  line-height: 1.4;
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 /* ==========================================================================
@@ -310,7 +310,7 @@
   align-items: flex-end;
   gap: 16px;
   margin-top: 18px;
-  padding-top: 16px;
+  padding-top: 18px;
   border-top: 1px solid var(--muse-border-subtle);
   flex-wrap: wrap;
 }
@@ -324,10 +324,10 @@
 }
 
 .muse-file-channel-field label {
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
   font-size: 11.5px;
   font-weight: 650;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.02em;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -348,7 +348,6 @@
   gap: 8px;
   font-size: 12.5px;
   font-weight: 650;
-  letter-spacing: 0.2px;
   flex-shrink: 0;
 }
 
@@ -362,8 +361,8 @@
 }
 
 .muse-files-empty-state {
-  padding: 16px 18px;
-  border-radius: var(--radius-md, 10px);
+  padding: 18px 20px;
+  border-radius: var(--r-ui-radius-element, 10px);
   background: var(--muse-surface-raised);
   border: 1px dashed var(--muse-border-subtle);
   display: flex;
@@ -373,11 +372,11 @@
 }
 
 .muse-files-empty-state .empty-icon-wrap {
-  width: 38px;
-  height: 38px;
-  border-radius: 9px;
-  background: rgba(56, 189, 248, 0.08);
-  border: 1px solid rgba(56, 189, 248, 0.2);
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-ui-radius-element, 8px);
+  background: var(--r-ui-color-accent-soft, rgba(56, 189, 248, 0.08));
+  border: 1px solid var(--r-ui-color-accent-border, rgba(56, 189, 248, 0.2));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -393,26 +392,27 @@
 .muse-files-empty-state .empty-title {
   font-size: 13px;
   font-weight: 650;
-  color: var(--text-primary, #f8fafc);
+  color: var(--r-ui-color-text-primary, var(--text-primary, #f8fafc));
   margin: 0 0 2px;
-  letter-spacing: -0.1px;
+  letter-spacing: -0.01em;
 }
 
 .muse-files-empty-state .empty-desc {
   font-size: 11.5px;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
   margin: 0;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .muse-file-progress-container {
   background: var(--muse-surface-raised);
   border: 1px solid var(--muse-border-medium);
-  border-radius: var(--radius-md, 10px);
-  padding: 18px 20px;
+  border-radius: var(--r-ui-radius-container, 10px);
+  padding: 18px 22px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  box-shadow: var(--r-ui-shadow-subtle);
   animation: muse-fade-enter 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -432,14 +432,14 @@
   display: block;
   font-size: 14.5px;
   font-weight: 700;
-  color: var(--text-primary, #f8fafc);
-  letter-spacing: -0.3px;
+  color: var(--r-ui-color-text-primary, var(--text-primary, #f8fafc));
+  letter-spacing: -0.015em;
   overflow-wrap: anywhere;
 }
 
 .muse-file-progress-title-block p {
   margin: 4px 0 0;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
   font-size: 12px;
   line-height: 1.45;
 }
@@ -448,29 +448,27 @@
   font-variant-numeric: tabular-nums;
   font-size: 22px;
   font-weight: 750;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.02em;
   color: var(--muse-accent);
   line-height: 1;
-  text-shadow: 0 0 14px rgba(56, 189, 248, 0.4);
 }
 
 .muse-files-track {
   width: 100%;
   height: 8px;
   overflow: hidden;
-  border-radius: var(--radius-pill, 9999px);
+  border-radius: var(--r-ui-radius-pill, 9999px);
   background: rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
   position: relative;
 }
 
 #muse-files-progress-fill {
-  background: linear-gradient(90deg, #0284c7 0%, #38bdf8 65%, #60a5fa 100%);
+  background: var(--r-ui-color-accent-primary, #38bdf8);
   width: 0%;
   height: 100%;
-  border-radius: var(--radius-pill, 9999px);
+  border-radius: var(--r-ui-radius-pill, 9999px);
   transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 0 12px rgba(56, 189, 248, 0.45);
 }
 
 .muse-file-progress-metrics {
@@ -483,25 +481,26 @@
 .muse-metric-card {
   background: var(--muse-surface);
   border: 1px solid var(--muse-border-subtle);
-  border-radius: var(--radius-sm, 8px);
+  border-radius: var(--r-ui-radius-element, 8px);
   padding: 10px 14px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  box-shadow: var(--r-ui-shadow-subtle);
 }
 
 .muse-metric-label {
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.8px;
-  color: var(--text-muted, #64748b);
+  letter-spacing: 0.08em;
+  color: var(--r-ui-color-text-muted, var(--text-muted, #64748b));
   text-transform: uppercase;
 }
 
 .muse-metric-value {
   font-size: 13px;
   font-weight: 650;
-  color: var(--text-primary, #f8fafc);
+  color: var(--r-ui-color-text-primary, var(--text-primary, #f8fafc));
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
@@ -519,10 +518,10 @@
 .muse-files-error {
   margin: 10px 0 0;
   padding: 10px 14px;
-  border-radius: var(--radius-sm, 8px);
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #fca5a5;
+  border-radius: var(--r-ui-radius-element, 8px);
+  background: var(--r-ui-color-danger-soft, rgba(239, 68, 68, 0.1));
+  border: 1px solid var(--r-ui-color-danger-border, rgba(239, 68, 68, 0.3));
+  color: var(--r-ui-color-danger, #fca5a5);
   font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -530,8 +529,8 @@
 
 .muse-files-security-note {
   margin: 18px 0 0;
-  padding: 12px 14px;
-  border-radius: var(--radius-sm, 8px);
+  padding: 12px 16px;
+  border-radius: var(--r-ui-radius-element, 8px);
   background: var(--muse-surface-raised);
   border: 1px solid var(--muse-border-subtle);
   display: flex;
@@ -551,7 +550,7 @@
   margin: 0;
   font-size: 11.5px;
   line-height: 1.55;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, var(--text-secondary, #94a3b8));
 }
 
 /* ==========================================================================
@@ -570,10 +569,11 @@
 #page-muse-files .data-table th {
   padding: 12px 20px;
   background: var(--muse-surface-raised);
-  color: var(--text-muted, #64748b);
+  color: var(--r-ui-color-text-muted, var(--text-muted, #64748b));
   font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   border-bottom: 1px solid var(--muse-border-subtle);
 }
 
@@ -594,51 +594,51 @@
   gap: 5px;
   border: 1px solid rgba(148, 163, 184, 0.25);
   padding: 3px 9px;
-  border-radius: var(--radius-pill, 9999px);
+  border-radius: var(--r-ui-radius-pill, 9999px);
   font-size: 11px;
-  font-weight: 650;
-  text-transform: capitalize;
-  letter-spacing: 0.2px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   line-height: 1.2;
 }
 
 .muse-file-status-completed {
-  border-color: rgba(34, 197, 94, 0.35);
-  color: #4ade80;
-  background: rgba(34, 197, 94, 0.1);
+  border-color: var(--r-ui-color-success-border, rgba(34, 197, 94, 0.35));
+  color: var(--r-ui-color-success, #4ade80);
+  background: var(--r-ui-color-success-soft, rgba(34, 197, 94, 0.1));
 }
 
 .muse-file-status-transferring {
-  border-color: rgba(56, 189, 248, 0.35);
-  color: #38bdf8;
-  background: rgba(56, 189, 248, 0.1);
+  border-color: var(--r-ui-color-accent-border, rgba(56, 189, 248, 0.35));
+  color: var(--r-ui-color-accent-primary, #38bdf8);
+  background: var(--r-ui-color-accent-soft, rgba(56, 189, 248, 0.1));
 }
 
 .muse-file-status-failed,
 .muse-file-status-cancelled {
-  border-color: rgba(248, 113, 113, 0.35);
-  color: #f87171;
-  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--r-ui-color-danger-border, rgba(248, 113, 113, 0.35));
+  color: var(--r-ui-color-danger, #f87171);
+  background: var(--r-ui-color-danger-soft, rgba(239, 68, 68, 0.1));
 }
 
 .muse-file-status-paused {
-  border-color: rgba(251, 191, 36, 0.35);
-  color: #fbbf24;
-  background: rgba(245, 158, 11, 0.1);
+  border-color: var(--r-ui-color-warning-border, rgba(251, 191, 36, 0.35));
+  color: var(--r-ui-color-warning, #fbbf24);
+  background: var(--r-ui-color-warning-soft, rgba(245, 158, 11, 0.1));
 }
 
 .muse-file-unverified {
   display: block;
   font-size: 10.5px;
   margin-top: 4px;
-  color: #fde68a;
+  color: var(--r-ui-color-warning, #fde68a);
 }
 
 .muse-file-retry {
   white-space: nowrap;
   font-size: 11.5px;
   padding: 5px 12px;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--r-ui-radius-element, 6px);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -675,12 +675,12 @@
 .muse-setting-label-block label {
   font-size: 12.5px;
   font-weight: 650;
-  color: var(--text-primary, #f8fafc);
-  letter-spacing: -0.1px;
+  color: var(--r-ui-color-text-primary, #f8fafc);
+  letter-spacing: -0.01em;
 }
 
 .muse-setting-label-block small {
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, #94a3b8);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -693,16 +693,16 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-top: 12px;
+  margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--muse-border-subtle);
 }
 
 #muse-files-settings-feedback {
-  color: #34d399;
+  color: var(--r-ui-color-success, #34d399);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.02em;
 }
 
 /* ==========================================================================
@@ -722,9 +722,9 @@
 }
 
 .muse-spec-icon-wrap {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-ui-radius-element, 8px);
   background: var(--muse-surface-raised);
   border: 1px solid var(--muse-border-subtle);
   display: flex;
@@ -744,15 +744,15 @@
   display: block;
   font-size: 12.5px;
   font-weight: 650;
-  color: var(--text-primary, #f8fafc);
+  color: var(--r-ui-color-text-primary, #f8fafc);
   margin-bottom: 3px;
-  letter-spacing: -0.1px;
+  letter-spacing: -0.01em;
 }
 
 .muse-spec-content p {
   margin: 0;
   font-size: 11.5px;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--r-ui-color-text-secondary, #94a3b8);
   line-height: 1.45;
 }
 
