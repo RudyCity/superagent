@@ -132,21 +132,24 @@
       }
     }
 
-    /* Action Buttons with Tactile Depression */
+    /* Action Buttons with Strict Height Rhythm (Law 12 Compliance) */
     .r-ui-btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: var(--r-ui-space-2);
-      padding: var(--r-ui-space-2) var(--r-ui-space-4);
-      min-height: 40px;
+      padding: 0 14px;
+      height: 34px;
+      min-height: 34px;
+      line-height: 1;
       font-family: inherit;
-      font-size: var(--r-ui-font-body);
+      font-size: 13px;
       font-weight: 600;
-      border-radius: var(--r-ui-radius-sm);
+      border-radius: var(--r-ui-radius-xs);
       border: 1px solid transparent;
       cursor: pointer;
       user-select: none;
+      white-space: nowrap;
       touch-action: manipulation;
       transition: transform var(--r-ui-duration-instant) var(--r-ui-ease-spring-snappy),
                   background-color var(--r-ui-duration-fast) ease,
@@ -169,26 +172,106 @@
       transform: scale(0.975);
     }
 
-    .r-ui-btn-primary {
+    /* Standardized Height Tiers (Anti-Bloated Buttons) */
+    .r-ui-btn--xs {
+      height: 24px;
+      min-height: 24px;
+      padding: 0 8px;
+      font-size: 11px;
+      gap: 4px;
+    }
+    .r-ui-btn--sm {
+      height: 30px;
+      min-height: 30px;
+      padding: 0 10px;
+      font-size: 12px;
+      gap: 6px;
+    }
+    .r-ui-btn--md {
+      height: 34px;
+      min-height: 34px;
+      padding: 0 14px;
+      font-size: 13px;
+      gap: 6px;
+    }
+    .r-ui-btn--lg {
+      height: 40px;
+      min-height: 40px;
+      padding: 0 18px;
+      font-size: 14px;
+      gap: 8px;
+    }
+
+    /* Button Group Precision & Equal Height Rhythm */
+    .r-ui-btn-group {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--r-ui-space-2);
+    }
+    .r-ui-btn-group > .r-ui-btn {
+      flex-shrink: 0;
+    }
+    .r-ui-btn-group--attached {
+      gap: 0;
+    }
+    .r-ui-btn-group--attached > .r-ui-btn:not(:first-child) {
+      margin-left: -1px;
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+    }
+    .r-ui-btn-group--attached > .r-ui-btn:not(:last-child) {
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+    .r-ui-btn-group--attached > .r-ui-btn:hover,
+    .r-ui-btn-group--attached > .r-ui-btn:focus {
+      z-index: 1;
+    }
+
+    .r-ui-btn-primary,
+    .r-ui-btn--primary {
       background-color: var(--r-ui-color-accent-primary);
       color: var(--r-ui-color-text-inverse);
       box-shadow: var(--r-ui-shadow-xs);
     }
 
-    .r-ui-btn-primary:hover {
+    .r-ui-btn-primary:hover,
+    .r-ui-btn--primary:hover {
       background-color: var(--r-ui-color-accent-primary-hover);
       box-shadow: var(--r-ui-shadow-sm);
     }
 
-    .r-ui-btn-secondary {
+    .r-ui-btn-secondary,
+    .r-ui-btn--secondary {
       background-color: var(--r-ui-color-surface-elevated);
       color: var(--r-ui-color-text-primary);
       border-color: var(--r-ui-color-border-standard);
     }
 
-    .r-ui-btn-secondary:hover {
+    .r-ui-btn-secondary:hover,
+    .r-ui-btn--secondary:hover {
       border-color: var(--r-ui-color-border-strong);
       background-color: var(--r-ui-color-surface-overlay);
+    }
+
+    .r-ui-btn--destructive {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #ef4444;
+    }
+    .r-ui-btn--destructive:hover {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: rgba(239, 68, 68, 0.5);
+    }
+
+    .r-ui-btn--ghost {
+      background: transparent;
+      color: var(--r-ui-color-text-secondary);
+      border-color: transparent;
+    }
+    .r-ui-btn--ghost:hover {
+      background-color: var(--r-ui-color-surface-hover);
+      color: var(--r-ui-color-text-primary);
     }
 
     .r-ui-btn:disabled,
@@ -1169,6 +1252,54 @@
           <div style="display: flex; flex-direction: column; gap: 6px;">
             <span style="font-size: 11px; text-transform: uppercase; color: var(--r-ui-color-text-muted); font-weight: 600;">6. Skeleton Loading</span>
             <div class="r-ui-skeleton" style="width: 100%; height: 40px;"></div>
+          </div>
+        </div>
+      </article>
+
+      <!-- Card 3.5: Law 12 Button Precision & Scale Harmony -->
+      <article class="r-ui-card r-ui-bento-full">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="r-ui-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">Anti-Slop Law 12</span>
+            <h3 style="font-size: var(--r-ui-font-h3); font-weight: 700; margin: 0;">Button Height Rhythm & Optical Alignment Precision</h3>
+          </div>
+          <span style="font-size: 12px; color: var(--r-ui-color-text-muted);">Bans bloated oversized buttons (>42px) & jagged heights in action bars</span>
+        </div>
+        <p style="color: var(--r-ui-color-text-secondary); font-size: 13px; margin-top: 4px;">
+          Buttons enforce calibrated height tiers (<code style="color: var(--r-ui-color-accent-primary);">24px / 30px / 34px / 40px</code>) and 100% matched heights across sibling buttons in toolbars, footers, and modal actions.
+        </p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--r-ui-space-4); margin-top: var(--r-ui-space-3);">
+          <!-- Panel 1: Height Tiers -->
+          <div style="display: flex; flex-direction: column; gap: 8px; padding: var(--r-ui-space-3); background: var(--r-ui-color-surface-elevated); border-radius: var(--r-ui-radius-xs); border: 1px solid var(--r-ui-color-border-standard);">
+            <span style="font-size: 11px; text-transform: uppercase; color: var(--r-ui-color-text-muted); font-weight: 600;">Standard Height Scale</span>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <button class="r-ui-btn r-ui-btn--xs r-ui-btn--secondary">xs (24px)</button>
+              <button class="r-ui-btn r-ui-btn--sm r-ui-btn--secondary">sm (30px)</button>
+              <button class="r-ui-btn r-ui-btn--md r-ui-btn--secondary">md (34px)</button>
+              <button class="r-ui-btn r-ui-btn--lg r-ui-btn--primary">lg (40px)</button>
+            </div>
+          </div>
+
+          <!-- Panel 2: Sibling Button Group (Equal Height Harmony) -->
+          <div style="display: flex; flex-direction: column; gap: 8px; padding: var(--r-ui-space-3); background: var(--r-ui-color-surface-elevated); border-radius: var(--r-ui-radius-xs); border: 1px solid var(--r-ui-color-border-standard);">
+            <span style="font-size: 11px; text-transform: uppercase; color: var(--r-ui-color-text-muted); font-weight: 600;">Sibling Action Bar (100% Matched 34px)</span>
+            <div class="r-ui-btn-group">
+              <button class="r-ui-btn r-ui-btn--primary">Save Changes</button>
+              <button class="r-ui-btn r-ui-btn--secondary">Cancel</button>
+              <button class="r-ui-btn r-ui-btn--destructive">Delete</button>
+            </div>
+          </div>
+
+          <!-- Panel 3: Attached Segmented Group -->
+          <div style="display: flex; flex-direction: column; gap: 8px; padding: var(--r-ui-space-3); background: var(--r-ui-color-surface-elevated); border-radius: var(--r-ui-radius-xs); border: 1px solid var(--r-ui-color-border-standard);">
+            <span style="font-size: 11px; text-transform: uppercase; color: var(--r-ui-color-text-muted); font-weight: 600;">Attached Hairline Segments</span>
+            <div class="r-ui-btn-group--attached">
+              <button class="r-ui-btn r-ui-btn--sm r-ui-btn--secondary">Daily</button>
+              <button class="r-ui-btn r-ui-btn--sm r-ui-btn--secondary">Weekly</button>
+              <button class="r-ui-btn r-ui-btn--sm r-ui-btn--primary">Monthly</button>
+              <button class="r-ui-btn r-ui-btn--sm r-ui-btn--secondary">Annual</button>
+            </div>
           </div>
         </div>
       </article>

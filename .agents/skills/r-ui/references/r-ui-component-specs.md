@@ -1,12 +1,13 @@
-# r-ui: Complete Component Anatomy & Interaction Specifications (v3.0.0)
+# r-ui: Complete Component Anatomy & Interaction Specifications (v3.5.0)
 
 Comprehensive modular component specifications for production-grade Universal UI/UX Design System.
 **Visual-first**, anti-slop, free of murky dark shadows, free of neon/glow effects, and 100% powered by native --r-ui-* tokens.
 
 ---
 
-## 1. Action Button System
-Interactive buttons with tactile spring physics, accessible state management, and zero-neon discipline.
+## 1. Action Button System & Precision Height Scale (Law 12 Compliance)
+Interactive buttons with tactile spring physics, standardized height rhythm, zero-neon discipline, and strict visual precision.
+**Strict Ban (Law 12)**: Never generate bloated/oversized buttons (>42px in dashboards/SaaS) or mismatched heights between sibling buttons in toolbars or modal action bars.
 
 ```css
 .r-ui-btn {
@@ -14,25 +15,91 @@ Interactive buttons with tactile spring physics, accessible state management, an
   align-items: center;
   justify-content: center;
   gap: var(--r-ui-space-2);
-  padding: 6px var(--r-ui-space-3);
-  min-height: 34px;
+  line-height: 1;
   font-family: inherit;
-  font-size: 0.8125rem;
   font-weight: 600;
   border-radius: var(--r-ui-radius-xs);
   border: 1px solid transparent;
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
   touch-action: manipulation;
-  transition: transform var(--r-ui-duration-fast) var(--r-ui-ease-spring),
+  transition: transform var(--r-ui-duration-fast) var(--r-ui-ease-spring-snappy),
               background-color var(--r-ui-duration-fast) ease,
-              border-color var(--r-ui-duration-fast) ease;
+              border-color var(--r-ui-duration-fast) ease,
+              box-shadow var(--r-ui-duration-fast) ease;
 }
-.r-ui-btn:active { transform: scale(0.98); }
+.r-ui-btn:active { transform: scale(0.97); }
+
+/* STANDARDIZED HEIGHT TIERS (ANTI-BLOAT & STRICT SCALE HARMONY) */
+.r-ui-btn--xs {
+  height: 24px;
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 0.6875rem; /* 11px */
+  gap: 4px;
+}
+.r-ui-btn--sm {
+  height: 30px;
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 0.75rem; /* 12px */
+  gap: 6px;
+}
+.r-ui-btn--md,
+.r-ui-btn:not([class*="--xs"]):not([class*="--sm"]):not([class*="--lg"]) {
+  height: 34px; /* Standard default */
+  min-height: 34px;
+  padding: 0 14px;
+  font-size: 0.8125rem; /* 13px */
+  gap: 6px;
+}
+.r-ui-btn--lg {
+  height: 40px; /* Hard ceiling: max 42px */
+  min-height: 40px;
+  padding: 0 18px;
+  font-size: 0.875rem; /* 14px */
+  gap: 8px;
+}
+
+/* BUTTON GROUPS & ACTION BARS (STRICT HEIGHT HARMONY & BASELINE ALIGNMENT) */
+.r-ui-btn-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--r-ui-space-2);
+}
+/* Ensure all sibling buttons in group share identical height */
+.r-ui-btn-group > .r-ui-btn {
+  flex-shrink: 0;
+}
+
+/* Attached Button Group (Segmented / Connected actions) */
+.r-ui-btn-group--attached {
+  gap: 0;
+}
+.r-ui-btn-group--attached > .r-ui-btn:not(:first-child) {
+  margin-left: -1px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.r-ui-btn-group--attached > .r-ui-btn:not(:last-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.r-ui-btn-group--attached > .r-ui-btn:hover,
+.r-ui-btn-group--attached > .r-ui-btn:focus {
+  z-index: 1;
+}
+
+/* Variants */
 .r-ui-btn--primary {
   background-color: var(--r-ui-color-accent-primary);
   color: var(--r-ui-color-text-inverse);
   box-shadow: var(--r-ui-shadow-xs);
+}
+.r-ui-btn--primary:hover {
+  filter: brightness(1.08);
+  box-shadow: var(--r-ui-shadow-sm);
 }
 .r-ui-btn--secondary {
   background-color: var(--r-ui-color-surface-elevated);
@@ -40,9 +107,36 @@ Interactive buttons with tactile spring physics, accessible state management, an
   color: var(--r-ui-color-text-primary);
   box-shadow: var(--r-ui-border-inner-glass);
 }
-.r-ui-btn--ghost { background: transparent; color: var(--r-ui-color-text-secondary); }
-.r-ui-btn--destructive { background: var(--r-ui-color-error-bg); border-color: rgba(244, 63, 94, 0.2); color: var(--r-ui-color-error); }
-.r-ui-btn--outline { background: transparent; border-color: var(--r-ui-color-border-standard); color: var(--r-ui-color-text-primary); }
+.r-ui-btn--secondary:hover {
+  background-color: var(--r-ui-color-surface-hover);
+  border-color: var(--r-ui-color-border-strong);
+}
+.r-ui-btn--ghost {
+  background: transparent;
+  color: var(--r-ui-color-text-secondary);
+}
+.r-ui-btn--ghost:hover {
+  background-color: var(--r-ui-color-surface-hover);
+  color: var(--r-ui-color-text-primary);
+}
+.r-ui-btn--destructive {
+  background: var(--r-ui-color-error-bg);
+  border-color: rgba(244, 63, 94, 0.25);
+  color: var(--r-ui-color-error);
+}
+.r-ui-btn--destructive:hover {
+  background: rgba(244, 63, 94, 0.15);
+  border-color: rgba(244, 63, 94, 0.4);
+}
+.r-ui-btn--outline {
+  background: transparent;
+  border-color: var(--r-ui-color-border-standard);
+  color: var(--r-ui-color-text-primary);
+}
+.r-ui-btn--outline:hover {
+  background-color: var(--r-ui-color-surface-hover);
+  border-color: var(--r-ui-color-border-strong);
+}
 ```
 
 ---

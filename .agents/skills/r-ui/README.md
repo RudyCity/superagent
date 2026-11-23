@@ -32,11 +32,11 @@ All tokens and classes operate under the original `--r-ui-*` namespace for green
 
 ---
 
-## 🛡️ The 10 Anti-Slop Visual Laws
+## 🛡️ The 12 Anti-Slop Visual Laws
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                       THE 10 ANTI-SLOP DESIGN LAWS                          │
+│                       THE 12 ANTI-SLOP DESIGN LAWS                          │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  1. BAN THE PURPLE HAZE     ──► No generic AI-purple/pink mesh gradients    │
 │  2. BAN SYMMETRIC BENTO     ──► Asymmetric weights & hierarchy (2:1 spans)  │
@@ -48,6 +48,8 @@ All tokens and classes operate under the original `--r-ui-*` namespace for green
 │  8. BAN NEON & CYBERPUNK    ──► Calibrated optical tones; zero glow rings   │
 │  9. BAN RAW NATIVE FORMS    ──► Zero unstyled <select>; 100% componentized  │
 │ 10. BAN COLOR HIJACKING     ──► Honor existing color system; zero rogue hex │
+│ 11. BAN THICK LEFT BORDERS  ──► Zero border-l-4/asymmetric strips; 1px frame│
+│ 12. BAN BLOATED BUTTONS     ──► No oversized buttons; strict height harmony │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
