@@ -36,18 +36,29 @@ class Element {
 const discovered={pid:35416,nativeId:"10553336",title:"Antigravity editor",application:"Antigravity"};
 const app={platform:"win32",executablePath:"C:\\Apps\\Antigravity.exe",sha256:"f".repeat(64)};
 const flush=async()=>{for(let i=0;i<6;i++)await new Promise(resolve=>setImmediate(resolve));};
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(done => { resolve = done; });
+  return { promise, resolve };
+}
 function boot(nativeEnabled=true, mcpData?: {
   requests?: any[]; identities?: any[]; projects?: any[];
+  requestResponses?: Promise<any>[];
+  pendingRuleRequests?: any[];
   connectedClients?: {success:boolean;state:string;clients:any[]|null;observedAt?:number};
   tools?: any[];
   failActions?: string[];
+  decisionResults?: Record<string, any>;
 }){
   const parent=new Element("section");parent.id="settings-subpage-security";
   const old=new Element("section");old.id="desktop-trust-panel";parent.append(old);
   const listeners=new Map<string,Function>();
+  const nativeEvents=new Map<string,Function>();
   let policy:any={version:2,defaultEffect:"deny",rules:[]};
   let auditLogs:any[]=[];
   const calls:{name:string,args:any}[]=[];
+  const notifications:any[]=[];
+  const notify=vi.fn((notification:any)=>{notifications.push(notification);return true;});
   const mcpRequests=mcpData?.requests || [];
   const mcpIdentities=mcpData?.identities || [];
   const mcpProjects=(mcpData?.projects || []).map(p=>({...p,enabled:p.enabled!==false,
@@ -104,11 +115,19 @@ function boot(nativeEnabled=true, mcpData?: {
       });
       return policy;
     }
+    if(name==="get_pending_active_rule_requests") {
+      if(mcpData?.failActions?.includes("pending_rule_requests"))
+        throw Error("Active-rule request service unavailable");
+      return mcpData?.pendingRuleRequests ?? [];
+    }
     if(name==="get_permanent_access_audit_log")return auditLogs;
     if(name==="clear_permanent_access_audit_log"){auditLogs=[];return true;}
     if(name==="mcp_project_access_action"){
       if(mcpData?.failActions?.includes(args.action)) throw Error("MCP Core unavailable");
-      if(args.action==="requests") return {success:true,requests:mcpRequests};
+      if(args.action==="requests") {
+        const response=mcpData?.requestResponses?.shift();
+        return response ?? {success:true,requests:mcpRequests.slice()};
+      }
       if(args.action==="identities") return {success:true,identities:mcpIdentities};
       if(args.action==="projects") return {success:true,projects:mcpProjects.filter(p=>p.enabled)};
       if(args.action==="project_inventory") return {success:true,projects:mcpProjects};
@@ -165,7 +184,8 @@ function boot(nativeEnabled=true, mcpData?: {
       }
       if(args.action==="connected_clients") return mcpData?.connectedClients ??
         {success:true,state:"unavailable",clients:null};
-      if(["approve","deny","revoke","direct_grant"].includes(args.action)) return {success:true};
+      if(["approve","deny","revoke","direct_grant"].includes(args.action))
+        return mcpData?.decisionResults?.[args.action] ?? {success:true};
     }
     throw Error("unknown native command");
   });
@@ -177,11 +197,12 @@ function boot(nativeEnabled=true, mcpData?: {
     },
     createElement:(tag:string)=>new Element(tag),
   };
-  const window:any={__TAURI__:{core:{invoke}},addEventListener:(k:string,f:Function)=>listeners.set(k,f),
+  const window:any={__TAURI__:{core:{invoke},event:{listen:(k:string,f:Function)=>nativeEvents.set(k,f)}},
+    TrayFeedback:{notify},addEventListener:(k:string,f:Function)=>listeners.set(k,f),
     confirm:vi.fn(()=>true)};
   vm.runInNewContext(code,{document,window,location:{hash:"#settings"},
     Number,String,Array,Object,Boolean,Error,Promise,Date,Math});
-  return {document,parent,old,calls,invoke,listeners,window,mcpRequests,getPolicy:()=>policy};
+  return {document,parent,old,calls,invoke,listeners,nativeEvents,window,mcpRequests,notifications,notify,getPolicy:()=>policy};
 }
 describe("real permanent Access Manager Tray panel",()=>{
   it("mounts only after native v2 registry verified and shows zero-grant onboarding",async()=>{
@@ -586,6 +607,63 @@ describe("independent MCP Connections and Project Access UI", () => {
       ["approve", "deny", "direct_grant"].includes(c.args.action))).toBe(false);
   });
 
+  it("shows a success toast only after Core confirms project access approval", async () => {
+    const ui = boot(true, fixtures);
+    await flush();
+    const list = ui.document.getElementById("access-req-center-incoming-list")!;
+    const card = list.children[0];
+    const actions = card.children[card.children.length - 1];
+    actions.children[0].click();
+    await flush();
+
+    expect(ui.calls.some(c => c.name === "mcp_project_access_action" &&
+      c.args.action === "approve" && c.args.payload.requestId === "req_project")).toBe(true);
+    expect(ui.notify).toHaveBeenCalledWith({
+      kind: "success",
+      message: "Persetujuan SuperAgent berhasil.",
+      scope: "security",
+      dedupeKey: "mcp-project-access:req_project:success",
+    });
+  });
+
+  it("shows an error toast when Core rejects project access approval", async () => {
+    const ui = boot(true, {
+      ...fixtures,
+      decisionResults: {approve:{success:false,error:"Access request is no longer pending"}},
+    });
+    await flush();
+    const list = ui.document.getElementById("access-req-center-incoming-list")!;
+    const card = list.children[0];
+    const actions = card.children[card.children.length - 1];
+    actions.children[0].click();
+    await flush();
+
+    expect(ui.notify).toHaveBeenCalledWith({
+      kind: "error",
+      message: "Persetujuan SuperAgent gagal. Lihat detail pada Access Manager.",
+      scope: "security",
+      dedupeKey: "mcp-project-access:req_project:error",
+    });
+  });
+
+  it("shows an error toast when the native approval action fails", async () => {
+    const ui = boot(true, {...fixtures, failActions:["approve"]});
+    await flush();
+    const list = ui.document.getElementById("access-req-center-incoming-list")!;
+    const card = list.children[0];
+    const actions = card.children[card.children.length - 1];
+    actions.children[0].click();
+    await flush();
+
+    expect(ui.notify).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "error",
+      message: "Persetujuan SuperAgent gagal. Lihat detail pada Access Manager.",
+      scope: "security",
+      dedupeKey: "mcp-project-access:req_project:error",
+    }));
+  });
+
+
   it("re-enables section Load buttons when Core request loading fails", async () => {
     const ui = boot(true, {...fixtures, failActions: ["requests"]});
     await flush();
@@ -918,6 +996,118 @@ describe("independent MCP Connections and Project Access UI", () => {
     expect(alert.textContent).toContain("requests");
     expect(ui.document.getElementById("access-req-center-incoming-list")!.firstChild!.textContent)
       .toContain("belum dapat dimuat");
+  });
+
+  it("shows loading state on all MCP reload controls during the initial mounted refresh", async () => {
+    const pending=deferred<any>();
+    const ui=boot(true,{...fixtures,requestResponses:[pending.promise]});
+    await flush();
+
+    for(const id of [
+      "access-mcp-connections-refresh",
+      "access-mcp-connection-pending-load",
+      "access-mcp-identity-refresh",
+      "access-mcp-projects-refresh",
+    ]) {
+      const button=ui.document.getElementById(id)!;
+      expect(button).not.toBeNull();
+      expect(button.disabled).toBe(true);
+      expect(button.textContent).toBe("Loading…");
+      expect(button.attributes.get("aria-busy")).toBe("true");
+    }
+
+    pending.resolve({success:true,requests:fixtures.requests});
+    await flush();
+    for(const id of [
+      "access-mcp-connections-refresh",
+      "access-mcp-connection-pending-load",
+      "access-mcp-identity-refresh",
+      "access-mcp-projects-refresh",
+    ]) {
+      const button=ui.document.getElementById(id)!;
+      expect(button.disabled).toBe(false);
+      expect(button.attributes.get("aria-busy")).toBe("false");
+    }
+  });
+
+  it("queues a fresh MCP snapshot when Request Center reload is pressed during an in-flight load", async () => {
+    const first=deferred<any>();
+    const second=deferred<any>();
+    const lateRequest={...fixtures.requests[0],requestId:"req_late",subject:"Late Client"};
+    const ui=boot(true,{
+      ...fixtures,
+      requests:[],
+      requestResponses:[first.promise,second.promise],
+    });
+    await flush();
+
+    const button=ui.document.getElementById("access-req-center-refresh")!;
+    button.click();
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe("Loading…");
+    expect(button.attributes.get("aria-busy")).toBe("true");
+
+    first.resolve({success:true,requests:[]});
+    await flush();
+    expect(ui.calls.filter(call =>
+      call.name==="mcp_project_access_action" && call.args.action==="requests")).toHaveLength(2);
+    expect(button.disabled).toBe(true);
+
+    second.resolve({success:true,requests:[lateRequest]});
+    await flush();
+    expect(ui.document.getElementById("access-req-center-incoming-list")!.children
+      .some(card=>card.dataset.requestId==="req_late")).toBe(true);
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toBe("Muat ulang");
+    expect(button.attributes.get("aria-busy")).toBe("false");
+  });
+
+  it("shows Request Center refresh failures and restores its button after loading", async () => {
+    const ui=boot(true,{
+      ...fixtures,
+      failActions:["requests","pending_rule_requests","connected_clients"],
+    });
+    await flush();
+
+    const button=ui.document.getElementById("access-req-center-refresh")!;
+    button.click();
+    await flush();
+
+    const alert=ui.document.getElementById("access-req-center-load-error")!;
+    expect(alert.hidden).toBe(false);
+    expect(alert.textContent).toContain("requests: MCP Core unavailable");
+    expect(alert.textContent).toContain("Active-rule request service unavailable");
+    expect(alert.textContent).not.toContain("live:");
+    expect(ui.document.getElementById("access-req-center-rules-list")!.textContent)
+      .toContain("Requests could not be loaded");
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toBe("Muat ulang");
+    expect(button.attributes.get("aria-busy")).toBe("false");
+  });
+
+  it("re-queries MCP when an incoming-request update event arrives during an in-flight refresh", async () => {
+    const first=deferred<any>();
+    const second=deferred<any>();
+    const lateRequest={...fixtures.requests[0],requestId:"req_event_late",subject:"Event Client"};
+    const ui=boot(true,{
+      ...fixtures,
+      requests:[],
+      requestResponses:[first.promise,second.promise],
+    });
+    await flush();
+
+    const onUpdated=ui.nativeEvents.get("access-manager://requests-updated");
+    expect(onUpdated).toBeDefined();
+    onUpdated!();
+    first.resolve({success:true,requests:[]});
+    await flush();
+    expect(ui.calls.filter(call =>
+      call.name==="mcp_project_access_action" && call.args.action==="requests")).toHaveLength(2);
+
+    second.resolve({success:true,requests:[lateRequest]});
+    await flush();
+    expect(ui.document.getElementById("access-req-center-incoming-list")!.children
+      .some(card=>card.dataset.requestId==="req_event_late")).toBe(true);
   });
 
   it("keeps the attended native desktop input session panel accessible", async () => {

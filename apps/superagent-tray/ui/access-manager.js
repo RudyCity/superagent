@@ -819,7 +819,8 @@
       make("p", "access-mcp-description",
         "Koneksi MCP hanya untuk otorisasi dan pemantauan koneksi OAuth. Hak operasi Read, Write, Execute, Git, dan lainnya dikelola di Akses Proyek. Mode YOLO tidak menambah izin.")
     );
-    const introRefresh = action("Muat ulang", "access-audit-refresh", () => void refreshMcpRequests());
+    const introRefresh = action("Muat ulang", "access-audit-refresh",
+      () => void refreshMcpRequests({ queueIfBusy: true }));
     introRefresh.id = "access-mcp-connections-refresh";
     introHead.append(introCopy, introRefresh);
     introduction.append(introHead);
@@ -835,7 +836,8 @@
       make("p", "access-hint",
         "Persetujuan koneksi baru dilakukan melalui alur OAuth MCP owner. Otorisasi koneksi tidak memberikan hak menjalankan tools. Untuk mengatur operasi, buka Akses Proyek, pilih identitas, proyek, dan capability."),
     );
-    const connectionLoad = action("Load", "access-audit-refresh", () => void refreshMcpRequests());
+    const connectionLoad = action("Load", "access-audit-refresh",
+      () => void refreshMcpRequests({ queueIfBusy: true }));
     connectionLoad.id = "access-mcp-connection-pending-load";
     connectionLoad.title = "Muat ulang sesi koneksi MCP";
     oauthCard.append(connectionLoad);
@@ -875,10 +877,10 @@
 
     const identityCard = make("section", "access-stored access-mcp-card");
     const identityHead = make("div", "access-stored-head");
-    identityHead.append(
-      make("h3", "", "Identitas MCP Terverifikasi"),
-      action("Muat ulang", "access-audit-refresh", () => void refreshMcpRequests()),
-    );
+    const identityRefresh = action("Muat ulang", "access-audit-refresh",
+      () => void refreshMcpRequests({ queueIfBusy: true }));
+    identityRefresh.id = "access-mcp-identity-refresh";
+    identityHead.append(make("h3", "", "Identitas MCP Terverifikasi"), identityRefresh);
     identityCard.append(identityHead);
     identityCard.append(make("p", "access-hint",
       "Menampilkan identitas yang terdeteksi oleh Core atau dari permintaan akses terbaru; tidak semuanya sedang online."));
@@ -907,7 +909,8 @@
     const bannerTitle = make("h3", "", "Akses Proyek");
     const bannerDesc = make("p", "access-mcp-description", "Atur kemampuan per identitas MCP dan proyek terdaftar: Read, Write, Execute, Git, Worktree, Planning, dan Workspace Chain. Otorisasi koneksi OAuth saja tidak memberi izin operasi; aturan aplikasi dan file di host tetap berlaku.");
     bannerCopy.append(bannerTitle, bannerDesc);
-    const bannerRefresh = action("Muat ulang", "access-audit-refresh", () => void refreshMcpRequests());
+    const bannerRefresh = action("Muat ulang", "access-audit-refresh",
+      () => void refreshMcpRequests({ queueIfBusy: true }));
     bannerRefresh.id = "access-mcp-projects-refresh";
     bannerHead.append(bannerCopy, bannerRefresh);
     banner.append(bannerHead);
@@ -1044,7 +1047,7 @@
         projectForm.hidden = true;
         status("Proyek " + response.project.projectId + message +
           " Izin MCP tetap dikelola terpisah.", "success");
-        await refreshMcpRequests();
+        await refreshMcpRequests({ queueIfBusy: true });
         const selectProject = $("access-mcp-proj-select");
         if (selectProject?.children && Array.from(selectProject.children)
             .some(item => item.value === response.project.projectId)) {
@@ -1229,7 +1232,7 @@
     return pane;
   }
 
-  const mcpCache = { requests: null, identities: null, projects: null, inventory: null, live: null, tools: null, refreshing: null };
+  const mcpCache = { requests: null, identities: null, projects: null, inventory: null, live: null, tools: null, refreshing: null, refreshQueued: false };
   const toolState = { query: "", filter: "all", shown: 25, requestSeq: 0 };
   const mcpNotificationFocus = { id: null, didFocus: false };
 
@@ -1547,16 +1550,36 @@
       String(req.projectName || req.projectId || "Proyek");
   }
 
+  function notifyMcpDecision(kind, label, requestId) {
+    window.TrayFeedback?.notify?.({
+      kind,
+      message: kind === "success"
+        ? label + " berhasil."
+        : label + " gagal. Lihat detail pada Access Manager.",
+      scope: "security",
+      dedupeKey: "mcp-project-access:" + requestId + ":" + kind,
+    });
+  }
+
   async function executeMcpDecision(actionName, requestId, label, capabilities) {
     try {
       const result = await invoke("mcp_project_access_action", {
         action: actionName, payload: { requestId, ...(capabilities ? { capabilities } : {}) },
       });
       if (!result?.success) throw Error(result?.error || "Core menolak tindakan ini.");
-      status(label + " berhasil.", "success");
-      await refreshMcpRequests();
     } catch (error) {
       status(label + " gagal: " + String(error?.message || error), "error");
+      notifyMcpDecision("error", label, requestId);
+      return;
+    }
+
+    status(label + " berhasil.", "success");
+    notifyMcpDecision("success", label, requestId);
+    try {
+      await refreshMcpRequests({ queueIfBusy: true });
+    } catch (error) {
+      status(label + " berhasil, tetapi daftar permintaan gagal dimuat: " +
+        String(error?.message || error), "warning");
     }
   }
 
@@ -1658,7 +1681,19 @@
   function renderPendingRuleRequests() {
     const list = $("access-req-center-rules-list");
     const histList = $("access-req-center-rules-history");
-    const items = Array.isArray(state.pendingRuleRequests) ? state.pendingRuleRequests : [];
+    const items = Array.isArray(state.pendingRuleRequests) ? state.pendingRuleRequests : null;
+    if (!items) {
+      if (list) {
+        list.replaceChildren();
+        list.append(make("p", "access-empty", "Requests could not be loaded. Select Reload to try again."));
+      }
+      if (histList) {
+        histList.replaceChildren();
+        histList.append(make("p", "access-empty", "Request history could not be loaded."));
+      }
+      updateRequestCenterBadges();
+      return;
+    }
     const pending = items.filter(req => req.status === "pending");
     const decided = items.filter(req => req.status !== "pending");
     updateRequestCenterBadges();
@@ -1781,13 +1816,16 @@
   async function refreshPendingRuleRequests() {
     try {
       const list = await invoke("get_pending_active_rule_requests");
-      if (Array.isArray(list)) {
-        state.pendingRuleRequests = list;
-        renderPendingRuleRequests();
-        highlightMcpNotificationRequest();
-      }
-    } catch {
-      // Gracefully ignore on legacy Tray without pending active rule requests command
+      if (!Array.isArray(list)) throw Error("Core returned an invalid active-rule request list.");
+      state.pendingRuleRequests = list;
+      renderPendingRuleRequests();
+      highlightMcpNotificationRequest();
+      return { success: true };
+    } catch (error) {
+      state.pendingRuleRequests = null;
+      renderPendingRuleRequests();
+      updateRequestCenterBadges();
+      return { success: false, error: String(error?.message || error) };
     }
   }
 
@@ -1812,9 +1850,51 @@
       toggleNewRuleReq.textContent = ruleReqForm.hidden ? "+ Ajukan Permintaan Aturan Aktif" : "Tutup Form";
     });
     toggleNewRuleReq.id = "access-req-new-rule-toggle";
-    const refreshAllBtn = action("Muat ulang", "access-audit-refresh", () => {
-      void refreshMcpRequests();
-      void refreshPendingRuleRequests();
+    const requestLoadError = make("div", "access-mcp-load-error");
+    requestLoadError.id = "access-req-center-load-error";
+    requestLoadError.setAttribute("role", "alert");
+    requestLoadError.setAttribute("aria-live", "assertive");
+    requestLoadError.hidden = true;
+    const refreshAllBtn = action("Muat ulang", "access-audit-refresh", async () => {
+      if (refreshAllBtn.disabled) return;
+      refreshAllBtn.disabled = true;
+      refreshAllBtn.textContent = "Loading…";
+      refreshAllBtn.setAttribute("aria-busy", "true");
+      requestLoadError.hidden = true;
+      requestLoadError.textContent = "";
+      try {
+        const [mcpResult, ruleResult] = await Promise.all([
+          refreshMcpRequests({ queueIfBusy: true }),
+          refreshPendingRuleRequests(),
+        ]);
+        const requestFailures = Object.entries(mcpResult?.failures || {})
+          .filter(([key]) => key !== "live");
+        const problems = [];
+        if (requestFailures.length) {
+          const detail = requestFailures
+            .map(([key, value]) => key + ": " + value).join("; ");
+          problems.push("MCP data: " + detail);
+        }
+        if (ruleResult?.success !== true)
+          problems.push("Active-rule requests: " + (ruleResult?.error || "refresh failed"));
+        if (problems.length) {
+          requestLoadError.textContent = "Some Request Center data could not be loaded: " +
+            problems.join(" · ") + ". Retry with Reload.";
+          requestLoadError.hidden = false;
+          status("Request Center refresh incomplete. Check the alert above.", "error");
+        } else {
+          status("Request Center refreshed.", "success");
+        }
+      } catch (error) {
+        requestLoadError.textContent = "Request Center refresh failed: " +
+          String(error?.message || error) + ". Retry with Reload.";
+        requestLoadError.hidden = false;
+        status("Request Center refresh failed: " + String(error?.message || error), "error");
+      } finally {
+        refreshAllBtn.disabled = false;
+        refreshAllBtn.textContent = "Muat ulang";
+        refreshAllBtn.setAttribute("aria-busy", "false");
+      }
     });
     refreshAllBtn.id = "access-req-center-refresh";
     introActions.append(toggleNewRuleReq, refreshAllBtn);
@@ -1967,7 +2047,7 @@
     ruleHistList.append(make("p", "access-empty", "Belum ada riwayat keputusan aturan aktif."));
     ruleHistCard.append(ruleHistHead, ruleHistList);
 
-    pane.append(intro, grid, ruleHistCard);
+    pane.append(intro, requestLoadError, grid, ruleHistCard);
     return pane;
   }
 
@@ -2308,19 +2388,28 @@
   }
 
   function setMcpPendingLoadBusy(busy) {
-    for (const id of ["access-mcp-project-pending-load", "access-mcp-connection-pending-load"]) {
+    const buttons = [
+      ["access-mcp-connections-refresh", "Muat ulang"],
+      ["access-mcp-connection-pending-load", "Load"],
+      ["access-mcp-identity-refresh", "Muat ulang"],
+      ["access-mcp-projects-refresh", "Muat ulang"],
+    ];
+    for (const [id, idleLabel] of buttons) {
       const button = $(id);
       if (!button) continue;
       button.disabled = busy;
-      button.textContent = busy ? "Memuat…" : "Load";
+      button.textContent = busy ? "Loading…" : idleLabel;
       button.setAttribute("aria-busy", String(busy));
     }
   }
 
-  async function refreshMcpRequests() {
-    if (mcpCache.refreshing) return mcpCache.refreshing;
+  async function refreshMcpRequests({ queueIfBusy = false } = {}) {
+    if (mcpCache.refreshing) {
+      if (queueIfBusy) mcpCache.refreshQueued = true;
+      return mcpCache.refreshing;
+    }
     setMcpPendingLoadBusy(true);
-    mcpCache.refreshing = (async () => {
+    const refreshOnce = async () => {
       const sources = [
         ["requests", "requests"], ["identities", "identities"], ["projects", "projects"],
         ["inventory", "project_inventory"], ["live", "connected_clients"],
@@ -2407,11 +2496,31 @@
         status("Ada data izin MCP yang gagal dimuat. Lihat pesan pada tab MCP.", "warning");
       }
       if ($("access-mcp-tool-catalog")) void refreshMcpToolCatalog();
+      return { success: Object.keys(failures).length === 0, failures };
+    };
+    const task = (async () => {
+      let result;
+      do {
+        mcpCache.refreshQueued = false;
+        try {
+          result = await refreshOnce();
+        } catch (error) {
+          const message = String(error?.message || error);
+          setMcpLoadError("access-mcp-project-load-error", [message]);
+          status("MCP data could not be refreshed: " + message, "error");
+          result = { success: false, failures: { refresh: message } };
+        }
+      } while (mcpCache.refreshQueued);
+      return result;
     })();
-    try { return await mcpCache.refreshing; }
+    mcpCache.refreshing = task;
+    try { return await task; }
     finally {
-      mcpCache.refreshing = null;
-      setMcpPendingLoadBusy(false);
+      if (mcpCache.refreshing === task) {
+        mcpCache.refreshing = null;
+        mcpCache.refreshQueued = false;
+        setMcpPendingLoadBusy(false);
+      }
     }
   }
 
@@ -2806,9 +2915,9 @@
     const paneConnections = buildMcpConnectionsPane();
     const paneMcp = buildMcpPane();
     root.append(head, navTabs, paneRequests, paneRegister, paneRules, paneConnections, paneMcp, paneAudit, footer);
+    parent.insertBefore(root, old);
     void refreshMcpRequests();
     void refreshPendingRuleRequests();
-    parent.insertBefore(root, old);
     // Permanent host ACL and attended desktop input sessions are different
     // approvals. Retain the full trusted-session controls on demand.
     const trustPanel = make("section", "access-editor access-trusted-session");
@@ -2873,7 +2982,7 @@
           tab:state.activeTab};
       };
       window.__superagentAccessManagerRefresh = () => {
-        void refreshMcpRequests();
+        void refreshMcpRequests({ queueIfBusy: true });
         void refreshPendingRuleRequests();
         void refreshRegistry().catch(() => {});
         void refreshWindows().catch(() => {});
@@ -2882,7 +2991,7 @@
         updateTabFromHash();
       };
       window.__TAURI__?.event?.listen?.("access-manager://requests-updated", () => {
-        void refreshMcpRequests();
+        void refreshMcpRequests({ queueIfBusy: true });
         void refreshPendingRuleRequests();
       });
       window.__TAURI__?.event?.listen?.("access-manager://focus-request-center", () => {
