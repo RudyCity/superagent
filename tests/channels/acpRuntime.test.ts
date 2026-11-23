@@ -47,6 +47,135 @@ describe("AcpRuntime - Agent Integration & Prompt Lifecycle", () => {
 
     runtime.close();
   });
+
+  it("activates goal mode and streams status for /goal or /loop prompts", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+
+    const runtime = new AcpRuntime({
+      inputStream: input,
+      outputStream: output,
+      name: "acp-loop-test",
+    });
+
+    runtime.start();
+
+    // 1. session/new
+    const newSessionReq = createAcpRequest(2, "session/new", {
+      workspacePath: process.cwd(),
+      clientMode: "tline",
+    });
+    input.write(JSON.stringify(newSessionReq) + "\n");
+
+    // Wait for response
+    let lines: string[] = [];
+    await new Promise<void>((resolve) => {
+      output.on("data", (chunk) => {
+        lines.push(...chunk.toString().split("\n").filter(Boolean));
+        if (lines.length >= 1) resolve();
+      });
+    });
+
+    const sessionRes = JSON.parse(lines[0]);
+    expect(sessionRes.id).toBe(2);
+    const sessionId = sessionRes.result.sessionId;
+
+    // 2. session/prompt with /goal
+    lines = [];
+    const promptReq = createAcpRequest(3, "session/prompt", {
+      sessionId,
+      prompt: "/goal Build long-running autonomous loop",
+    });
+    input.write(JSON.stringify(promptReq) + "\n");
+
+    await new Promise<void>((resolve) => {
+      output.on("data", (chunk) => {
+        lines.push(...chunk.toString().split("\n").filter(Boolean));
+        if (lines.length >= 2) resolve();
+      });
+    });
+
+    // One of the lines should be prompt ACK, and one should be notification with Goal Mode Activated
+    const hasGoalActivation = lines.some((l) => {
+      try {
+        const msg = JSON.parse(l);
+        return (
+          msg.method === "session/update" &&
+          msg.params?.update?.summary?.includes("Goal Mode Activated")
+        );
+      } catch {
+        return false;
+      }
+    });
+
+    expect(hasGoalActivation).toBe(true);
+
+    runtime.close();
+  });
+
+  it("initializes session agent with single tier and exposes superagent developer tools", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+
+    const runtime = new AcpRuntime({
+      inputStream: input,
+      outputStream: output,
+      name: "acp-tools-test",
+    });
+
+    runtime.start();
+
+    // 1. session/new
+    const newSessionReq = createAcpRequest(100, "session/new", {
+      workspacePath: process.cwd(),
+      clientMode: "tline",
+    });
+    input.write(JSON.stringify(newSessionReq) + "\n");
+
+    let lines: string[] = [];
+    await new Promise<void>((resolve) => {
+      output.on("data", (chunk) => {
+        lines.push(...chunk.toString().split("\n").filter(Boolean));
+        if (lines.length >= 1) resolve();
+      });
+    });
+
+    const sessionRes = JSON.parse(lines[0]);
+    const sessionId = sessionRes.result.sessionId;
+
+    // 2. session/prompt triggers agent creation
+    lines = [];
+    const promptReq = createAcpRequest(101, "session/prompt", {
+      sessionId,
+      prompt: "hello test",
+    });
+    input.write(JSON.stringify(promptReq) + "\n");
+
+    await new Promise<void>((resolve) => {
+      output.on("data", (chunk) => {
+        lines.push(...chunk.toString().split("\n").filter(Boolean));
+        if (lines.length >= 1) resolve();
+      });
+    });
+
+    const agent = runtime.getAgent(sessionId);
+    expect(agent).toBeDefined();
+    expect(agent?.tier).toBe("single");
+
+    const activeTools = await agent!.getActiveTools();
+    const toolNames = activeTools.map((t) => t.name);
+
+    // Verify full developer toolset is present
+    expect(toolNames).toContain("run_command");
+    expect(toolNames).toContain("write_to_file");
+    expect(toolNames).toContain("replace_file_content");
+    expect(toolNames).toContain("apply_patch");
+    expect(toolNames).toContain("bash");
+    expect(toolNames).toContain("glob");
+    expect(toolNames).toContain("grep");
+
+    runtime.close();
+  });
 });
 
 describe("AcpHttpServer - Remote HTTP & SSE Transport", () => {

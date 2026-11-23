@@ -138,6 +138,10 @@ export interface SessionNewResult {
 export interface SessionPromptParams {
   sessionId: string;
   prompt: string | Array<{ type: string; text?: string; [key: string]: any }>;
+  mode?: string;
+  loop?: boolean;
+  goalMode?: string;
+  maxIterations?: number;
   attachments?: Array<{
     type: "file" | "image" | "url";
     path?: string;
@@ -146,6 +150,10 @@ export interface SessionPromptParams {
   }>;
   context?: {
     activeFilePath?: string;
+    mode?: string;
+    loop?: boolean;
+    goalMode?: string;
+    maxIterations?: number;
     selection?: {
       startLine: number;
       endLine: number;

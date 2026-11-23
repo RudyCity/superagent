@@ -65,13 +65,51 @@ export class AcpRuntime {
         summary: "Processing prompt...",
       });
 
-      const promptContent = typeof params.prompt === "string"
+      let promptContent = typeof params.prompt === "string"
         ? params.prompt
         : (Array.isArray(params.prompt)
             ? params.prompt.map((p: any) => p.text || (typeof p === "string" ? p : "")).filter(Boolean).join("\n")
             : String(params.prompt));
 
+      // Long loop / Goal Mode detection & activation
+      const isLoopRequested = Boolean(
+        params.loop ||
+        params.context?.loop ||
+        params.mode === "goal" ||
+        params.mode === "loop" ||
+        params.context?.mode === "goal" ||
+        params.context?.mode === "loop"
+      );
+      const explicitGoal = params.goalMode || params.context?.goalMode;
+      const goalMatch = promptContent.match(/^\/(?:goal|loop)\s+(.+)/is);
+
+      if (goalMatch || explicitGoal || isLoopRequested) {
+        const objective = goalMatch
+          ? goalMatch[1].trim()
+          : (explicitGoal ? String(explicitGoal).trim() : promptContent.trim());
+        agent.goalMode = objective;
+        promptContent = `GOAL MODE: Your primary objective is to achieve the following goal completely and verifiably:\n\n"${objective}"\n\nBegin immediately. Plan thoroughly, execute step by step, verify completion, and report back with GOAL_COMPLETE or GOAL_PARTIAL.`;
+        server.sendUpdate(params.sessionId, {
+          kind: "status_change",
+          status: "thinking",
+          summary: `🎯 Goal Mode Activated: ${objective.slice(0, 80)}`,
+        });
+      }
+
+      if (params.maxIterations !== undefined || params.context?.maxIterations !== undefined) {
+        const customMax = Number(params.maxIterations ?? params.context?.maxIterations);
+        if (!isNaN(customMax) && customMax >= 0) {
+          (agent as any).goalMaxIterations = customMax === 0 ? Infinity : customMax;
+        }
+      }
+
       await agent.sendMessage(promptContent);
+      // Ensure terminal "done" notification is dispatched to ACP client when turn settles
+      server.sendUpdate(params.sessionId, {
+        kind: "status_change",
+        status: "done",
+        summary: "Completed turn",
+      });
     } catch (err: any) {
       if (err?.name === "AbortError") {
         server.sendUpdate(params.sessionId, {
@@ -132,6 +170,13 @@ export class AcpRuntime {
           status: "done",
           summary: "Completed turn",
         });
+      } else if (event.type === "goal_done") {
+        const ev = event as any;
+        server.sendUpdate(sessionId, {
+          kind: "status_change",
+          status: ev.status === "complete" ? "done" : "thinking",
+          summary: `Goal status: ${ev.status || "completed"}`,
+        });
       } else if (event.type === "error") {
         server.sendUpdate(sessionId, {
           kind: "status_change",
@@ -162,11 +207,30 @@ export class AcpRuntime {
       }
     };
 
-    const onQuestion = async () => "";
+    const onQuestion = async (
+      question: string | any,
+      options?: string[]
+    ): Promise<string> => {
+      const qText = typeof question === "string" ? question : JSON.stringify(question || "");
+      // Auto-continue loop when maximum iteration limit is reached
+      if (
+        (qText.includes("maximum iteration limit") || qText.includes("iteration limit")) &&
+        Array.isArray(options) &&
+        options.includes("Yes, continue")
+      ) {
+        server.sendUpdate(sessionId, {
+          kind: "status_change",
+          status: "thinking",
+          summary: "Auto-continuing iteration block for long loop...",
+        });
+        return "Yes, continue";
+      }
+      return options?.[0] || "";
+    };
 
     const acpSystemPrompt = getSystemPrompt("acp");
 
-    return new Agent(
+    const agent = new Agent(
       onEvent,
       onPermission,
       onQuestion,
@@ -174,6 +238,12 @@ export class AcpRuntime {
       undefined,
       workspacePath
     );
+    agent.tier = "single";
+    return agent;
+  }
+
+  public getAgent(sessionId: string): Agent | undefined {
+    return this.agents.get(sessionId);
   }
 
   public start(): void {
