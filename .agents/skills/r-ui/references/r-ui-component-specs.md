@@ -371,9 +371,12 @@ Raw native <select> and <option> elements are **strictly banned** because OS pop
 
 ---
 
-## 9. Toast Notifications & Alert Banners
+## 9. Actionable Toast Notifications & Above-Form Page Alerts (v3.5.0)
 
 ```css
+/* ==========================================================================
+   TOAST NOTIFICATION STACK (ACTIONABLE WITH TACTILE COPY)
+   ========================================================================== */
 .r-ui-toast-container {
   position: fixed;
   bottom: var(--r-ui-space-5);
@@ -382,48 +385,288 @@ Raw native <select> and <option> elements are **strictly banned** because OS pop
   flex-direction: column;
   gap: var(--r-ui-space-2);
   z-index: var(--r-ui-z-toast);
+  pointer-events: none;
+  max-width: calc(100vw - 32px);
 }
+
 .r-ui-toast {
+  pointer-events: auto;
   background-color: var(--r-ui-color-surface-elevated);
   border: 1px solid var(--r-ui-color-border-strong);
   border-radius: var(--r-ui-radius-sm);
   padding: var(--r-ui-space-3) var(--r-ui-space-4);
   box-shadow: var(--r-ui-shadow-lg);
   display: flex;
-  align-items: center;
-  gap: var(--r-ui-space-3);
-  font-size: 0.8125rem;
-  animation: r-ui-slide-toast 0.2s var(--r-ui-ease-spring);
-}
-
-/* Alert Banner (BANS THICK ASYMMETRICAL LEFT BORDERS / border-l-4) */
-/* ❌ SLOP: .r-ui-alert { border-left: 4px solid var(--r-ui-color-accent); } */
-/* ✅ R-UI: Crisp 1px uniform perimeter border + soft tinted surface */
-.r-ui-alert {
-  display: flex;
   align-items: flex-start;
   gap: var(--r-ui-space-3);
-  padding: var(--r-ui-space-3) var(--r-ui-space-4);
+  font-size: 0.8125rem;
+  min-width: 300px;
+  max-width: 440px;
+  animation: r-ui-slide-toast 0.24s var(--r-ui-ease-spring-snappy);
+  transition: transform var(--r-ui-duration-fast) var(--r-ui-ease-spring-snappy),
+              opacity var(--r-ui-duration-fast) ease,
+              border-color var(--r-ui-duration-fast) ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.r-ui-toast--success {
+  border-color: rgba(16, 185, 129, 0.4);
+  background-color: var(--r-ui-color-surface-elevated);
+}
+.r-ui-toast--success .r-ui-toast__icon {
+  color: #10b981;
+}
+
+.r-ui-toast--error {
+  border-color: rgba(239, 68, 68, 0.45);
+  background-color: var(--r-ui-color-surface-elevated);
+}
+.r-ui-toast--error .r-ui-toast__icon {
+  color: #ef4444;
+}
+
+.r-ui-toast--warning {
+  border-color: rgba(245, 158, 11, 0.45);
+  background-color: var(--r-ui-color-surface-elevated);
+}
+.r-ui-toast--warning .r-ui-toast__icon {
+  color: #f59e0b;
+}
+
+.r-ui-toast--info {
+  border-color: rgba(14, 165, 233, 0.45);
+  background-color: var(--r-ui-color-surface-elevated);
+}
+.r-ui-toast--info .r-ui-toast__icon {
+  color: #0ea5e9;
+}
+
+.r-ui-toast__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.r-ui-toast__content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.r-ui-toast__title {
+  font-weight: 600;
+  color: var(--r-ui-color-text-primary);
+  font-size: 0.8125rem;
+  line-height: 1.25;
+}
+
+.r-ui-toast__message {
+  color: var(--r-ui-color-text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.r-ui-toast__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: var(--r-ui-space-1);
+}
+
+/* ==========================================================================
+   REUSABLE TACTILE COPY BUTTON (.r-ui-copy-btn)
+   ========================================================================== */
+.r-ui-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 6px;
   border-radius: var(--r-ui-radius-xs);
+  border: 1px solid var(--r-ui-color-border-standard);
+  background-color: var(--r-ui-color-surface);
+  color: var(--r-ui-color-text-secondary);
+  cursor: pointer;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1;
+  transition: all var(--r-ui-duration-fast) var(--r-ui-ease-spring-snappy);
+}
+
+.r-ui-copy-btn:hover {
+  background-color: var(--r-ui-color-surface-hover);
+  color: var(--r-ui-color-text-primary);
+  border-color: var(--r-ui-color-border-strong);
+  transform: translateY(-1px);
+}
+
+.r-ui-copy-btn:active {
+  transform: scale(0.94);
+}
+
+.r-ui-copy-btn.is-copied {
+  border-color: rgba(16, 185, 129, 0.5);
+  background-color: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+
+.r-ui-toast__copy-btn {
+  padding: 4px;
+}
+
+.r-ui-toast__action-btn {
+  padding: 3px 8px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border-radius: var(--r-ui-radius-xs);
+  border: 1px solid var(--r-ui-color-border-standard);
+  background: var(--r-ui-color-surface);
+  color: var(--r-ui-color-text-primary);
+  cursor: pointer;
+  transition: all var(--r-ui-duration-fast) var(--r-ui-ease-spring-snappy);
+}
+.r-ui-toast__action-btn:hover {
+  background: var(--r-ui-color-surface-hover);
+  border-color: var(--r-ui-color-border-strong);
+}
+
+.r-ui-toast__close-btn,
+.r-ui-alert__close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: var(--r-ui-radius-xs);
+  border: none;
+  background: transparent;
+  color: var(--r-ui-color-text-muted);
+  cursor: pointer;
+  transition: all var(--r-ui-duration-fast) ease;
+}
+.r-ui-toast__close-btn:hover,
+.r-ui-alert__close-btn:hover {
+  color: var(--r-ui-color-text-primary);
+  background-color: var(--r-ui-color-surface-hover);
+}
+
+/* ==========================================================================
+   IN-PAGE NOTIFICATIONS & ABOVE-FORM ALERTS
+   (Strictly Enforces Anti-Slop Law 11: 100% Crisp 1px Perimeter Border)
+   ========================================================================== */
+.r-ui-alert {
+  width: 100%;
+  display: block;
+  border-radius: var(--r-ui-radius-sm);
   border: 1px solid var(--r-ui-color-border-standard);
   background-color: var(--r-ui-color-surface-elevated);
   font-size: 0.8125rem;
+  line-height: var(--r-ui-leading-normal);
+  transition: all var(--r-ui-duration-fast) var(--r-ui-ease-spring-snappy);
 }
+
+/* Specific Above-Form Placement Hierarchy */
+.r-ui-alert--above-form {
+  margin-bottom: var(--r-ui-space-4);
+  position: relative;
+  z-index: 2;
+  box-shadow: var(--r-ui-shadow-xs);
+  animation: r-ui-fade-down 0.2s var(--r-ui-ease-spring-snappy);
+}
+
+.r-ui-alert__inner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--r-ui-space-3);
+  padding: var(--r-ui-space-3) var(--r-ui-space-4);
+}
+
+.r-ui-alert__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.r-ui-alert__title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+  color: var(--r-ui-color-text-primary);
+}
+
+.r-ui-alert__description {
+  font-size: 0.75rem;
+  color: var(--r-ui-color-text-secondary);
+  line-height: 1.45;
+}
+
+.r-ui-alert__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: var(--r-ui-space-2);
+}
+
+/* Intent Theming (Crisp 1px border + Soft Tinted Surface, Zero border-l-4) */
 .r-ui-alert--info {
   border-color: rgba(14, 165, 233, 0.35);
   background-color: rgba(14, 165, 233, 0.08);
 }
+.r-ui-alert--info .r-ui-alert__title {
+  color: #0ea5e9;
+}
+
 .r-ui-alert--warning {
   border-color: rgba(245, 158, 11, 0.35);
   background-color: rgba(245, 158, 11, 0.08);
 }
+.r-ui-alert--warning .r-ui-alert__title {
+  color: #f59e0b;
+}
+
 .r-ui-alert--error {
-  border-color: rgba(239, 68, 68, 0.35);
+  border-color: rgba(239, 68, 68, 0.38);
   background-color: rgba(239, 68, 68, 0.08);
 }
+.r-ui-alert--error .r-ui-alert__title {
+  color: #ef4444;
+}
+
 .r-ui-alert--success {
   border-color: rgba(16, 185, 129, 0.35);
   background-color: rgba(16, 185, 129, 0.08);
+}
+.r-ui-alert--success .r-ui-alert__title {
+  color: #10b981;
+}
+
+@keyframes r-ui-slide-toast {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes r-ui-fade-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 ```
 

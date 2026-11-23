@@ -4,8 +4,16 @@
  * to any project requirements without CSS class conflicts or rigid styling constraints.
  */
 
-import React, { createContext, useContext } from 'react';
-import { RUiComponentContract, buildRUiClasses } from './r-ui-contract-types';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import {
+  RUiComponentContract,
+  buildRUiClasses,
+  RUiToastItem,
+  RUiToastProps,
+  RUiAlertProps,
+  RUiAlertPosition,
+  RUiIntent
+} from './r-ui-contract-types';
 
 /* ==========================================================================
    1. COMPOUND COMPONENT: CARD (ADAPTIVE & UNSTYLED-CAPABLE)
@@ -347,5 +355,347 @@ Select.Option = function SelectOption({
       {isSelected && <span>✓</span>}
     </div>
   );
+};
+
+/* ==========================================================================
+   5. UTILITY & MICRO-ACTION: TACTILE COPY BUTTON
+   ========================================================================== */
+export interface CopyButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  text: string;
+  onCopy?: (copiedText: string) => void;
+  copiedDuration?: number;
+  label?: string;
+  copiedLabel?: string;
+  showLabel?: boolean;
+  unstyled?: boolean;
+}
+
+export function CopyButton({
+  text,
+  onCopy,
+  copiedDuration = 2000,
+  label = 'Copy',
+  copiedLabel = 'Copied!',
+  showLabel = false,
+  unstyled = false,
+  className = '',
+  ...props
+}: CopyButtonProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopied(true);
+      if (onCopy) onCopy(text);
+      setTimeout(() => setCopied(false), copiedDuration);
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+    }
+  }, [text, onCopy, copiedDuration]);
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      aria-label={copied ? copiedLabel : `${label}: ${text}`}
+      title={copied ? copiedLabel : label}
+      className={
+        unstyled
+          ? className
+          : `r-ui-copy-btn ${copied ? 'is-copied' : ''} ${className}`
+      }
+      {...props}
+    >
+      {copied ? (
+        <svg className="r-ui-icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      ) : (
+        <svg className="r-ui-icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      )}
+      {showLabel && <span className="r-ui-copy-btn__label">{copied ? copiedLabel : label}</span>}
+    </button>
+  );
+}
+
+/* ==========================================================================
+   6. COMPOUND COMPONENT: TOAST NOTIFICATIONS WITH ACTIONABLE COPY
+   ========================================================================== */
+interface ToastContextValue {
+  toasts: RUiToastItem[];
+  addToast: (toast: Omit<RUiToastItem, 'id'> & { id?: string }) => string;
+  removeToast: (id: string) => void;
+  clearToasts: () => void;
+}
+
+const ToastContext = createContext<ToastContextValue | null>(null);
+
+export function useToast() {
+  const context = useContext(ToastContext);
+  if (!context) {
+    throw new Error('useToast must be used within a ToastProvider');
+  }
+  return context;
+}
+
+export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const [toasts, setToasts] = useState<RUiToastItem[]>([]);
+
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const clearToasts = useCallback(() => {
+    setToasts([]);
+  }, []);
+
+  const addToast = useCallback(
+    (toast: Omit<RUiToastItem, 'id'> & { id?: string }) => {
+      const id = toast.id || `toast-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      const newToast: RUiToastItem = {
+        id,
+        duration: 4000,
+        copyable: true,
+        ...toast
+      };
+
+      setToasts((prev) => [...prev, newToast]);
+
+      if (newToast.duration && newToast.duration > 0) {
+        setTimeout(() => {
+          removeToast(id);
+        }, newToast.duration);
+      }
+
+      return id;
+    },
+    [removeToast]
+  );
+
+  return (
+    <ToastContext.Provider value={{ toasts, addToast, removeToast, clearToasts }}>
+      {children}
+      <ToastStack toasts={toasts} onDismiss={removeToast} />
+    </ToastContext.Provider>
+  );
+}
+
+export function ToastStack({
+  toasts,
+  onDismiss,
+  unstyled = false,
+  className = ''
+}: {
+  toasts: RUiToastItem[];
+  onDismiss: (id: string) => void;
+  unstyled?: boolean;
+  className?: string;
+}) {
+  if (toasts.length === 0) return null;
+
+  return (
+    <aside
+      aria-label="Notification toasts"
+      aria-live="polite"
+      className={unstyled ? className : `r-ui-toast-container ${className}`}
+    >
+      {toasts.map((toast) => (
+        <ToastItem key={toast.id} toast={toast} onDismiss={() => onDismiss(toast.id)} unstyled={unstyled} />
+      ))}
+    </aside>
+  );
+}
+
+export function ToastItem({
+  toast,
+  onDismiss,
+  unstyled = false,
+  className = ''
+}: {
+  toast: RUiToastItem;
+  onDismiss: () => void;
+  unstyled?: boolean;
+  className?: string;
+}) {
+  const intent = toast.intent || 'default';
+  const copyTarget = toast.copyText || toast.message;
+
+  return (
+    <div
+      role={intent === 'error' ? 'alert' : 'status'}
+      className={
+        unstyled
+          ? className
+          : `r-ui-toast r-ui-toast--${intent} ${className}`
+      }
+    >
+      {/* Intent Status Icon */}
+      <div className="r-ui-toast__icon" aria-hidden="true">
+        {intent === 'success' && (
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" strokeWidth="2.5">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        )}
+        {intent === 'error' && (
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" strokeWidth="2.5">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+        )}
+        {intent === 'warning' && (
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" strokeWidth="2.5">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        )}
+        {(intent === 'info' || intent === 'default') && (
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" strokeWidth="2.5">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="r-ui-toast__content">
+        {toast.title && <div className="r-ui-toast__title">{toast.title}</div>}
+        <div className="r-ui-toast__message">{toast.message}</div>
+      </div>
+
+      {/* Action Area */}
+      <div className="r-ui-toast__actions">
+        {toast.copyable !== false && (
+          <CopyButton
+            text={copyTarget}
+            onCopy={toast.onCopy}
+            className="r-ui-toast__copy-btn"
+            title="Copy notification text"
+          />
+        )}
+        {toast.action && (
+          <button
+            type="button"
+            onClick={toast.action.onClick}
+            className="r-ui-toast__action-btn"
+          >
+            {toast.action.label}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="r-ui-toast__close-btn"
+          aria-label="Dismiss notification"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" strokeWidth="2.5">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ==========================================================================
+   7. COMPOUND COMPONENT: IN-PAGE NOTIFICATION / ALERT (ABOVE-FORM COMPLIANT)
+   ========================================================================== */
+interface AlertContextValue {
+  intent: RUiIntent;
+  unstyled: boolean;
+  position: RUiAlertPosition;
+}
+
+const AlertContext = createContext<AlertContextValue>({
+  intent: 'default',
+  unstyled: false,
+  position: 'inline'
+});
+
+export function Alert({
+  intent = 'default',
+  position = 'inline',
+  copyable = false,
+  copyText = '',
+  onCopy,
+  dismissible = false,
+  onDismiss,
+  unstyled = false,
+  className = '',
+  children,
+  ...props
+}: RUiAlertProps) {
+  const [dismissed, setDismissed] = useState(false);
+
+  if (dismissed) return null;
+
+  const handleDismiss = () => {
+    setDismissed(true);
+    if (onDismiss) onDismiss();
+  };
+
+  const isAboveForm = position === 'above-form';
+  const finalClass = unstyled
+    ? className
+    : `r-ui-alert r-ui-alert--${intent} ${isAboveForm ? 'r-ui-alert--above-form' : ''} ${className}`;
+
+  return (
+    <AlertContext.Provider value={{ intent, unstyled, position }}>
+      <div
+        role={intent === 'error' ? 'alert' : 'status'}
+        aria-live={intent === 'error' ? 'assertive' : 'polite'}
+        className={finalClass}
+        {...props}
+      >
+        <div className="r-ui-alert__inner">
+          <div className="r-ui-alert__body">{children}</div>
+          <div className="r-ui-alert__actions">
+            {copyable && (
+              <CopyButton
+                text={copyText}
+                onCopy={onCopy}
+                className="r-ui-alert__copy-btn"
+                title="Copy notification payload"
+              />
+            )}
+            {dismissible && (
+              <button
+                type="button"
+                onClick={handleDismiss}
+                className="r-ui-alert__close-btn"
+                aria-label="Dismiss alert"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" strokeWidth="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </AlertContext.Provider>
+  );
+}
+
+Alert.Title = function AlertTitle({ className = '', children, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
+  const { unstyled } = useContext(AlertContext);
+  return <h4 className={unstyled ? className : `r-ui-alert__title ${className}`} {...props}>{children}</h4>;
+};
+
+Alert.Description = function AlertDescription({ className = '', children, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
+  const { unstyled } = useContext(AlertContext);
+  return <p className={unstyled ? className : `r-ui-alert__description ${className}`} {...props}>{children}</p>;
 };
 

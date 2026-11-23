@@ -1,5 +1,5 @@
 /**
- * r-ui Contract Types & Variant Engine (v1.8.0)
+ * r-ui Contract Types & Variant Engine (v3.5.0)
  * Namespace: r-ui-*
  * Principles: Zero-Dependency, Type-Safe, Multi-Theme, Anti-Slop
  */
@@ -33,6 +33,49 @@ export interface RUiComponentContract {
   state?: RUiState;
   className?: string;
   children?: React.ReactNode;
+}
+
+/**
+ * Toast Notification Contracts (v3.5.0)
+ * Actionable toasts with tactile copy button and spring transitions.
+ */
+export interface RUiToastItem {
+  id: string;
+  title?: string;
+  message: string;
+  intent?: RUiIntent;
+  duration?: number; // ms before auto-dismiss (default 4000ms), 0 = permanent
+  copyable?: boolean; // enable copy-to-clipboard button
+  copyText?: string; // custom string to copy (defaults to message)
+  onCopy?: (copiedText: string) => void;
+  onDismiss?: (id: string) => void;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+}
+
+export interface RUiToastProps extends React.HTMLAttributes<HTMLDivElement> {
+  toast: RUiToastItem;
+  unstyled?: boolean;
+}
+
+export type RUiAlertPosition = 'inline' | 'above-form';
+
+/**
+ * In-Page Notification / Alert Contracts (v3.5.0)
+ * Contextual alerts positioned inline or anchored directly above forms.
+ */
+export interface RUiAlertProps extends React.HTMLAttributes<HTMLDivElement> {
+  intent?: RUiIntent;
+  title?: string;
+  position?: RUiAlertPosition;
+  copyable?: boolean;
+  copyText?: string;
+  onCopy?: (copiedText: string) => void;
+  onDismiss?: () => void;
+  dismissible?: boolean;
+  unstyled?: boolean;
 }
 
 /**

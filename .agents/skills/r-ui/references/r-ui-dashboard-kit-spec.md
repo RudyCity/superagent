@@ -205,10 +205,11 @@ Non-intrusive notifications, dialogs, and contextual inspection panels.
 - Right-sliding drawer for deep entity inspection without leaving the primary view.
 - Header with entity status, multi-tab details, and sticky footer action buttons.
 
-### 6.3 Slide-in Notification Toast Stack (`.r-ui-toast`)
-- Fixed container in bottom-right viewport with spring-animated toast stack.
+### 6.3 Slide-in Notification Toast Stack with Tactile Copy (`.r-ui-toast`)
+- Fixed container in bottom-right viewport with spring-animated toast stack (`.r-ui-toast-container`).
 - Variants: Success (emerald), Error (crimson), Warning (amber), Info (theme accent).
-- Equipped with concise message, status icon, action link (*"Undo"*), and auto-dismiss timer bar.
+- **Tactile Copy Button**: Every toast notification can expose a one-click copy button (`.r-ui-toast__copy-btn`) allowing users to copy notification text, trace IDs, transaction hashes, or error logs with instantaneous tactile spring feedback and checkmark confirmation.
+- Equipped with concise message, status icon, optional action link (*"Undo"*), and accessible dismiss button.
 
 ### 6.4 Destructive Confirmation Dialog
 - Failsafe modal for irreversible operations (e.g. database drop or terminating production instance).
@@ -218,9 +219,10 @@ Non-intrusive notifications, dialogs, and contextual inspection panels.
 - Micro-tooltips with directional pointer arrows, appearing instantly on hover/keyboard focus.
 - Context menu popovers for right-click or kebab actions (`...`).
 
-### 6.6 Alert Banners & Callout Blocks (`.r-ui-alert`)
-- Full 1px perimeter border with soft tonal background tint (Success, Warning, Error, Info).
-- **Strict Ban**: Never use thick left accent borders (`border-l-4` / `border-l-2`) on callouts or alert cards; keep borders uniform 1px.
+### 6.6 Above-Form Contextual Alerts & Callout Banners (`.r-ui-alert`, `.r-ui-alert--above-form`)
+- **Above-Form Positioning**: When used in conjunction with forms, the alert anchors directly above the form container or input grid (`.r-ui-alert--above-form`, `margin-bottom: var(--r-ui-space-4)`), establishing immediate cognitive context (e.g. validation prerequisites, API warnings, or submission errors) before the user interacts with input fields.
+- **Integrated Copy Button**: Equips in-page alerts with an optional tactile copy button (`.r-ui-alert__copy-btn`) so users can copy API error payloads, reference IDs, or instructions without manual text selection.
+- **Strict Anti-Slop Law 11 Compliance**: Full 1px perimeter border with soft tonal background tint (Success, Warning, Error, Info). Never use thick left accent borders (`border-l-4` / `border-l-2`) on callouts or alert cards; keep borders uniform 1px.
 
 ---
 

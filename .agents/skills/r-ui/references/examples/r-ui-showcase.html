@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>r-ui Interactive Showcase (v3.4.0)</title>
+  <title>r-ui Interactive Showcase (v3.5.0)</title>
   <link rel="stylesheet" href="../r-ui-tokens.css">
   <link rel="stylesheet" href="../r-ui-themes.css">
   <link rel="stylesheet" href="../r-ui-color-themes.css">
@@ -610,6 +610,203 @@
     .is-mobile-view .r-ui-demo-bottom-dock {
       display: flex;
     }
+
+    /* ==========================================================================
+       v3.5.0 Actionable Toast Stack & Tactile Copy Styling
+       ========================================================================== */
+    .r-ui-toast-container {
+      position: fixed;
+      bottom: var(--r-ui-space-6);
+      right: var(--r-ui-space-6);
+      display: flex;
+      flex-direction: column;
+      gap: var(--r-ui-space-3);
+      z-index: 9999;
+      pointer-events: none;
+      max-width: calc(100vw - 32px);
+    }
+    .r-ui-toast {
+      pointer-events: auto;
+      background-color: var(--r-ui-color-surface-elevated);
+      border: 1px solid var(--r-ui-color-border-strong);
+      border-radius: var(--r-ui-radius-sm);
+      padding: var(--r-ui-space-3) var(--r-ui-space-4);
+      box-shadow: var(--r-ui-shadow-lg);
+      display: flex;
+      align-items: flex-start;
+      gap: var(--r-ui-space-3);
+      font-size: 13px;
+      min-width: 300px;
+      max-width: 440px;
+      animation: r-ui-slide-toast 0.24s var(--r-ui-ease-spring-snappy);
+      transition: transform var(--r-ui-duration-fast) var(--r-ui-ease-spring-snappy), opacity 0.2s ease;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    .r-ui-toast--success { border-color: rgba(16, 185, 129, 0.45); }
+    .r-ui-toast--success .r-ui-toast__icon { color: #10b981; }
+    .r-ui-toast--error { border-color: rgba(239, 68, 68, 0.5); }
+    .r-ui-toast--error .r-ui-toast__icon { color: #ef4444; }
+    .r-ui-toast--warning { border-color: rgba(245, 158, 11, 0.5); }
+    .r-ui-toast--warning .r-ui-toast__icon { color: #f59e0b; }
+    .r-ui-toast--info { border-color: rgba(14, 165, 233, 0.5); }
+    .r-ui-toast--info .r-ui-toast__icon { color: #0ea5e9; }
+
+    .r-ui-toast__icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+    .r-ui-toast__content {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .r-ui-toast__title {
+      font-weight: 600;
+      color: var(--r-ui-color-text-primary);
+      font-size: 13px;
+    }
+    .r-ui-toast__message {
+      color: var(--r-ui-color-text-secondary);
+      font-size: 12px;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+    .r-ui-toast__actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+      margin-left: var(--r-ui-space-1);
+    }
+
+    /* Reusable Tactile Copy Button */
+    .r-ui-copy-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 4px 6px;
+      border-radius: var(--r-ui-radius-xs);
+      border: 1px solid var(--r-ui-color-border-standard);
+      background-color: var(--r-ui-color-surface);
+      color: var(--r-ui-color-text-secondary);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1;
+      transition: all var(--r-ui-duration-fast) var(--r-ui-ease-spring-snappy);
+    }
+    .r-ui-copy-btn:hover {
+      background-color: var(--r-ui-color-surface-hover);
+      color: var(--r-ui-color-text-primary);
+      border-color: var(--r-ui-color-border-strong);
+      transform: translateY(-1px);
+    }
+    .r-ui-copy-btn:active {
+      transform: scale(0.94);
+    }
+    .r-ui-copy-btn.is-copied {
+      border-color: rgba(16, 185, 129, 0.5);
+      background-color: rgba(16, 185, 129, 0.12);
+      color: #10b981;
+    }
+
+    .r-ui-toast__close-btn,
+    .r-ui-alert__close-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+      border-radius: var(--r-ui-radius-xs);
+      border: none;
+      background: transparent;
+      color: var(--r-ui-color-text-muted);
+      cursor: pointer;
+      transition: all var(--r-ui-duration-fast) ease;
+    }
+    .r-ui-toast__close-btn:hover,
+    .r-ui-alert__close-btn:hover {
+      color: var(--r-ui-color-text-primary);
+      background-color: var(--r-ui-color-surface-hover);
+    }
+
+    /* Above-Form Alerts & In-Page Notifications */
+    .r-ui-alert {
+      width: 100%;
+      border-radius: var(--r-ui-radius-sm);
+      border: 1px solid var(--r-ui-color-border-standard);
+      background-color: var(--r-ui-color-surface-elevated);
+      font-size: 13px;
+      line-height: var(--r-ui-leading-normal);
+      transition: all var(--r-ui-duration-fast) var(--r-ui-ease-spring-snappy);
+    }
+    .r-ui-alert--above-form {
+      margin-bottom: var(--r-ui-space-4);
+      box-shadow: var(--r-ui-shadow-xs);
+      animation: r-ui-fade-down 0.2s var(--r-ui-ease-spring-snappy);
+    }
+    .r-ui-alert__inner {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--r-ui-space-3);
+      padding: var(--r-ui-space-3) var(--r-ui-space-4);
+    }
+    .r-ui-alert__body {
+      flex: 1;
+      min-width: 0;
+    }
+    .r-ui-alert__title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .r-ui-alert__description {
+      font-size: 12px;
+      color: var(--r-ui-color-text-secondary);
+      line-height: 1.45;
+    }
+    .r-ui-alert__actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .r-ui-alert--info {
+      border-color: rgba(14, 165, 233, 0.4);
+      background-color: rgba(14, 165, 233, 0.08);
+    }
+    .r-ui-alert--info .r-ui-alert__title { color: #0ea5e9; }
+    .r-ui-alert--warning {
+      border-color: rgba(245, 158, 11, 0.4);
+      background-color: rgba(245, 158, 11, 0.08);
+    }
+    .r-ui-alert--warning .r-ui-alert__title { color: #f59e0b; }
+    .r-ui-alert--error {
+      border-color: rgba(239, 68, 68, 0.45);
+      background-color: rgba(239, 68, 68, 0.08);
+    }
+    .r-ui-alert--error .r-ui-alert__title { color: #ef4444; }
+    .r-ui-alert--success {
+      border-color: rgba(16, 185, 129, 0.4);
+      background-color: rgba(16, 185, 129, 0.08);
+    }
+    .r-ui-alert--success .r-ui-alert__title { color: #10b981; }
+
+    @keyframes r-ui-slide-toast {
+      from { opacity: 0; transform: translateY(12px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes r-ui-fade-down {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
   </style>
 </head>
 <body>
@@ -618,7 +815,7 @@
     <header class="r-ui-navbar">
       <div class="r-ui-brand">
         <span>r-ui</span>
-        <span class="r-ui-badge">v3.4.0 Live</span>
+        <span class="r-ui-badge">v3.5.0 Live</span>
       </div>
 
       <div style="display: flex; align-items: center; gap: var(--r-ui-space-3); flex-wrap: wrap;">
@@ -996,8 +1193,130 @@
           Automatically adjusts touch hit-boxes on mobile screens vs hover on mouse.
         </div>
       </article>
+
+      <!-- Card 6: v3.5.0 Actionable Notification Architecture -->
+      <article class="r-ui-card r-ui-bento-hero" style="grid-column: 1 / -1;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--r-ui-space-3); margin-bottom: var(--r-ui-space-3);">
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="r-ui-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">v3.5.0 Pillar 6</span>
+              <h3 style="font-size: var(--r-ui-font-h3); font-weight: 700; margin: 0;">Actionable Notifications & Above-Form Context Anchoring</h3>
+            </div>
+            <p style="color: var(--r-ui-color-text-secondary); font-size: 13px; margin-top: 4px;">
+              Temporary toast notifications equipped with one-click tactile copy buttons, plus in-page alerts anchored directly above forms to establish cognitive context before input.
+            </p>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: var(--r-ui-space-6); margin-top: var(--r-ui-space-4);">
+          <!-- Panel A: Toast Stack Demonstration -->
+          <div style="display: flex; flex-direction: column; gap: var(--r-ui-space-4); background: var(--r-ui-color-surface-elevated); padding: var(--r-ui-space-4); border-radius: var(--r-ui-radius-sm); border: 1px solid var(--r-ui-color-border-standard);">
+            <div>
+              <h4 style="font-size: 14px; font-weight: 600; color: var(--r-ui-color-text-primary); margin-bottom: 4px;">1. Actionable Toast Stack (`.r-ui-toast`)</h4>
+              <p style="font-size: 12px; color: var(--r-ui-color-text-muted);">
+                Click any button to trigger a slide-in toast with an embedded one-click copy button. Click the copy icon to verify clipboard transfer and tactile spring feedback:
+              </p>
+            </div>
+
+            <div style="display: flex; flex-wrap: wrap; gap: var(--r-ui-space-2);">
+              <button type="button" class="r-ui-btn r-ui-btn-secondary" id="triggerSuccessToastBtn" style="font-size: 12px; padding: 6px 12px;">
+                <span style="color: #10b981;">●</span> Trigger Success Toast
+              </button>
+              <button type="button" class="r-ui-btn r-ui-btn-secondary" id="triggerErrorToastBtn" style="font-size: 12px; padding: 6px 12px;">
+                <span style="color: #ef4444;">●</span> Trigger Error Toast
+              </button>
+              <button type="button" class="r-ui-btn r-ui-btn-secondary" id="triggerWarningToastBtn" style="font-size: 12px; padding: 6px 12px;">
+                <span style="color: #f59e0b;">●</span> Trigger Warning Toast
+              </button>
+              <button type="button" class="r-ui-btn r-ui-btn-secondary" id="triggerInfoToastBtn" style="font-size: 12px; padding: 6px 12px;">
+                <span style="color: #0ea5e9;">●</span> Trigger Info Toast
+              </button>
+            </div>
+
+            <!-- Static Toast Preview for visual inspection -->
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+              <span style="font-size: 11px; text-transform: uppercase; color: var(--r-ui-color-text-muted); font-weight: 600;">Static Preview (Bottom-Right Floating):</span>
+              <div class="r-ui-toast r-ui-toast--error" style="position: static; max-width: 100%; animation: none;">
+                <div class="r-ui-toast__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </div>
+                <div class="r-ui-toast__content">
+                  <div class="r-ui-toast__title">Deployment Failed</div>
+                  <div class="r-ui-toast__message">RPC error: 0x8F94D2 - Connection timed out after 30000ms</div>
+                </div>
+                <div class="r-ui-toast__actions">
+                  <button type="button" class="r-ui-copy-btn r-ui-toast__copy-btn" data-copy-text="RPC error: 0x8F94D2 - Connection timed out after 30000ms" title="Copy error payload">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </button>
+                  <button type="button" class="r-ui-toast__close-btn" aria-label="Dismiss">
+                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel B: In-Page Alert Positioned Directly Above Form -->
+          <div style="display: flex; flex-direction: column; gap: var(--r-ui-space-3); background: var(--r-ui-color-surface-elevated); padding: var(--r-ui-space-4); border-radius: var(--r-ui-radius-sm); border: 1px solid var(--r-ui-color-border-standard);">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+              <div>
+                <h4 style="font-size: 14px; font-weight: 600; color: var(--r-ui-color-text-primary); margin-bottom: 2px;">2. Above-Form Context Alert (`.r-ui-alert--above-form`)</h4>
+                <p style="font-size: 12px; color: var(--r-ui-color-text-muted);">
+                  Anchored directly above form fields to provide immediate context without cognitive drift:
+                </p>
+              </div>
+              <button type="button" class="r-ui-btn r-ui-btn-secondary" id="toggleAboveFormAlertBtn" style="font-size: 11px; padding: 4px 8px;">
+                Toggle Alert State
+              </button>
+            </div>
+
+            <!-- THE FORM CONTAINER -->
+            <form id="demoGatewayForm" onsubmit="event.preventDefault();" style="display: flex; flex-direction: column; width: 100%; margin-top: 4px;">
+              <!-- IN-PAGE ALERT ANCHORED DIRECTLY ABOVE FORM FIELDS -->
+              <div class="r-ui-alert r-ui-alert--above-form r-ui-alert--error" id="formAboveAlert" role="alert" aria-live="assertive">
+                <div class="r-ui-alert__inner">
+                  <div class="r-ui-alert__body">
+                    <div class="r-ui-alert__title" id="formAlertTitle">Validation Error: Node Endpoint Unreachable</div>
+                    <div class="r-ui-alert__description" id="formAlertDesc">
+                      Gateway health check failed with status code <code>503 SERVICE_UNAVAILABLE</code> on target cluster <code>us-east-prod-04</code>.
+                    </div>
+                  </div>
+                  <div class="r-ui-alert__actions">
+                    <button type="button" class="r-ui-copy-btn r-ui-alert__copy-btn" id="copyFormAlertBtn" data-copy-text="Gateway health check failed with status code 503 SERVICE_UNAVAILABLE on target cluster us-east-prod-04." title="Copy error payload">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                    <button type="button" class="r-ui-alert__close-btn" id="dismissFormAlertBtn" aria-label="Dismiss alert">
+                      <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Form Fields -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--r-ui-space-3);">
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label for="clusterNameInput" style="font-size: 11px; font-weight: 600; color: var(--r-ui-color-text-secondary); text-transform: uppercase;">Cluster ID</label>
+                  <input id="clusterNameInput" type="text" value="us-east-prod-04" style="background: var(--r-ui-color-surface); border: 1px solid var(--r-ui-color-border-standard); border-radius: var(--r-ui-radius-xs); padding: 8px 12px; font-size: 13px; color: var(--r-ui-color-text-primary); outline: none;">
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label for="gatewayPortInput" style="font-size: 11px; font-weight: 600; color: var(--r-ui-color-text-secondary); text-transform: uppercase;">Gateway Port</label>
+                  <input id="gatewayPortInput" type="number" value="8443" style="background: var(--r-ui-color-surface); border: 1px solid var(--r-ui-color-border-standard); border-radius: var(--r-ui-radius-xs); padding: 8px 12px; font-size: 13px; color: var(--r-ui-color-text-primary); outline: none;">
+                </div>
+              </div>
+
+              <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: var(--r-ui-space-3);">
+                <button type="button" class="r-ui-btn r-ui-btn-secondary" style="font-size: 12px; padding: 6px 12px;" onclick="document.getElementById('formAboveAlert').style.display = 'none';">Reset</button>
+                <button type="submit" class="r-ui-btn r-ui-btn-primary" style="font-size: 12px; padding: 6px 16px;">Deploy Gateway</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </article>
     </main>
   </div>
+
+  <!-- Actionable Toast Container -->
+  <aside class="r-ui-toast-container" id="toastContainer" aria-label="Notifications" aria-live="polite"></aside>
 
   <!-- Adaptive Modal -->
   <div class="r-ui-modal-overlay" id="modalOverlay" role="dialog" aria-modal="true">
@@ -1224,6 +1543,182 @@
         demoPopoverMenu.classList.remove('is-open');
         demoPopoverTrigger.setAttribute('aria-expanded', 'false');
       }
+    });
+
+    // ==========================================================================
+    // v3.5.0 Actionable Toast & Above-Form Notification Logic
+    // ==========================================================================
+    function copyTextToClipboard(text, btn) {
+      if (!text) return;
+      const originalHTML = btn.innerHTML;
+      const doSuccess = () => {
+        btn.classList.add('is-copied');
+        btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
+        setTimeout(() => {
+          btn.classList.remove('is-copied');
+          btn.innerHTML = originalHTML;
+        }, 2000);
+      };
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(doSuccess).catch(err => {
+          console.warn('Clipboard write error:', err);
+          fallbackCopy(text, doSuccess);
+        });
+      } else {
+        fallbackCopy(text, doSuccess);
+      }
+    }
+
+    function fallbackCopy(text, cb) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        if (cb) cb();
+      } catch (e) {
+        console.error('Fallback copy failed', e);
+      }
+      document.body.removeChild(ta);
+    }
+
+    // Attach click listeners to all copy buttons
+    document.addEventListener('click', (e) => {
+      const copyBtn = e.target.closest('.r-ui-copy-btn');
+      if (copyBtn) {
+        e.stopPropagation();
+        const textToCopy = copyBtn.getAttribute('data-copy-text');
+        copyTextToClipboard(textToCopy, copyBtn);
+      }
+    });
+
+    // Toast Generator
+    const toastContainer = document.getElementById('toastContainer');
+    const toastIcons = {
+      success: `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`,
+      error: `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+      warning: `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+      info: `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`
+    };
+
+    function triggerToast({ intent = 'info', title = '', message = '', copyText = '' }) {
+      if (!toastContainer) return;
+      const toast = document.createElement('div');
+      toast.className = `r-ui-toast r-ui-toast--${intent}`;
+      toast.setAttribute('role', intent === 'error' ? 'alert' : 'status');
+
+      const copyPayload = copyText || message;
+      toast.innerHTML = `
+        <div class="r-ui-toast__icon" aria-hidden="true">${toastIcons[intent] || toastIcons.info}</div>
+        <div class="r-ui-toast__content">
+          ${title ? `<div class="r-ui-toast__title">${title}</div>` : ''}
+          <div class="r-ui-toast__message">${message}</div>
+        </div>
+        <div class="r-ui-toast__actions">
+          <button type="button" class="r-ui-copy-btn r-ui-toast__copy-btn" data-copy-text="${copyPayload}" title="Copy notification message">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+          <button type="button" class="r-ui-toast__close-btn" aria-label="Dismiss notification">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      `;
+
+      const closeBtn = toast.querySelector('.r-ui-toast__close-btn');
+      const dismiss = () => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(12px) scale(0.95)';
+        setTimeout(() => toast.remove(), 200);
+      };
+      closeBtn.addEventListener('click', dismiss);
+
+      toastContainer.appendChild(toast);
+      setTimeout(dismiss, 5000);
+    }
+
+    // Bind Toast Buttons
+    document.getElementById('triggerSuccessToastBtn')?.addEventListener('click', () => {
+      triggerToast({
+        intent: 'success',
+        title: 'Cluster Synchronized',
+        message: 'Deployment snapshot 0x9A4B-v3 applied across 12 worker nodes successfully.',
+        copyText: 'Deployment snapshot 0x9A4B-v3 applied across 12 worker nodes successfully.'
+      });
+    });
+
+    document.getElementById('triggerErrorToastBtn')?.addEventListener('click', () => {
+      triggerToast({
+        intent: 'error',
+        title: 'TLS Handshake Error',
+        message: 'SSL certificate expired on gateway upstream ip-10-0-4-12. Port 443 refused.',
+        copyText: 'SSL certificate expired on gateway upstream ip-10-0-4-12. Port 443 refused.'
+      });
+    });
+
+    document.getElementById('triggerWarningToastBtn')?.addEventListener('click', () => {
+      triggerToast({
+        intent: 'warning',
+        title: 'High Ingress Pressure',
+        message: 'Cluster egress bandwidth utilization reached 89.4% threshold.',
+        copyText: 'Cluster egress bandwidth utilization reached 89.4% threshold.'
+      });
+    });
+
+    document.getElementById('triggerInfoToastBtn')?.addEventListener('click', () => {
+      triggerToast({
+        intent: 'info',
+        title: 'Rollout Scheduled',
+        message: 'Canary traffic split of 10% scheduled for 18:00 UTC.',
+        copyText: 'Canary traffic split of 10% scheduled for 18:00 UTC.'
+      });
+    });
+
+    // Form Above-Alert State Toggle
+    const formAboveAlert = document.getElementById('formAboveAlert');
+    const formAlertTitle = document.getElementById('formAlertTitle');
+    const formAlertDesc = document.getElementById('formAlertDesc');
+    const copyFormAlertBtn = document.getElementById('copyFormAlertBtn');
+    const dismissFormAlertBtn = document.getElementById('dismissFormAlertBtn');
+    const toggleAboveFormAlertBtn = document.getElementById('toggleAboveFormAlertBtn');
+
+    let alertState = 0; // 0: Error, 1: Warning, 2: Success
+    const states = [
+      {
+        intent: 'error',
+        title: 'Validation Error: Node Endpoint Unreachable',
+        desc: 'Gateway health check failed with status code <code>503 SERVICE_UNAVAILABLE</code> on target cluster <code>us-east-prod-04</code>.',
+        copyText: 'Gateway health check failed with status code 503 SERVICE_UNAVAILABLE on target cluster us-east-prod-04.'
+      },
+      {
+        intent: 'warning',
+        title: 'Gateway Notice: Rate Limiter Active',
+        desc: 'Cluster <code>us-east-prod-04</code> currently has active rate limiting of 500 req/sec.',
+        copyText: 'Cluster us-east-prod-04 currently has active rate limiting of 500 req/sec.'
+      },
+      {
+        intent: 'success',
+        title: 'Gateway Config Verified',
+        desc: 'Pre-flight dry run succeeded. All routes ready for deployment.',
+        copyText: 'Pre-flight dry run succeeded. All routes ready for deployment.'
+      }
+    ];
+
+    toggleAboveFormAlertBtn?.addEventListener('click', () => {
+      alertState = (alertState + 1) % states.length;
+      const s = states[alertState];
+      formAboveAlert.style.display = 'block';
+      formAboveAlert.className = `r-ui-alert r-ui-alert--above-form r-ui-alert--${s.intent}`;
+      formAlertTitle.innerHTML = s.title;
+      formAlertDesc.innerHTML = s.desc;
+      copyFormAlertBtn.setAttribute('data-copy-text', s.copyText);
+    });
+
+    dismissFormAlertBtn?.addEventListener('click', () => {
+      formAboveAlert.style.display = 'none';
     });
   </script>
 </body>
