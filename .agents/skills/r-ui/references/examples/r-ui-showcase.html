@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en" data-r-ui-theme="dark-nebula" data-r-ui-accent="cyan">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>r-ui Interactive Showcase (v3.0.0)</title>
+  <link rel="stylesheet" href="../r-ui-tokens.css">
+  <link rel="stylesheet" href="../r-ui-themes.css">
+  <link rel="stylesheet" href="../r-ui-color-themes.css">
+  <style>
+    /* Reset & Seamless Transitions */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--r-ui-color-canvas);
+      color: var(--r-ui-color-text-primary);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: var(--r-ui-leading-normal);
+      padding: max(var(--r-ui-space-6), env(safe-area-inset-top)) max(var(--r-ui-space-6), env(safe-area-inset-right)) max(var(--r-ui-space-6), env(safe-area-inset-bottom)) max(var(--r-ui-space-6), env(safe-area-inset-left));
+      min-height: 100dvh;
+      transition: background-color var(--r-ui-duration-normal) ease, color var(--r-ui-duration-normal) ease;
+    }
+
+    .r-ui-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: var(--r-ui-space-8);
+    }
+
+    /* Navbar */
+    .r-ui-navbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--r-ui-space-4);
+      padding: var(--r-ui-space-4) var(--r-ui-space-6);
+      background-color: var(--r-ui-color-surface);
+      border: 1px solid var(--r-ui-color-border-standard);
+      border-radius: var(--r-ui-radius-lg);
+      box-shadow: var(--r-ui-shadow-xs);
+    }
+
+    .r-ui-brand {
+      display: flex;
+      align-items: center;
+      gap: var(--r-ui-space-2);
+      font-size: var(--r-ui-font-h2);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+    }
+
+    .r-ui-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: var(--r-ui-radius-full);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background-color: var(--r-ui-color-surface-elevated);
+      color: var(--r-ui-color-accent-primary);
+      border: 1px solid var(--r-ui-color-border-standard);
+    }
+
+    /* Hero */
+    .r-ui-hero {
+      display: flex;
+      flex-direction: column;
+      gap: var(--r-ui-space-3);
+      padding: var(--r-ui-space-6) 0;
+    }
+
+    .r-ui-hero h1 {
+      font-size: var(--r-ui-font-hero);
+      line-height: var(--r-ui-leading-tight);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .r-ui-hero p {
+      font-size: var(--r-ui-font-body);
+      color: var(--r-ui-color-text-secondary);
+      max-width: 680px;
+    }
+
+    /* Bento Grid */
+    .r-ui-bento {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--r-ui-space-6);
+    }
+
+    @media (min-width: 768px) {
+      .r-ui-bento {
+        grid-template-columns: repeat(3, 1fr);
+      }
+      .r-ui-bento-hero {
+        grid-column: span 2;
+      }
+      .r-ui-bento-full {
+        grid-column: span 3;
+      }
+    }
+
+    .r-ui-card {
+      background-color: var(--r-ui-color-surface);
+      border: 1px solid var(--r-ui-color-border-subtle);
+      border-radius: var(--r-ui-radius-lg);
+      padding: var(--r-ui-space-6);
+      display: flex;
+      flex-direction: column;
+      gap: var(--r-ui-space-4);
+      box-shadow: var(--r-ui-shadow-xs);
+      transition: border-color var(--r-ui-duration-fast) ease,
+                  transform var(--r-ui-duration-fast) var(--r-ui-ease-spring-snappy),
+                  box-shadow var(--r-ui-duration-fast) ease;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      .r-ui-card:hover {
+        border-color: var(--r-ui-color-border-strong);
+        transform: translateY(-2px);
+        box-shadow: var(--r-ui-shadow-sm);
+      }
+    }
+
+    /* Action Buttons with Tactile Depression */
+    .r-ui-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--r-ui-space-2);
+      padding: var(--r-ui-space-2) var(--r-ui-space-4);
+      min-height: 40px;
+      font-family: inherit;
+      font-size: var(--r-ui-font-body);
+      font-weight: 600;
+      border-radius: var(--r-ui-radius-sm);
+      border: 1px solid transparent;
+      cursor: pointer;
+      user-select: none;
+      touch-action: manipulation;
+      transition: transform var(--r-ui-duration-instant) var(--r-ui-ease-spring-snappy),
+                  background-color var(--r-ui-duration-fast) ease,
+                  border-color var(--r-ui-duration-fast) ease,
+                  box-shadow var(--r-ui-duration-fast) ease;
+    }
+
+    /* WCAG 2.2 AAA Double-Ring Focus System */
+    .r-ui-btn:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    .r-ui-custom-select__trigger:focus-visible,
+    .r-ui-switch:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--r-ui-color-canvas), 0 0 0 4px var(--r-ui-color-accent-primary);
+    }
+
+    /* Tactile Haptic Micro-Depression */
+    .r-ui-btn:active {
+      transform: scale(0.975);
+    }
+
+    .r-ui-btn-primary {
+      background-color: var(--r-ui-color-accent-primary);
+      color: var(--r-ui-color-text-inverse);
+      box-shadow: var(--r-ui-shadow-xs);
+    }
+
+    .r-ui-btn-primary:hover {
+      background-color: var(--r-ui-color-accent-primary-hover);
+      box-shadow: var(--r-ui-shadow-sm);
+    }
+
+    .r-ui-btn-secondary {
+      background-color: var(--r-ui-color-surface-elevated);
+      color: var(--r-ui-color-text-primary);
+      border-color: var(--r-ui-color-border-standard);
+    }
+
+    .r-ui-btn-secondary:hover {
+      border-color: var(--r-ui-color-border-strong);
+      background-color: var(--r-ui-color-surface-overlay);
+    }
+
+    .r-ui-btn:disabled,
+    .r-ui-btn.is-disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      pointer-events: none;
+      transform: none !important;
+    }
+
+    /* Tactile Spring Toggle Switch */
+    .r-ui-switch {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      width: 44px;
+      height: 24px;
+      background-color: var(--r-ui-color-surface-overlay);
+      border-radius: var(--r-ui-radius-full);
+      border: 1px solid var(--r-ui-color-border-standard);
+      cursor: pointer;
+      transition: background-color var(--r-ui-duration-fast) ease,
+                  border-color var(--r-ui-duration-fast) ease;
+    }
+
+    .r-ui-switch.is-active {
+      background-color: var(--r-ui-color-accent-primary);
+      border-color: var(--r-ui-color-accent-primary);
+    }
+
+    .r-ui-switch__thumb {
+      position: absolute;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background-color: #ffffff;
+      box-shadow: var(--r-ui-shadow-xs);
+      transition: transform var(--r-ui-duration-fast) var(--r-ui-ease-spring-snappy);
+    }
+
+    .r-ui-switch.is-active .r-ui-switch__thumb {
+      transform: translateX(20px);
+      background-color: var(--r-ui-color-text-inverse);
+    }
+
+    /* Custom Accessible Select (Law 9) */
+    .r-ui-custom-select {
+      position: relative;
+      width: 100%;
+    }
+
+    .r-ui-custom-select__trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      min-height: 40px;
+      padding: 8px 12px;
+      background-color: var(--r-ui-color-surface-elevated);
+      border: 1px solid var(--r-ui-color-border-standard);
+      border-radius: var(--r-ui-radius-sm);
+      color: var(--r-ui-color-text-primary);
+      font-size: 14px;
+      cursor: pointer;
+      user-select: none;
+      transition: border-color var(--r-ui-duration-fast) ease;
+    }
+
+    .r-ui-custom-select__popover {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      background-color: var(--r-ui-color-surface-elevated);
+      border: 1px solid var(--r-ui-color-border-standard);
+      border-radius: var(--r-ui-radius-sm);
+      box-shadow: var(--r-ui-shadow-md);
+      z-index: 50;
+      display: none;
+      flex-direction: column;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .r-ui-custom-select.is-open .r-ui-custom-select__popover {
+      display: flex;
+    }
+
+    .r-ui-custom-select__option {
+      padding: 8px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--r-ui-color-text-secondary);
+      transition: background-color var(--r-ui-duration-fast) ease;
+    }
+
+    .r-ui-custom-select__option:hover,
+    .r-ui-custom-select__option.is-focused {
+      background-color: var(--r-ui-color-surface-overlay);
+      color: var(--r-ui-color-text-primary);
+    }
+
+    .r-ui-custom-select__option.is-selected {
+      color: var(--r-ui-color-accent-primary);
+      font-weight: 600;
+    }
+
+    /* Skeleton Loading Shimmer */
+    .r-ui-skeleton {
+      background: linear-gradient(
+        90deg,
+        var(--r-ui-color-surface-elevated) 25%,
+        var(--r-ui-color-surface-overlay) 50%,
+        var(--r-ui-color-surface-elevated) 75%
+      );
+      background-size: 200% 100%;
+      animation: rUiShimmer 1.5s infinite;
+      border-radius: var(--r-ui-radius-xs);
+    }
+
+    @keyframes rUiShimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* TV Spatial Nav Items */
+    .r-ui-tv-box {
+      background-color: var(--r-ui-color-surface-elevated);
+      border: 1px solid var(--r-ui-color-border-standard);
+      border-radius: var(--r-ui-radius-md);
+      padding: var(--r-ui-space-4);
+      text-align: center;
+      cursor: pointer;
+      outline: none;
+      transition: transform var(--r-ui-duration-fast) var(--r-ui-ease-spring-snappy),
+                  border-color var(--r-ui-duration-fast) ease,
+                  box-shadow var(--r-ui-duration-fast) ease;
+    }
+
+    .r-ui-tv-box:focus-visible,
+    .r-ui-tv-box.is-focused {
+      transform: scale(1.08);
+      border-color: var(--r-ui-color-accent-primary);
+      box-shadow: 0 0 0 2px var(--r-ui-color-canvas), 0 0 0 4px var(--r-ui-color-accent-primary);
+      z-index: 10;
+    }
+
+    /* Modal / Bottom Sheet */
+    .r-ui-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background-color: rgba(9, 10, 15, 0.65);
+      backdrop-filter: blur(6px);
+      z-index: 100;
+      align-items: flex-end;
+      justify-content: center;
+    }
+
+    .r-ui-modal-overlay.is-open {
+      display: flex;
+    }
+
+    .r-ui-modal-box {
+      width: 100%;
+      background-color: var(--r-ui-color-surface-elevated);
+      border-top: 1px solid var(--r-ui-color-border-standard);
+      border-radius: var(--r-ui-radius-xl) var(--r-ui-radius-xl) 0 0;
+      padding: var(--r-ui-space-6);
+      max-height: 85dvh;
+      overflow-y: auto;
+      box-shadow: var(--r-ui-shadow-md);
+    }
+
+    @media (min-width: 768px) {
+      .r-ui-modal-overlay {
+        align-items: center;
+        padding: var(--r-ui-space-6);
+      }
+      .r-ui-modal-box {
+        max-width: 520px;
+        border: 1px solid var(--r-ui-color-border-standard);
+        border-radius: var(--r-ui-radius-lg);
+        box-shadow: var(--r-ui-shadow-lg);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="r-ui-container">
+    <!-- Navbar & Controls -->
+    <header class="r-ui-navbar">
+      <div class="r-ui-brand">
+        <span>r-ui</span>
+        <span class="r-ui-badge">v3.0.0 Live</span>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: var(--r-ui-space-3); flex-wrap: wrap;">
+        <!-- Canvas Theme Selector -->
+        <select id="canvasSelector" aria-label="Select Canvas Theme" style="padding: 6px 12px; border-radius: var(--r-ui-radius-sm); background: var(--r-ui-color-surface-elevated); color: var(--r-ui-color-text-primary); border: 1px solid var(--r-ui-color-border-standard); font-size: 13px; cursor: pointer; outline: none;">
+          <option value="dark-nebula">Dark Nebula</option>
+          <option value="clean-light">Clean Light</option>
+          <option value="slate-obsidian">Slate Obsidian</option>
+          <option value="warm-sepia">Warm Sepia</option>
+          <option value="high-contrast">High Contrast</option>
+        </select>
+
+        <!-- 8 Color Accent Swatches -->
+        <div id="swatchGroup" style="display: flex; align-items: center; gap: 6px;" role="radiogroup" aria-label="Select Accent Color">
+          <button type="button" data-accent="cyan" style="width: 20px; height: 20px; border-radius: 50%; background: #38bdf8; border: 2px solid white; cursor: pointer;" aria-label="Cyan"></button>
+          <button type="button" data-accent="emerald" style="width: 20px; height: 20px; border-radius: 50%; background: #10b981; border: 1px solid transparent; cursor: pointer;" aria-label="Emerald"></button>
+          <button type="button" data-accent="violet" style="width: 20px; height: 20px; border-radius: 50%; background: #a855f7; border: 1px solid transparent; cursor: pointer;" aria-label="Violet"></button>
+          <button type="button" data-accent="crimson" style="width: 20px; height: 20px; border-radius: 50%; background: #f43f5e; border: 1px solid transparent; cursor: pointer;" aria-label="Crimson"></button>
+          <button type="button" data-accent="amber" style="width: 20px; height: 20px; border-radius: 50%; background: #f59e0b; border: 1px solid transparent; cursor: pointer;" aria-label="Amber"></button>
+          <button type="button" data-accent="monochrome" style="width: 20px; height: 20px; border-radius: 50%; background: #94a3b8; border: 1px solid transparent; cursor: pointer;" aria-label="Monochrome"></button>
+          <button type="button" data-accent="frost" style="width: 20px; height: 20px; border-radius: 50%; background: #2dd4bf; border: 1px solid transparent; cursor: pointer;" aria-label="Frost"></button>
+          <button type="button" data-accent="coral" style="width: 20px; height: 20px; border-radius: 50%; background: #fb7185; border: 1px solid transparent; cursor: pointer;" aria-label="Coral"></button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="r-ui-hero">
+      <div style="display: flex; align-items: center; gap: var(--r-ui-space-2);">
+        <span class="r-ui-badge">Precision Design System</span>
+        <span class="r-ui-badge">WCAG 2.2 AAA</span>
+        <span class="r-ui-badge">Kinetic Physics</span>
+      </div>
+      <h1>Universal UI/UX Without Rigid Templates.</h1>
+      <p>Modern agency-grade interface system across platforms: Web, Desktop, Mobile, and Smart TV. Featuring tactile spring physics, WCAG 2.2 AAA double-ring focus, Law 9 custom popovers, and 6-state exhaustiveness.</p>
+      <div style="display: flex; gap: var(--r-ui-space-3); margin-top: var(--r-ui-space-2); flex-wrap: wrap;">
+        <button class="r-ui-btn r-ui-btn-primary" id="openModalBtn">Open Adaptive Modal</button>
+        <button class="r-ui-btn r-ui-btn-secondary" id="toggleUnstyledBtn">Toggle Unstyled Mode</button>
+        <button class="r-ui-btn r-ui-btn-secondary" id="copyTokenBtn">
+          <span id="copyTokenText">Copy Color Token</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Bento Grid Modules -->
+    <main class="r-ui-bento" id="bentoContainer">
+      <!-- Card 1: Bento Asymmetric & Kinetic Switches -->
+      <article class="r-ui-card r-ui-bento-hero">
+        <h2 style="font-size: var(--r-ui-font-h2); font-weight: 700;">Kinetic Physics & Spatial Harmony</h2>
+        <p style="color: var(--r-ui-color-text-secondary);">Interactive elements respond with tactile haptic physics (<code style="color: var(--r-ui-color-accent-primary);">scale(0.975)</code> on micro-press, snappy spring curves, and zero murky dark blur).</p>
+        
+        <div style="display: flex; align-items: center; gap: var(--r-ui-space-4); margin-top: var(--r-ui-space-2); flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: var(--r-ui-space-2);">
+            <button type="button" class="r-ui-switch is-active" id="demoSwitch1" role="switch" aria-checked="true" aria-label="Telemetry Stream">
+              <span class="r-ui-switch__thumb"></span>
+            </button>
+            <span style="font-size: 13px; font-weight: 500;">Telemetry Stream</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: var(--r-ui-space-2);">
+            <button type="button" class="r-ui-switch" id="demoSwitch2" role="switch" aria-checked="false" aria-label="Auto Rollback">
+              <span class="r-ui-switch__thumb"></span>
+            </button>
+            <span style="font-size: 13px; font-weight: 500;">Auto Rollback</span>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: var(--r-ui-space-2); flex-wrap: wrap; margin-top: auto;">
+          <span class="r-ui-badge">4pt / 8pt Grid</span>
+          <span class="r-ui-badge">Snappy Spring</span>
+          <span class="r-ui-badge">Haptic Press</span>
+        </div>
+      </article>
+
+      <!-- Card 2: Accessible Form (Law 9: Custom Select) -->
+      <article class="r-ui-card">
+        <h3 style="font-size: var(--r-ui-font-h3); font-weight: 700;">Law 9: Custom Select</h3>
+        <p style="color: var(--r-ui-color-text-secondary); font-size: 14px;">Zero unstyled raw native selects. Full keyboard navigation and ARIA combobox pattern.</p>
+        
+        <div style="display: flex; flex-direction: column; gap: var(--r-ui-space-3);">
+          <!-- Custom Select Component -->
+          <div class="r-ui-custom-select" id="demoSelect">
+            <button type="button" class="r-ui-custom-select__trigger" id="demoSelectTrigger" aria-haspopup="listbox" aria-expanded="false">
+              <span id="demoSelectValue">Production Region: US-East (Virginia)</span>
+              <span style="font-size: 10px; color: var(--r-ui-color-text-muted);">▼</span>
+            </button>
+            <div class="r-ui-custom-select__popover" id="demoSelectPopover" role="listbox">
+              <div class="r-ui-custom-select__option is-selected" role="option" data-value="us-east">US-East (Virginia)</div>
+              <div class="r-ui-custom-select__option" role="option" data-value="eu-west">EU-West (Frankfurt)</div>
+              <div class="r-ui-custom-select__option" role="option" data-value="ap-southeast">AP-Southeast (Singapore)</div>
+              <div class="r-ui-custom-select__option" role="option" data-value="ap-northeast">AP-Northeast (Tokyo)</div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label for="demoEmail" style="font-size: 13px; font-weight: 500; color: var(--r-ui-color-text-secondary);">Service Cluster</label>
+            <input type="text" id="demoEmail" value="cluster-prod-01.internal" style="width: 100%; min-height: 40px; padding: 8px 12px; border-radius: var(--r-ui-radius-sm); border: 1px solid var(--r-ui-color-border-standard); background: var(--r-ui-color-surface-elevated); color: var(--r-ui-color-text-primary); outline: none;" />
+          </div>
+        </div>
+        
+        <button class="r-ui-btn r-ui-btn-primary" style="margin-top: auto;">Deploy Pipeline</button>
+      </article>
+
+      <!-- Card 3: The 6 Universal Visual States (Full Row) -->
+      <article class="r-ui-card r-ui-bento-full">
+        <h3 style="font-size: var(--r-ui-font-h3); font-weight: 700;">Component State Exhaustiveness (The 6 Universal Visual States)</h3>
+        <p style="color: var(--r-ui-color-text-secondary); font-size: 14px;">Every component explicitly implements Idle, Hover, Active, Focus-Visible, Disabled, and Loading/Skeleton states without visual clipping.</p>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--r-ui-space-4); margin-top: var(--r-ui-space-2);">
+          <!-- State 1: Idle -->
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 11px; text-transform: uppercase; color: var(--r-ui-color-text-muted); font-weight: 600;">1. Idle</span>
+            <button class="r-ui-btn r-ui-btn-secondary" style="width: 100%;">Standard Button</button>
+          </div>
+
+          <!-- State 2: Hover -->
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 11px; text-transform: uppercase; color: var(--r-ui-color-text-muted); font-weight: 600;">2. Hover</span>
+            <button class="r-ui-btn r-ui-btn-secondary" style="width: 100%; border-color: var(--r-ui-color-border-strong); background-color: var(--r-ui-color-surface-overlay);">Hovered Tone</button>
+          </div>
+
+          <!-- State 3: Active Press -->
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 11px; text-transform: uppercase; color: var(--r-ui-color-text-muted); font-weight: 600;">3. Active (Press)</span>
+            <button class="r-ui-btn r-ui-btn-primary" style="width: 100%; transform: scale(0.975);">Pressed State</button>
+          </div>
+
+          <!-- State 4: Focus-Visible -->
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 11px; text-transform: uppercase; color: var(--r-ui-color-text-muted); font-weight: 600;">4. Double-Ring Focus</span>
+            <button class="r-ui-btn r-ui-btn-secondary" style="width: 100%; box-shadow: 0 0 0 2px var(--r-ui-color-canvas), 0 0 0 4px var(--r-ui-color-accent-primary);">Keyboard Focus</button>
+          </div>
+
+          <!-- State 5: Disabled -->
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 11px; text-transform: uppercase; color: var(--r-ui-color-text-muted); font-weight: 600;">5. Disabled</span>
+            <button class="r-ui-btn r-ui-btn-secondary is-disabled" disabled style="width: 100%;">Disabled Action</button>
+          </div>
+
+          <!-- State 6: Loading Skeleton -->
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 11px; text-transform: uppercase; color: var(--r-ui-color-text-muted); font-weight: 600;">6. Skeleton Loading</span>
+            <div class="r-ui-skeleton" style="width: 100%; height: 40px;"></div>
+          </div>
+        </div>
+      </article>
+
+      <!-- Card 4: Smart TV Spatial Navigation -->
+      <article class="r-ui-card r-ui-bento-hero">
+        <h3 style="font-size: var(--r-ui-font-h3); font-weight: 700;">Smart TV Spatial Navigation (10-Foot UI)</h3>
+        <p style="color: var(--r-ui-color-text-secondary);">Use directional arrow keys (Up, Down, Left, Right) to navigate across the tiles below. Features high-contrast outlines without blur glow:</p>
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--r-ui-space-3); margin-top: var(--r-ui-space-2);" class="r-ui-tv-grid">
+          <div tabindex="0" class="r-ui-tv-box">Node 1</div>
+          <div tabindex="0" class="r-ui-tv-box">Node 2</div>
+          <div tabindex="0" class="r-ui-tv-box">Node 3</div>
+          <div tabindex="0" class="r-ui-tv-box">Node 4</div>
+        </div>
+      </article>
+
+      <!-- Card 5: Device Modality -->
+      <article class="r-ui-card">
+        <h3 style="font-size: var(--r-ui-font-h3); font-weight: 700;">Modality & Ergonomics</h3>
+        <p id="modalityText" style="color: var(--r-ui-color-text-secondary); font-size: 14px;">Detecting pointer input...</p>
+        <div style="margin-top: auto; padding: var(--r-ui-space-3); background: var(--r-ui-color-surface-elevated); border-radius: var(--r-ui-radius-sm); font-size: 12px; color: var(--r-ui-color-text-muted);">
+          Automatically adjusts touch hit-boxes on mobile screens vs hover on mouse.
+        </div>
+      </article>
+    </main>
+  </div>
+
+  <!-- Adaptive Modal -->
+  <div class="r-ui-modal-overlay" id="modalOverlay" role="dialog" aria-modal="true">
+    <div class="r-ui-modal-box">
+      <h2 style="font-size: var(--r-ui-font-h2); font-weight: 700; margin-bottom: var(--r-ui-space-2);">Adaptive Modal Dialog</h2>
+      <p style="color: var(--r-ui-color-text-secondary); margin-bottom: var(--r-ui-space-4);">On desktop screens this component centers with micro-elevation. On mobile screens it shifts into a bottom-sheet with safe area insets.</p>
+      <button class="r-ui-btn r-ui-btn-primary" style="width: 100%;" id="closeModalBtn">Close Dialog</button>
+    </div>
+  </div>
+
+  <script>
+    // Theme Switcher Logic
+    const canvasSelector = document.getElementById('canvasSelector');
+    const swatchButtons = document.querySelectorAll('#swatchGroup button');
+
+    canvasSelector.addEventListener('change', (e) => {
+      document.documentElement.setAttribute('data-r-ui-theme', e.target.value);
+    });
+
+    swatchButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const accent = btn.getAttribute('data-accent');
+        document.documentElement.setAttribute('data-r-ui-accent', accent);
+        swatchButtons.forEach(b => b.style.border = '1px solid transparent');
+        btn.style.border = '2px solid white';
+      });
+    });
+
+    // Custom Select Component Logic (Law 9)
+    const demoSelect = document.getElementById('demoSelect');
+    const demoSelectTrigger = document.getElementById('demoSelectTrigger');
+    const demoSelectValue = document.getElementById('demoSelectValue');
+    const demoSelectOptions = document.querySelectorAll('.r-ui-custom-select__option');
+
+    demoSelectTrigger.addEventListener('click', () => {
+      const isOpen = demoSelect.classList.toggle('is-open');
+      demoSelectTrigger.setAttribute('aria-expanded', String(isOpen));
+    });
+
+    demoSelectOptions.forEach(opt => {
+      opt.addEventListener('click', () => {
+        demoSelectValue.textContent = 'Production Region: ' + opt.textContent;
+        demoSelectOptions.forEach(o => o.classList.remove('is-selected'));
+        opt.classList.add('is-selected');
+        demoSelect.classList.remove('is-open');
+        demoSelectTrigger.setAttribute('aria-expanded', 'false');
+      });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!demoSelect.contains(e.target)) {
+        demoSelect.classList.remove('is-open');
+        demoSelectTrigger.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    // Tactile Spring Switches
+    const switch1 = document.getElementById('demoSwitch1');
+    const switch2 = document.getElementById('demoSwitch2');
+
+    [switch1, switch2].forEach(sw => {
+      sw.addEventListener('click', () => {
+        const isActive = sw.classList.toggle('is-active');
+        sw.setAttribute('aria-checked', String(isActive));
+      });
+    });
+
+    // Copy Button with Kinetic Micro-Feedback
+    const copyTokenBtn = document.getElementById('copyTokenBtn');
+    const copyTokenText = document.getElementById('copyTokenText');
+    copyTokenBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText('var(--r-ui-color-accent-primary)');
+      copyTokenText.textContent = '✓ Copied Token!';
+      setTimeout(() => {
+        copyTokenText.textContent = 'Copy Color Token';
+      }, 1600);
+    });
+
+    // Modal Interaction
+    const openModalBtn = document.getElementById('openModalBtn');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    const modalOverlay = document.getElementById('modalOverlay');
+
+    openModalBtn.addEventListener('click', () => modalOverlay.classList.add('is-open'));
+    closeModalBtn.addEventListener('click', () => modalOverlay.classList.remove('is-open'));
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) modalOverlay.classList.remove('is-open');
+    });
+
+    // Unstyled Mode Toggle
+    const toggleUnstyledBtn = document.getElementById('toggleUnstyledBtn');
+    let isUnstyled = false;
+    toggleUnstyledBtn.addEventListener('click', () => {
+      isUnstyled = !isUnstyled;
+      const cards = document.querySelectorAll('.r-ui-card');
+      cards.forEach(card => {
+        if (isUnstyled) {
+          card.style.background = 'transparent';
+          card.style.border = '1px dashed var(--r-ui-color-border-strong)';
+          card.style.boxShadow = 'none';
+        } else {
+          card.style.background = '';
+          card.style.border = '';
+          card.style.boxShadow = '';
+        }
+      });
+      toggleUnstyledBtn.textContent = isUnstyled ? 'Reset Styled Mode' : 'Toggle Unstyled Mode';
+    });
+
+    // Modality Detection
+    const modalityText = document.getElementById('modalityText');
+    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    modalityText.textContent = isTouch
+      ? 'Pointer: Touchscreen Detected (Min 44px touch target active)'
+      : 'Pointer: Precision Mouse / Trackpad Detected (Hover states active)';
+
+    // TV D-Pad Spatial Navigation
+    const tvBoxes = Array.from(document.querySelectorAll('.r-ui-tv-box'));
+
+    document.addEventListener('keydown', (e) => {
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+
+      const activeElement = document.activeElement;
+      let currentIndex = tvBoxes.indexOf(activeElement);
+
+      if (currentIndex === -1) {
+        tvBoxes[0].focus();
+        return;
+      }
+
+      e.preventDefault();
+      if (e.key === 'ArrowRight' && currentIndex < tvBoxes.length - 1) {
+        tvBoxes[currentIndex + 1].focus();
+      } else if (e.key === 'ArrowLeft' && currentIndex > 0) {
+        tvBoxes[currentIndex - 1].focus();
+      }
+    });
+  </script>
+</body>
+</html>

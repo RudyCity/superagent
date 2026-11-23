@@ -1,0 +1,247 @@
+/**
+ * r-ui Modular Color Themes & Accent Palette Engine (v1.8.0)
+ * Namespace: --r-ui-*
+ * Principles: Zero-Neon, Calibrated Optical Contrast, W3C Compliant
+ * Usage: <html data-r-ui-accent="cyan | emerald | violet | crimson | amber | monochrome | frost | coral">
+ */
+
+/* ==========================================================================
+   1. COLOR THEME: CYAN (PRECISION SKY - SAAS & CLOUD DEFAULT)
+   ========================================================================== */
+:root,
+[data-r-ui-accent="cyan"] {
+  --r-ui-accent-name: "cyan";
+  --r-ui-color-accent-primary: #38bdf8;
+  --r-ui-color-accent-primary-hover: #0284c7;
+  --r-ui-color-accent-secondary: #818cf8;
+  --r-ui-color-focus-ring: #38bdf8;
+
+  --r-ui-color-accent-50:  #f0f9ff;
+  --r-ui-color-accent-100: #e0f2fe;
+  --r-ui-color-accent-200: #bae6fd;
+  --r-ui-color-accent-300: #7dd3fc;
+  --r-ui-color-accent-400: #38bdf8;
+  --r-ui-color-accent-500: #0ea5e9;
+  --r-ui-color-accent-600: #0284c7;
+  --r-ui-color-accent-700: #0369a1;
+  --r-ui-color-accent-800: #075985;
+  --r-ui-color-accent-900: #0c4a6e;
+  --r-ui-color-accent-950: #082f49;
+}
+
+[data-r-ui-theme="clean-light"][data-r-ui-accent="cyan"],
+[data-r-ui-theme="warm-sepia"][data-r-ui-accent="cyan"] {
+  --r-ui-color-accent-primary: #0284c7;
+  --r-ui-color-accent-primary-hover: #0369a1;
+  --r-ui-color-focus-ring: #0284c7;
+}
+
+/* ==========================================================================
+   2. COLOR THEME: EMERALD (PRECISION FINTECH & ENVIRONMENTAL TECH)
+   ========================================================================== */
+[data-r-ui-accent="emerald"] {
+  --r-ui-accent-name: "emerald";
+  --r-ui-color-accent-primary: #10b981;
+  --r-ui-color-accent-primary-hover: #059669;
+  --r-ui-color-accent-secondary: #34d399;
+  --r-ui-color-focus-ring: #10b981;
+
+  --r-ui-color-accent-50:  #ecfdf5;
+  --r-ui-color-accent-100: #d1fae5;
+  --r-ui-color-accent-200: #a7f3d0;
+  --r-ui-color-accent-300: #6ee7b7;
+  --r-ui-color-accent-400: #34d399;
+  --r-ui-color-accent-500: #10b981;
+  --r-ui-color-accent-600: #059669;
+  --r-ui-color-accent-700: #047857;
+  --r-ui-color-accent-800: #065f46;
+  --r-ui-color-accent-900: #064e3b;
+  --r-ui-color-accent-950: #022c22;
+}
+
+[data-r-ui-theme="clean-light"][data-r-ui-accent="emerald"],
+[data-r-ui-theme="warm-sepia"][data-r-ui-accent="emerald"] {
+  --r-ui-color-accent-primary: #059669;
+  --r-ui-color-accent-primary-hover: #047857;
+  --r-ui-color-focus-ring: #059669;
+}
+
+/* ==========================================================================
+   3. COLOR THEME: VIOLET (ROYAL DEEP / CREATIVE STUDIO)
+   ========================================================================== */
+[data-r-ui-accent="violet"] {
+  --r-ui-accent-name: "violet";
+  --r-ui-color-accent-primary: #a855f7;
+  --r-ui-color-accent-primary-hover: #9333ea;
+  --r-ui-color-accent-secondary: #c084fc;
+  --r-ui-color-focus-ring: #a855f7;
+
+  --r-ui-color-accent-50:  #faf5ff;
+  --r-ui-color-accent-100: #f3e8ff;
+  --r-ui-color-accent-200: #e9d5ff;
+  --r-ui-color-accent-300: #d8b4fe;
+  --r-ui-color-accent-400: #c084fc;
+  --r-ui-color-accent-500: #a855f7;
+  --r-ui-color-accent-600: #9333ea;
+  --r-ui-color-accent-700: #7e22ce;
+  --r-ui-color-accent-800: #6b21a8;
+  --r-ui-color-accent-900: #581c87;
+  --r-ui-color-accent-950: #3b0764;
+}
+
+[data-r-ui-theme="clean-light"][data-r-ui-accent="violet"],
+[data-r-ui-theme="warm-sepia"][data-r-ui-accent="violet"] {
+  --r-ui-color-accent-primary: #7c3aed;
+  --r-ui-color-accent-primary-hover: #6d28d9;
+  --r-ui-color-focus-ring: #7c3aed;
+}
+
+/* ==========================================================================
+   4. COLOR THEME: CRIMSON (CALIBRATED RUBY & HIGH-URGENCY)
+   ========================================================================== */
+[data-r-ui-accent="crimson"] {
+  --r-ui-accent-name: "crimson";
+  --r-ui-color-accent-primary: #f43f5e;
+  --r-ui-color-accent-primary-hover: #e11d48;
+  --r-ui-color-accent-secondary: #fb7185;
+  --r-ui-color-focus-ring: #f43f5e;
+
+  --r-ui-color-accent-50:  #fff1f2;
+  --r-ui-color-accent-100: #ffe4e6;
+  --r-ui-color-accent-200: #fecdd3;
+  --r-ui-color-accent-300: #fda4af;
+  --r-ui-color-accent-400: #fb7185;
+  --r-ui-color-accent-500: #f43f5e;
+  --r-ui-color-accent-600: #e11d48;
+  --r-ui-color-accent-700: #be123c;
+  --r-ui-color-accent-800: #9f1239;
+  --r-ui-color-accent-900: #881337;
+  --r-ui-color-accent-950: #4c0519;
+}
+
+[data-r-ui-theme="clean-light"][data-r-ui-accent="crimson"],
+[data-r-ui-theme="warm-sepia"][data-r-ui-accent="crimson"] {
+  --r-ui-color-accent-primary: #e11d48;
+  --r-ui-color-accent-primary-hover: #be123c;
+  --r-ui-color-focus-ring: #e11d48;
+}
+
+/* ==========================================================================
+   5. COLOR THEME: AMBER (WARM SUNLIGHT & CAUTION)
+   ========================================================================== */
+[data-r-ui-accent="amber"] {
+  --r-ui-accent-name: "amber";
+  --r-ui-color-accent-primary: #f59e0b;
+  --r-ui-color-accent-primary-hover: #d97706;
+  --r-ui-color-accent-secondary: #fbbf24;
+  --r-ui-color-focus-ring: #f59e0b;
+
+  --r-ui-color-accent-50:  #fffbeb;
+  --r-ui-color-accent-100: #fef3c7;
+  --r-ui-color-accent-200: #fde68a;
+  --r-ui-color-accent-300: #fcd34d;
+  --r-ui-color-accent-400: #fbbf24;
+  --r-ui-color-accent-500: #f59e0b;
+  --r-ui-color-accent-600: #d97706;
+  --r-ui-color-accent-700: #b45309;
+  --r-ui-color-accent-800: #92400e;
+  --r-ui-color-accent-900: #78350f;
+  --r-ui-color-accent-950: #451a03;
+}
+
+[data-r-ui-theme="clean-light"][data-r-ui-accent="amber"],
+[data-r-ui-theme="warm-sepia"][data-r-ui-accent="amber"] {
+  --r-ui-color-accent-primary: #d97706;
+  --r-ui-color-accent-primary-hover: #b45309;
+  --r-ui-color-focus-ring: #d97706;
+}
+
+/* ==========================================================================
+   6. COLOR THEME: MONOCHROME (TITANIUM SLATE / SWISS MINIMALIST)
+   ========================================================================== */
+[data-r-ui-accent="monochrome"] {
+  --r-ui-accent-name: "monochrome";
+  --r-ui-color-accent-primary: #94a3b8;
+  --r-ui-color-accent-primary-hover: #64748b;
+  --r-ui-color-accent-secondary: #cbd5e1;
+  --r-ui-color-focus-ring: #94a3b8;
+
+  --r-ui-color-accent-50:  #f8fafc;
+  --r-ui-color-accent-100: #f1f5f9;
+  --r-ui-color-accent-200: #e2e8f0;
+  --r-ui-color-accent-300: #cbd5e1;
+  --r-ui-color-accent-400: #94a3b8;
+  --r-ui-color-accent-500: #64748b;
+  --r-ui-color-accent-600: #475569;
+  --r-ui-color-accent-700: #334155;
+  --r-ui-color-accent-800: #1e293b;
+  --r-ui-color-accent-900: #0f172a;
+  --r-ui-color-accent-950: #020617;
+}
+
+[data-r-ui-theme="clean-light"][data-r-ui-accent="monochrome"],
+[data-r-ui-theme="warm-sepia"][data-r-ui-accent="monochrome"] {
+  --r-ui-color-accent-primary: #475569;
+  --r-ui-color-accent-primary-hover: #334155;
+  --r-ui-color-focus-ring: #475569;
+}
+
+/* ==========================================================================
+   7. COLOR THEME: FROST (NORDIC TEAL & CALM WELLNESS)
+   ========================================================================== */
+[data-r-ui-accent="frost"] {
+  --r-ui-accent-name: "frost";
+  --r-ui-color-accent-primary: #2dd4bf;
+  --r-ui-color-accent-primary-hover: #0d9488;
+  --r-ui-color-accent-secondary: #5eead4;
+  --r-ui-color-focus-ring: #2dd4bf;
+
+  --r-ui-color-accent-50:  #f0fdfa;
+  --r-ui-color-accent-100: #ccfbf1;
+  --r-ui-color-accent-200: #99f6e4;
+  --r-ui-color-accent-300: #5eead4;
+  --r-ui-color-accent-400: #2dd4bf;
+  --r-ui-color-accent-500: #14b8a6;
+  --r-ui-color-accent-600: #0d9488;
+  --r-ui-color-accent-700: #0f766e;
+  --r-ui-color-accent-800: #115e59;
+  --r-ui-color-accent-900: #134e4a;
+  --r-ui-color-accent-950: #042f2e;
+}
+
+[data-r-ui-theme="clean-light"][data-r-ui-accent="frost"],
+[data-r-ui-theme="warm-sepia"][data-r-ui-accent="frost"] {
+  --r-ui-color-accent-primary: #0d9488;
+  --r-ui-color-accent-primary-hover: #0f766e;
+  --r-ui-color-focus-ring: #0d9488;
+}
+
+/* ==========================================================================
+   8. COLOR THEME: CORAL (SUNSET REFINED PEACH / LIFESTYLE)
+   ========================================================================== */
+[data-r-ui-accent="coral"] {
+  --r-ui-accent-name: "coral";
+  --r-ui-color-accent-primary: #fb7185;
+  --r-ui-color-accent-primary-hover: #e11d48;
+  --r-ui-color-accent-secondary: #fda4af;
+  --r-ui-color-focus-ring: #fb7185;
+
+  --r-ui-color-accent-50:  #fff1f2;
+  --r-ui-color-accent-100: #ffe4e6;
+  --r-ui-color-accent-200: #fecdd3;
+  --r-ui-color-accent-300: #fda4af;
+  --r-ui-color-accent-400: #fb7185;
+  --r-ui-color-accent-500: #f43f5e;
+  --r-ui-color-accent-600: #e11d48;
+  --r-ui-color-accent-700: #be123c;
+  --r-ui-color-accent-800: #9f1239;
+  --r-ui-color-accent-900: #881337;
+  --r-ui-color-accent-950: #4c0519;
+}
+
+[data-r-ui-theme="clean-light"][data-r-ui-accent="coral"],
+[data-r-ui-theme="warm-sepia"][data-r-ui-accent="coral"] {
+  --r-ui-color-accent-primary: #e11d48;
+  --r-ui-color-accent-primary-hover: #be123c;
+  --r-ui-color-focus-ring: #e11d48;
+}

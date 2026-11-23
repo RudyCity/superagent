@@ -1,0 +1,129 @@
+/**
+ * r-ui Design Tokens (v3.0.0)
+ * Default Namespace: --r-ui-* (Baseline for greenfield projects)
+ * Adaptive Rule: In projects with an existing design system/tokens, map directly to project tokens without forcing --r-ui-*
+ * Principles: Zero-Neon, Anti-Heavy Shadows, Crisp Micro-Elevation, W3C Standards
+ */
+
+:root {
+  /* ==========================================================================
+     1. COLOR PALETTE: DARK CANVAS (DEFAULT)
+     ========================================================================== */
+  --r-ui-color-canvas: #090a0f;
+  --r-ui-color-surface: #12141c;
+  --r-ui-color-surface-elevated: #1a1d28;
+  --r-ui-color-surface-overlay: #232736;
+  --r-ui-color-surface-pressed: #2c3144;
+
+  /* Borders & Dividers (Subtle, Clean 1px Lines) */
+  --r-ui-color-border-subtle: rgba(255, 255, 255, 0.07);
+  --r-ui-color-border-standard: rgba(255, 255, 255, 0.12);
+  --r-ui-color-border-strong: rgba(255, 255, 255, 0.22);
+
+  /* Typography / Text Colors (Calibrated Contrast) */
+  --r-ui-color-text-primary: #f8fafc;
+  --r-ui-color-text-secondary: #94a3b8;
+  --r-ui-color-text-tertiary: #64748b;
+  --r-ui-color-text-muted: #475569;
+  --r-ui-color-text-inverse: #090a0f;
+
+  /* Accent & Interactive (Calibrated Optical Shades, Zero-Neon) */
+  --r-ui-color-accent-primary: #38bdf8;
+  --r-ui-color-accent-primary-hover: #0284c7;
+  --r-ui-color-accent-secondary: #818cf8;
+  --r-ui-color-focus-ring: #38bdf8;
+
+  /* Semantic Feedback */
+  --r-ui-color-success: #10b981;
+  --r-ui-color-success-bg: rgba(16, 185, 129, 0.1);
+  --r-ui-color-warning: #f59e0b;
+  --r-ui-color-warning-bg: rgba(245, 158, 11, 0.1);
+  --r-ui-color-error: #ef4444;
+  --r-ui-color-error-bg: rgba(239, 68, 68, 0.1);
+  --r-ui-color-info: #0ea5e9;
+  --r-ui-color-info-bg: rgba(14, 165, 233, 0.1);
+
+  /* ==========================================================================
+     2. 4PT / 8PT SPATIAL RHYTHM
+     ========================================================================== */
+  --r-ui-space-1: 0.25rem;  /* 4px  - micro gaps, tag padding */
+  --r-ui-space-2: 0.5rem;   /* 8px  - icon gaps, button padding-y */
+  --r-ui-space-3: 0.75rem;  /* 12px - compact card padding */
+  --r-ui-space-4: 1rem;     /* 16px - standard padding, form gaps */
+  --r-ui-space-5: 1.25rem;  /* 20px - intermediate spacing */
+  --r-ui-space-6: 1.5rem;   /* 24px - standard card padding */
+  --r-ui-space-8: 2rem;     /* 32px - section sub-headers */
+  --r-ui-space-10: 2.5rem;  /* 40px - module gaps */
+  --r-ui-space-12: 3rem;    /* 48px - macro section spacing */
+  --r-ui-space-16: 4rem;    /* 64px - hero section spacing */
+
+  /* ==========================================================================
+     3. CORNER RADIUS SCALE
+     ========================================================================== */
+  --r-ui-radius-xs: 4px;
+  --r-ui-radius-sm: 6px;
+  --r-ui-radius-md: 10px;
+  --r-ui-radius-lg: 16px;
+  --r-ui-radius-xl: 24px;
+  --r-ui-radius-full: 9999px;
+
+  /* ==========================================================================
+     4. FLUID TYPOGRAPHY (CLAMP-BASED SCALING)
+     ========================================================================== */
+  --r-ui-font-hero: clamp(2.25rem, 1.5rem + 3.75vw, 4.25rem);
+  --r-ui-font-h1: clamp(1.85rem, 1.25rem + 2.5vw, 3rem);
+  --r-ui-font-h2: clamp(1.5rem, 1.15rem + 1.6vw, 2.25rem);
+  --r-ui-font-h3: clamp(1.25rem, 1.05rem + 1vw, 1.75rem);
+  --r-ui-font-body: clamp(0.9375rem, 0.875rem + 0.3vw, 1.0625rem);
+  --r-ui-font-small: clamp(0.8125rem, 0.775rem + 0.2vw, 0.875rem);
+  --r-ui-font-micro: 0.75rem;
+
+  /* Line Heights */
+  --r-ui-leading-tight: 1.15;
+  --r-ui-leading-snug: 1.35;
+  --r-ui-leading-normal: 1.6;
+  --r-ui-leading-relaxed: 1.75;
+
+  /* ==========================================================================
+     5. ELEVATIONS & CRISP DEPTH (Anti-Heavy Shadow, Zero-Neon)
+     Subtle ambient micro-elevations; no murky thick black blur.
+     ========================================================================== */
+  --r-ui-shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --r-ui-shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.08);
+  --r-ui-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+  --r-ui-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+
+  /* Focus & Focus-Visible Outlines (WCAG 2.2 AAA Double-Ring System) */
+  --r-ui-focus-outline: 2px solid var(--r-ui-color-focus-ring);
+  --r-ui-focus-offset: 2px;
+  --r-ui-focus-ring-inner: 0 0 0 2px var(--r-ui-color-canvas);
+  --r-ui-focus-ring-outer: 0 0 0 4px var(--r-ui-color-accent-primary);
+  --r-ui-focus-ring-double: 0 0 0 2px var(--r-ui-color-canvas), 0 0 0 4px var(--r-ui-color-accent-primary);
+
+  /* ==========================================================================
+     6. MOTION PHYSICS & KINETIC SPRINGS
+     ========================================================================== */
+  --r-ui-ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --r-ui-ease-spring-snappy: cubic-bezier(0.16, 1, 0.3, 1);
+  --r-ui-ease-spring-gentle: cubic-bezier(0.25, 1, 0.5, 1);
+  --r-ui-ease-spring-bouncy: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --r-ui-ease-spring-exit: cubic-bezier(0.7, 0, 0.84, 0);
+  --r-ui-ease-snappy: cubic-bezier(0.2, 0.9, 0.2, 1);
+  --r-ui-ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Animation Durations */
+  --r-ui-duration-instant: 100ms;
+  --r-ui-duration-fast: 180ms;
+  --r-ui-duration-normal: 260ms;
+  --r-ui-duration-slow: 400ms;
+
+  /* ==========================================================================
+     7. Z-INDEX LAYERING SPEC
+     ========================================================================== */
+  --r-ui-z-surface: 0;
+  --r-ui-z-sticky: 10;
+  --r-ui-z-dropdown: 20;
+  --r-ui-z-dialog: 50;
+  --r-ui-z-popover: 60;
+  --r-ui-z-toast: 100;
+}

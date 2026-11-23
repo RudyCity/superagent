@@ -1,0 +1,148 @@
+/**
+ * r-ui Multi-Theme Engine (v1.8.0)
+ * Namespace: --r-ui-*
+ * Usage: <html data-r-ui-theme="dark-nebula | clean-light | slate-obsidian | warm-sepia | high-contrast" data-r-ui-accent="cyan | emerald | violet | crimson | amber | monochrome | frost | coral">
+ * Principles: Zero-Neon, Anti-Heavy Shadows, Timeless Agency Refinement
+ */
+
+@import "./r-ui-color-themes.css";
+
+/* ==========================================================================
+   1. BASE CANVAS THEME: DARK NEBULA (DEFAULT REFINED DARK TECH)
+   ========================================================================== */
+:root,
+[data-r-ui-theme="dark-nebula"] {
+  --r-ui-theme-name: "dark-nebula";
+  --r-ui-color-canvas: #090a0f;
+  --r-ui-color-surface: #12141c;
+  --r-ui-color-surface-elevated: #1a1d28;
+  --r-ui-color-surface-overlay: #232736;
+  --r-ui-color-surface-pressed: #2c3144;
+
+  --r-ui-color-border-subtle: rgba(255, 255, 255, 0.07);
+  --r-ui-color-border-standard: rgba(255, 255, 255, 0.12);
+  --r-ui-color-border-strong: rgba(255, 255, 255, 0.22);
+
+  --r-ui-color-text-primary: #f8fafc;
+  --r-ui-color-text-secondary: #94a3b8;
+  --r-ui-color-text-tertiary: #64748b;
+  --r-ui-color-text-muted: #475569;
+  --r-ui-color-text-inverse: #090a0f;
+
+  /* Calibrated primary accent */
+  --r-ui-color-accent-primary: #38bdf8;
+  --r-ui-color-accent-primary-hover: #0284c7;
+  --r-ui-color-accent-secondary: #818cf8;
+  --r-ui-color-focus-ring: #38bdf8;
+}
+
+/* ==========================================================================
+   2. BASE CANVAS THEME: CLEAN LIGHT (WARM MODERN EDITORIAL LIGHT)
+   ========================================================================== */
+[data-r-ui-theme="clean-light"] {
+  --r-ui-theme-name: "clean-light";
+  --r-ui-color-canvas: #f8fafc;
+  --r-ui-color-surface: #ffffff;
+  --r-ui-color-surface-elevated: #f1f5f9;
+  --r-ui-color-surface-overlay: #e2e8f0;
+  --r-ui-color-surface-pressed: #cbd5e1;
+
+  --r-ui-color-border-subtle: rgba(0, 0, 0, 0.06);
+  --r-ui-color-border-standard: rgba(0, 0, 0, 0.12);
+  --r-ui-color-border-strong: rgba(0, 0, 0, 0.22);
+
+  --r-ui-color-text-primary: #0f172a;
+  --r-ui-color-text-secondary: #475569;
+  --r-ui-color-text-tertiary: #64748b;
+  --r-ui-color-text-muted: #94a3b8;
+  --r-ui-color-text-inverse: #ffffff;
+
+  /* Calibrated accent for light surface */
+  --r-ui-color-accent-primary: #0284c7;
+  --r-ui-color-accent-primary-hover: #0369a1;
+  --r-ui-color-accent-secondary: #6366f1;
+  --r-ui-color-focus-ring: #0284c7;
+}
+
+/* ==========================================================================
+   3. BASE CANVAS THEME: SLATE OBSIDIAN (MINIMALIST HIGH-END DARK TECH)
+   ========================================================================== */
+[data-r-ui-theme="slate-obsidian"] {
+  --r-ui-theme-name: "slate-obsidian";
+  --r-ui-color-canvas: #0b0f19;
+  --r-ui-color-surface: #111827;
+  --r-ui-color-surface-elevated: #1f2937;
+  --r-ui-color-surface-overlay: #374151;
+  --r-ui-color-surface-pressed: #4b5563;
+
+  --r-ui-color-border-subtle: rgba(255, 255, 255, 0.08);
+  --r-ui-color-border-standard: rgba(255, 255, 255, 0.14);
+  --r-ui-color-border-strong: rgba(255, 255, 255, 0.24);
+
+  --r-ui-color-text-primary: #f9fafb;
+  --r-ui-color-text-secondary: #cbd5e1;
+  --r-ui-color-text-tertiary: #94a3b8;
+  --r-ui-color-text-muted: #64748b;
+  --r-ui-color-text-inverse: #0b0f19;
+
+  /* Calibrated refined accent */
+  --r-ui-color-accent-primary: #38bdf8;
+  --r-ui-color-accent-primary-hover: #0ea5e9;
+  --r-ui-color-accent-secondary: #818cf8;
+  --r-ui-color-focus-ring: #38bdf8;
+}
+
+/* ==========================================================================
+   4. BASE CANVAS THEME: WARM SEPIA (CLASSIC PAPER & EDITORIAL NOVEL)
+   ========================================================================== */
+[data-r-ui-theme="warm-sepia"] {
+  --r-ui-theme-name: "warm-sepia";
+  --r-ui-color-canvas: #fbf8f2;
+  --r-ui-color-surface: #f3eee3;
+  --r-ui-color-surface-elevated: #eae3d5;
+  --r-ui-color-surface-overlay: #dfd6c4;
+  --r-ui-color-surface-pressed: #d3c7b2;
+
+  --r-ui-color-border-subtle: rgba(60, 48, 36, 0.08);
+  --r-ui-color-border-standard: rgba(60, 48, 36, 0.16);
+  --r-ui-color-border-strong: rgba(60, 48, 36, 0.3);
+
+  --r-ui-color-text-primary: #2c251e;
+  --r-ui-color-text-secondary: #5c4f42;
+  --r-ui-color-text-tertiary: #877665;
+  --r-ui-color-text-muted: #b5a492;
+  --r-ui-color-text-inverse: #fbf8f2;
+
+  /* Terracotta earthy accent */
+  --r-ui-color-accent-primary: #b45309;
+  --r-ui-color-accent-primary-hover: #92400e;
+  --r-ui-color-accent-secondary: #0f766e;
+  --r-ui-color-focus-ring: #b45309;
+}
+
+/* ==========================================================================
+   5. BASE CANVAS THEME: HIGH CONTRAST (WCAG 2.2 AAA ACCESSIBILITY)
+   ========================================================================== */
+[data-r-ui-theme="high-contrast"] {
+  --r-ui-theme-name: "high-contrast";
+  --r-ui-color-canvas: #000000;
+  --r-ui-color-surface: #0a0a0a;
+  --r-ui-color-surface-elevated: #171717;
+  --r-ui-color-surface-overlay: #262626;
+  --r-ui-color-surface-pressed: #404040;
+
+  --r-ui-color-border-subtle: #ffffff;
+  --r-ui-color-border-standard: #ffffff;
+  --r-ui-color-border-strong: #ffffff;
+
+  --r-ui-color-text-primary: #ffffff;
+  --r-ui-color-text-secondary: #ffffff;
+  --r-ui-color-text-tertiary: #e5e5e5;
+  --r-ui-color-text-muted: #d4d4d4;
+  --r-ui-color-text-inverse: #000000;
+
+  --r-ui-color-accent-primary: #ffe600;
+  --r-ui-color-accent-primary-hover: #ffcc00;
+  --r-ui-color-accent-secondary: #ffffff;
+  --r-ui-color-focus-ring: #ffe600;
+}

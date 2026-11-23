@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RUiProjectConfiguration",
+  "description": "Project adaptation configuration schema for r-ui Design System",
+  "type": "object",
+  "properties": {
+    "projectName": {
+      "type": "string",
+      "description": "Project name"
+    },
+    "archetype": {
+      "type": "string",
+      "enum": [
+        "b2b-cockpit",
+        "consumer-lifestyle",
+        "minimalist-editorial",
+        "precision-dark-tech",
+        "regulated-public-sector"
+      ],
+      "default": "b2b-cockpit",
+      "description": "Primary design archetype governing base density and corner radius"
+    },
+    "dials": {
+      "type": "object",
+      "properties": {
+        "visualDensity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 6,
+          "description": "1 = Airy/Luxury, 10 = Compact Data Cockpit"
+        },
+        "cornerRadius": {
+          "type": "string",
+          "enum": ["sharp-0px", "subtle-4px", "rounded-12px", "pill-9999px"],
+          "default": "subtle-4px"
+        },
+        "motionIntensity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 5,
+          "description": "1 = Static/Calm, 10 = High Spring Physics"
+        }
+      }
+    },
+    "theme": {
+      "type": "object",
+      "properties": {
+        "defaultCanvas": {
+          "type": "string",
+          "enum": ["dark-nebula", "clean-light", "slate-obsidian", "warm-sepia", "high-contrast"],
+          "default": "dark-nebula"
+        },
+        "defaultAccent": {
+          "type": "string",
+          "enum": ["cyan", "emerald", "violet", "crimson", "amber", "monochrome", "frost", "coral"],
+          "default": "cyan"
+        },
+        "customAccentHex": {
+          "type": "string",
+          "pattern": "^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$",
+          "description": "Custom brand hex color to override default accent"
+        }
+      }
+    },
+    "typography": {
+      "type": "object",
+      "properties": {
+        "displayFont": { "type": "string", "default": "sans-serif" },
+        "bodyFont": { "type": "string", "default": "system-ui, -apple-system, sans-serif" }
+      }
+    }
+  }
+}
