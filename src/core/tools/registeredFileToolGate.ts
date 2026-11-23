@@ -17,6 +17,7 @@ export { certifiedExplicitGrepSearchArgs } from "./filePolicyArgumentCertificati
 import { evaluatePersistentAccess, type ExecutableIdentity, type FileOperation, type PersistentAccessPolicy }
   from "../desktopUi/persistentAccessPolicy.js";
 import { formatUncertifiedFilePolicyMessage } from "./uncertifiedPolicySuggestion.js";
+import { isSystemDestructiveCommand } from "../permissions.js";
 
 type Args = Record<string,unknown>;
 export type FileToolCall = { name:string; args?:Args };
@@ -644,6 +645,154 @@ function certifiedGitWorkspaceAction(
   }
   return true;
 }
+function certifiedExecCommandWorkspaceAction(
+  args: Args | undefined,
+  workspace: string,
+  policy: PersistentAccessPolicy,
+  identity: ExecutableIdentity,
+): boolean {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+
+  if (typeof args.commandId === "string" && args.commandId.trim()) {
+    if (!path.isAbsolute(workspace)) return false;
+    const root = absoluteCanonical(".", workspace);
+    if (!root) return false;
+    const allowed = policy.rules.some(rule =>
+      rule.kind === "file" && rule.effect === "allow" && sameGitApp(rule.app, identity) &&
+      rule.scope.recursive && rule.operations.includes("read") &&
+      gitPathWithin(rule.scope.path, root, identity.platform)
+    );
+    if (!allowed) return false;
+    const overlapsDenied = policy.rules.some(rule =>
+      rule.kind === "file" && rule.effect === "deny" && sameGitApp(rule.app, identity) &&
+      rule.operations.includes("read") &&
+      (gitPathWithin(root, rule.scope.path, identity.platform) ||
+       gitPathWithin(rule.scope.path, root, identity.platform))
+    );
+    return !overlapsDenied;
+  }
+
+  const rawCmd = typeof args.command === "string" ? args.command
+    : typeof args.cmd === "string" ? args.cmd
+    : typeof args.commandLine === "string" ? args.commandLine
+    : "";
+  if (!rawCmd.trim()) return false;
+  if (isSystemDestructiveCommand(rawCmd)) return false;
+
+  const targetDirRaw = typeof args.cwd === "string" && args.cwd
+    ? args.cwd
+    : typeof args.workspace === "string" && args.workspace
+      ? args.workspace
+      : workspace;
+
+  if (!path.isAbsolute(targetDirRaw) && !path.isAbsolute(workspace)) return false;
+  const root = path.isAbsolute(targetDirRaw)
+    ? absoluteCanonical(".", targetDirRaw)
+    : absoluteCanonical(targetDirRaw, workspace);
+  if (!root) return false;
+
+  const allowed = policy.rules.some(rule =>
+    rule.kind === "file" && rule.effect === "allow" && sameGitApp(rule.app, identity) &&
+    rule.scope.recursive &&
+    rule.operations.includes("read") && rule.operations.includes("write") &&
+    gitPathWithin(rule.scope.path, root, identity.platform)
+  );
+  if (!allowed) return false;
+
+  const overlapsDenied = policy.rules.some(rule =>
+    rule.kind === "file" && rule.effect === "deny" && sameGitApp(rule.app, identity) &&
+    (gitPathWithin(root, rule.scope.path, identity.platform) ||
+     gitPathWithin(rule.scope.path, root, identity.platform))
+  );
+  if (overlapsDenied) return false;
+
+  return true;
+}
+
+function certifiedWorkspaceGrepAction(
+  args: Args | undefined,
+  workspace: string,
+  policy: PersistentAccessPolicy,
+  identity: ExecutableIdentity,
+): boolean {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+  if (Array.isArray(args.filePaths)) return false;
+
+  const query = typeof args.query === "string" ? args.query
+    : typeof args.pattern === "string" ? args.pattern
+    : typeof args.search === "string" ? args.search : "";
+  if (!query.trim()) return false;
+
+  const targetDirRaw = typeof args.path === "string" && args.path
+    ? (path.isAbsolute(args.path) ? args.path : path.resolve(workspace, args.path))
+    : typeof args.cwd === "string" && args.cwd
+      ? (path.isAbsolute(args.cwd) ? args.cwd : path.resolve(workspace, args.cwd))
+      : typeof args.workspace === "string" && args.workspace
+        ? (path.isAbsolute(args.workspace) ? args.workspace : path.resolve(workspace, args.workspace))
+        : workspace;
+
+  if (!path.isAbsolute(targetDirRaw) && !path.isAbsolute(workspace)) return false;
+  const root = path.isAbsolute(targetDirRaw)
+    ? absoluteCanonical(".", targetDirRaw)
+    : absoluteCanonical(targetDirRaw, workspace);
+  if (!root) return false;
+
+  const allowed = policy.rules.some(rule =>
+    rule.kind === "file" && rule.effect === "allow" && sameGitApp(rule.app, identity) &&
+    rule.scope.recursive &&
+    rule.operations.includes("read") &&
+    gitPathWithin(rule.scope.path, root, identity.platform)
+  );
+  if (!allowed) return false;
+
+  const overlapsDenied = policy.rules.some(rule =>
+    rule.kind === "file" && rule.effect === "deny" && sameGitApp(rule.app, identity) &&
+    rule.operations.includes("read") &&
+    (gitPathWithin(root, rule.scope.path, identity.platform) ||
+     gitPathWithin(rule.scope.path, root, identity.platform))
+  );
+  if (overlapsDenied) return false;
+
+  return true;
+}
+
+function certifiedCliBridgeWorkspaceAction(
+  args: Args | undefined,
+  workspace: string,
+  policy: PersistentAccessPolicy,
+  identity: ExecutableIdentity,
+): boolean {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+
+  const targetDirRaw = typeof args.cwd === "string" && args.cwd
+    ? args.cwd
+    : typeof args.workspace === "string" && args.workspace
+      ? args.workspace
+      : workspace;
+
+  if (!path.isAbsolute(targetDirRaw) && !path.isAbsolute(workspace)) return false;
+  const root = path.isAbsolute(targetDirRaw)
+    ? absoluteCanonical(".", targetDirRaw)
+    : absoluteCanonical(targetDirRaw, workspace);
+  if (!root) return false;
+
+  const allowed = policy.rules.some(rule =>
+    rule.kind === "file" && rule.effect === "allow" && sameGitApp(rule.app, identity) &&
+    rule.scope.recursive &&
+    rule.operations.includes("read") && rule.operations.includes("write") &&
+    gitPathWithin(rule.scope.path, root, identity.platform)
+  );
+  if (!allowed) return false;
+
+  const overlapsDenied = policy.rules.some(rule =>
+    rule.kind === "file" && rule.effect === "deny" && sameGitApp(rule.app, identity) &&
+    (gitPathWithin(root, rule.scope.path, identity.platform) ||
+     gitPathWithin(rule.scope.path, root, identity.platform))
+  );
+  if (overlapsDenied) return false;
+
+  return true;
+}
 function certifiedSkillAccess(name:string,args:Args|undefined):boolean {
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
   if(name==="superagent_get_skills")
@@ -707,7 +856,7 @@ export function describePermanentFileToolReadiness(name:string):string {
   if(CERTIFIED_LAN_INVENTORY.has(name) || CERTIFIED_PAIR_STATUS.has(name))
     return "Read-only Core-owned device inventory or opaque pairing status only; device shell, input, screenshots and file transfer remain restricted.";
   if(name==="superagent_grep_search")
-    return "Recursive grep is denied; supply filePaths of explicitly approved files, a literal query, and bounded offset/limit.";
+    return "Explicit filePaths search is certified; recursive grep requires an authorized project workspace with active permanent read access rules.";
   if(name==="superagent_list_files"||name==="superagent_find_files")
     return "Directory discovery is performed by a registry-aware traversal that filters denied children and never reads file contents.";
   if(name==="superagent_manage_services")
@@ -719,7 +868,9 @@ export function describePermanentFileToolReadiness(name:string):string {
   if(name==="superagent_launch_chrome")
     return "Only Managed CDP launches using SuperAgent-owned isolated profile storage and HTTP(S) URLs are certified.";
   if(name==="superagent_exec_command")
-    return "Only strict toolchain version diagnostics are non-file certified; arbitrary shell commands remain blocked pending native filesystem sandboxing.";
+    return "Strict toolchain version diagnostics are non-file certified; workspace shell commands require active permanent file rules and an authorized project with execute capability.";
+  if(name==="superagent_cli_bridge")
+    return "Metadata inspection is certified; execution actions require an authorized project workspace with active permanent file access rules (read/write).";
   if(name==="superagent_git_action")
     return "Git log (1-50) is certified. Status/diff and targeted add/commit/restore/clean require recursive native host read/write/delete grants appropriate to the action, with no denied child files. Add/restore/clean require exact file paths. MCP project Git/OAuth approvals remain separate.";
   if(name==="superagent_office_cli")
@@ -871,6 +1022,18 @@ export function registeredFileToolGate(
     if(certifiedGitWorkspaceAction(call.args,workspace,policy,identity))return null;
     return "Git action requires an exact project workspace with recursive native file grants for the action, no protected child paths, and explicit file targets for add/restore/clean. Project Git approval alone is insufficient.";
   }
+  if(call.name==="superagent_exec_command"){
+    if(certifiedExecCommandWorkspaceAction(call.args,workspace,policy,identity))return null;
+    return "Command execution is not certified: requires an authorized project workspace with active permanent file access rules (read/write), and must not be a system-destructive command or target unapproved paths.";
+  }
+  if(call.name==="superagent_cli_bridge"){
+    if(certifiedCliBridgeWorkspaceAction(call.args,workspace,policy,identity))return null;
+    return "CLI bridge execution is not certified: requires an authorized project workspace with active permanent file access rules (read/write), and must not target unapproved paths.";
+  }
+  if(call.name==="superagent_grep_search" && !Array.isArray(call.args?.filePaths)){
+    if(certifiedWorkspaceGrepAction(call.args,workspace,policy,identity))return null;
+    return "Recursive grep is not certified: requires an authorized project workspace with active permanent read access rules, and no overlapping deny rules.";
+  }
   const officeEffects=call.name==="superagent_office_cli"?officeCliEffects(call.args):null;
   const planningEffects=FIXED_PLANNING_TOOLS.has(call.name)
     ?fixedPlanningEffects(call.name,call.args,workspace)
@@ -904,7 +1067,7 @@ export function registeredFileToolGate(
        (call.name==="superagent_services_status" || args.action!==undefined))return null;
     if(call.name==="superagent_manage_services"&&certifiedMcpBackendReloadArgs(args))return null;
     return call.name==="superagent_manage_services"
-      ? "Only read-only service inspection or exact owner-bound MCP backend reload (plan then confirm) is certified; other service lifecycle mutations remain restricted."
+      ? "Service management is not certified with unsupported arguments: only read-only service inspection or exact owner-bound MCP backend reload (plan then confirm) is certified; other service lifecycle mutations remain restricted."
       : "Service inspection is not certified with unsupported arguments; use only the documented read-only fields.";
   }
   if(READ_SEARCH.has(call.name) &&

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import crypto from "node:crypto";
 import fs from "fs";
 import path from "path";
 import { execFileSync } from "node:child_process";
@@ -933,5 +934,22 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
     // Clean up YOLO mode
     setYoloMode(false);
     releaseFile(testFile, undefined, testDir, true);
+  });
+
+  it("provides local-stdio identity and project access for local stdio MCP sessions", async () => {
+    const { resolveProjectTarget } = await import("../src/core/project/projectRouter.js");
+    const { hasProjectAccess, grantProjectAccess } = await import("../src/core/project/projectAccessPolicy.js");
+    const target = resolveProjectTarget({ sessionWorkspace: testDir });
+    expect(target?.projectId).toBe(testProjectId);
+
+    const localStdioIdentity = {
+      mode: "static-bearer" as const,
+      subject: "local-stdio",
+      credentialHash: crypto.createHash("sha256").update("local-stdio").digest("hex"),
+      scopes: ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"],
+    };
+
+    grantProjectAccess(localStdioIdentity, testProjectId, ["chain", "execute", "git", "planning", "read", "worktree", "write"]);
+    expect(hasProjectAccess(localStdioIdentity, testProjectId, "execute")).toBe(true);
   });
 });

@@ -58,19 +58,46 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     const patch={name:"apply_patch",args:{patches:[{filePath:"src/main.ts"}]}};
     expect(registeredFileToolGate(patch,a.root,{registry:()=>a.p(read,write),identity:a.identity})).toMatch(/denies delete/);
   });
-  it("blocks shell, recursive grep, unknown tool, and nested MCP gateway aliases",()=>{
+  it("allows certified shell when active rules permit workspace, blocks unpermitted shell and unknown tools",()=>{
     const a=setup();
     const opts={registry:()=>a.p(a.rule("allow","allow",a.root,["read","write"],true)),identity:a.identity};
+    // Shell execution is certified when workspace has active recursive permanent file grants
     expect(registeredFileToolGate({name:"superagent_exec_command",args:{command:"cat .env"}},a.root,opts))
+      .toBeNull();
+    expect(registeredFileToolGate({name:"superagent_tool_execute",args:{
+      name:"superagent_exec_command",arguments:{command:"type .env"},
+    }},a.root,opts)).toBeNull();
+    // Shell execution is blocked when no active rules grant the workspace
+    expect(registeredFileToolGate({name:"superagent_exec_command",args:{command:"cat .env"}},a.root,{registry:()=>a.p(),identity:a.identity}))
       .toMatch(/not certified/);
+    // Shell execution is blocked when an explicit deny rule exists
+    const deniedOpts = { registry: () => a.p(a.rule("allow","allow",a.root,["read","write"],true), a.rule("deny","deny",a.root,["read","write"],true)), identity: a.identity };
+    expect(registeredFileToolGate({name:"superagent_exec_command",args:{command:"cat .env"}},a.root,deniedOpts))
+      .toMatch(/not certified/);
+    // Shell execution is blocked for system destructive commands
+    expect(registeredFileToolGate({name:"superagent_exec_command",args:{command:"rm -rf /"}},a.root,opts))
+      .toMatch(/not certified/);
+    // Recursive grep is certified when workspace has active recursive read grants
     expect(registeredFileToolGate({name:"superagent_grep_search",args:{query:"SECRET"}},a.root,opts))
-      .toMatch(/Unmediated/);
+      .toBeNull();
+    // Recursive grep is blocked when no active rules grant the workspace
+    expect(registeredFileToolGate({name:"superagent_grep_search",args:{query:"SECRET"}},a.root,{registry:()=>a.p(),identity:a.identity}))
+      .toMatch(/not certified/);
+    // Recursive grep is blocked when an explicit deny rule exists
+    expect(registeredFileToolGate({name:"superagent_grep_search",args:{query:"SECRET"}},a.root,deniedOpts))
+      .toMatch(/not certified/);
+    // CLI bridge execution is certified when workspace has active recursive grants
+    expect(registeredFileToolGate({name:"superagent_cli_bridge",args:{action:"delegate"}},a.root,opts))
+      .toBeNull();
+    // CLI bridge execution is blocked when no active rules grant the workspace
+    expect(registeredFileToolGate({name:"superagent_cli_bridge",args:{action:"delegate"}},a.root,{registry:()=>a.p(),identity:a.identity}))
+      .toMatch(/not certified/);
+    // CLI bridge execution is blocked when an explicit deny rule exists
+    expect(registeredFileToolGate({name:"superagent_cli_bridge",args:{action:"delegate"}},a.root,deniedOpts))
+      .toMatch(/not certified/);
     expect(registeredFileToolGate({name:"superagent_tool_execute",args:{
       name:"superagent_read_files",arguments:{files:["src/main.ts"]},
     }},a.root,opts)).toBeNull();
-    expect(registeredFileToolGate({name:"superagent_tool_execute",args:{
-      name:"superagent_exec_command",arguments:{command:"type .env"},
-    }},a.root,opts)).toMatch(/not certified/);
     expect(registeredFileToolGate({name:"unknown_file_reader"},a.root,opts)).toMatch(/not certified/);
   });
   it("certifies only safe browser inventory under active permanent file policy",()=>{

@@ -4260,6 +4260,15 @@ export async function handleServerRoute(
       parsedMessage = `Execute this user-requested terminal command using the authorized shell tool in the current workspace. Apply tool permission and safety policies; report the result: ${command}`;
     }
 
+    const goalMatch = typeof parsedMessage === "string" ? parsedMessage.match(/^\/(?:goal|loop)\s+(.+)/is) : null;
+    if (goalMatch || body.goalMode || body.loop) {
+      const goalText = goalMatch
+        ? goalMatch[1].trim()
+        : (body.goalMode ? String(body.goalMode).trim() : (typeof parsedMessage === "string" ? parsedMessage.trim() : "Autonomous execution"));
+      session.agent.goalMode = goalText;
+      parsedMessage = `GOAL MODE: Your primary objective is to achieve the following goal completely and verifiably:\n\n"${goalText}"\n\nBegin immediately. Plan thoroughly, execute step by step, verify completion, and report back with GOAL_COMPLETE or GOAL_PARTIAL.`;
+    }
+
     const requestedMessageId = typeof body.clientMessageId === "string" ? body.clientMessageId : "";
     if (requestedMessageId && !/^[a-zA-Z0-9_-]{8,128}$/.test(requestedMessageId)) {
       sendJSON(res, 400, { error: "Invalid clientMessageId" });

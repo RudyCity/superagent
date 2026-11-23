@@ -134,7 +134,7 @@ import { ReservedProjectIdError } from "../project/projectSecurityResources.js";
 import type { ResolvedProjectTarget } from "../project/projectRouter.js";
 import { LocalProjectProvider } from "../project/providers/localProjectProvider.js";
 import type { ProjectProvider, ProjectProviderKind, ResolvedProjectContext } from "../project/providers/types.js";
-import { getProjectCapabilityForTool, hasProjectAccess, listProjectAccess, ProjectAccessPolicyStoreError } from "../project/projectAccessPolicy.js";
+import { getProjectCapabilityForTool, hasProjectAccess, listProjectAccess, ProjectAccessPolicyStoreError, grantProjectAccess, type ProjectAccessIdentity } from "../project/projectAccessPolicy.js";
 import { standaloneSshProjectProvider } from "./tools/standaloneSshProjectTools.js";
 
 const localProjectProvider = new LocalProjectProvider();
@@ -1946,8 +1946,36 @@ export async function startSuperagentMcpServer(options: McpServerOptions = {}): 
     console.error(...args);
   };
 
+  const localStdioIdentity = {
+    mode: "static-bearer" as const,
+    subject: "local-stdio",
+    credentialHash: crypto.createHash("sha256").update("local-stdio").digest("hex"),
+    scopes: ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"],
+  };
+
+  const effectiveOptions: McpServerOptions = {
+    ...options,
+    getIdentity: options.getIdentity || (() => localStdioIdentity),
+  };
+
+  // Auto-grant access to the active workspace project for local stdio identity if not already present
+  try {
+    const resolvedWs = effectiveOptions.workspace || process.cwd();
+    const target = resolveProjectTarget({ sessionWorkspace: resolvedWs });
+    if (target?.projectId && target.project?.type === "local") {
+      if (!hasProjectAccess(localStdioIdentity, target.projectId, "execute")) {
+        grantProjectAccess(localStdioIdentity, target.projectId, [
+          "chain", "execute", "git", "planning", "read", "worktree", "write",
+        ]);
+        logMcp(`[local-stdio] Auto-granted project access for local project "${target.projectId}"`);
+      }
+    }
+  } catch {
+    // Non-fatal if project resolution fails
+  }
+
   logMcp("Starting Superagent MCP Server via stdio transport...");
-  const server = createSuperagentMcpServer(options);
+  const server = createSuperagentMcpServer(effectiveOptions);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   logMcp("Superagent MCP Server connected and listening on stdio.");
