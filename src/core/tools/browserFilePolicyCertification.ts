@@ -1,3 +1,5 @@
+import { isCertifiedIngressStagedFile } from "../mcp/mcpUploadIngress.js";
+
 /** File-safe MCP Chrome metadata certification; all other browser operations remain denied. */
 type BrowserCall = {name:string; args?:Record<string,unknown>};
 const exact=(o:Record<string,unknown>,keys:string[])=>Object.keys(o).every(k=>keys.includes(k));
@@ -116,4 +118,20 @@ export function certifiedDelegateWebAction(call:BrowserCall):boolean{
    }
    default:return false;
  }
+}
+
+/**
+ * Validates that browser file upload operations only target certified ingress
+ * files staged and verified by the host file policy pipeline.
+ */
+export function certifiedBrowserUpload(call: BrowserCall): boolean {
+  if (call.name !== "superagent_chrome_cdp" && call.name !== "superagent_control_chrome_cdp") return false;
+  const a = call.args;
+  if (!a || typeof a !== "object" || Array.isArray(a)) return false;
+  const cmd = a.command || a.cmd;
+  if (cmd !== "upload_file" && cmd !== "handle_file_chooser") return false;
+  const raw = a.files ?? a.filePaths ?? a.paths ?? a.filePath ?? a.path;
+  const inputs = typeof raw === "string" ? [raw] : Array.isArray(raw) ? raw : [];
+  if (inputs.length < 1 || inputs.length > 10) return false;
+  return inputs.every((p) => typeof p === "string" && isCertifiedIngressStagedFile(p));
 }

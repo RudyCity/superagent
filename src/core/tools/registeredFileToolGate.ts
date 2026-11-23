@@ -11,7 +11,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { readPermanentAccessRegistry } from "../desktopUi/permanentRegistryStore.js";
 import { parseReadOnlyServiceArgs } from "../runtime/serviceReadPolicy.js";
-import { certifiedBrowserObservation, certifiedDelegateWebAction } from "./browserFilePolicyCertification.js";
+import { certifiedBrowserObservation, certifiedDelegateWebAction, certifiedBrowserUpload } from "./browserFilePolicyCertification.js";
 import { certifiedExplicitGrepSearchArgs } from "./filePolicyArgumentCertification.js";
 export { certifiedExplicitGrepSearchArgs } from "./filePolicyArgumentCertification.js";
 import { evaluatePersistentAccess, type ExecutableIdentity, type FileOperation, type PersistentAccessPolicy }
@@ -1046,6 +1046,7 @@ export function registeredFileToolGate(
   // operations qualify. All other browser/file-capable actions fail closed.
   if(certifiedBrowserObservation(call))return null;
   if(certifiedDelegateWebAction(call))return null;
+  if(certifiedBrowserUpload(call))return null;
   if(certifiedLanInventory(call.name,call.args))return null;
   if(certifiedSupervisedCoreMutation(call.name,call.args))return null;
   if(call.name === "superagent_desktop_ui"){

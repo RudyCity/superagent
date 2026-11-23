@@ -217,6 +217,8 @@ import {
   validateGatewayExecuteTarget,
   gatewayTextResult,
 } from "./mcpToolGateway.js";
+import { runToolPreflight } from "./mcpToolPreflight.js";
+import { runToolDoctor } from "./mcpToolDoctor.js";
 import { getMcpToolExposure } from "./mcpToolExposure.js";
 import { mcpToolMetrics } from "./mcpToolMetrics.js";
 import { isR1OwnerToolCallAllowed } from "./mcpSafeOwnerPolicy.js";
@@ -1820,14 +1822,53 @@ function extractMcpResultText(result: unknown): string {
             (MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES as readonly string[]).includes(tool.name)).map((tool) => tool.name),
           initiallyAdvertisedTools: getGatewayInitiallyAdvertisedTools(authorizedTools).map((tool) => tool.name),
         });
+      } else if (toolName === MCP_GATEWAY_TOOL_NAMES.preflight) {
+        const callerIdentity = getIdentity?.();
+        const preflight = await runToolPreflight({
+          ...rawArgs,
+          scopes: callerIdentity?.scopes,
+          identityHandle: callerIdentity?.subject,
+        });
+        result = gatewayTextResult(preflight);
+      } else if (toolName === MCP_GATEWAY_TOOL_NAMES.doctor) {
+        const doctor = await runToolDoctor(rawArgs);
+        result = gatewayTextResult(doctor);
       } else if (toolName === MCP_GATEWAY_TOOL_NAMES.execute) {
         const target = validateGatewayExecuteTarget(authorizedTools, rawArgs);
-        result = !target
-          ? { content: [{ type: "text", text: "Target tool unavailable, unauthorized, or arguments invalid." }], isError: true }
-          : await handleMcpCall({
+        if (!target) {
+          result = { content: [{ type: "text", text: "Target tool unavailable, unauthorized, or arguments invalid." }], isError: true };
+        } else {
+          // Preflight checkpoint validation using the identical policy evaluator
+          const callerIdentity = getIdentity?.();
+          const preflight = await runToolPreflight({
+            name: target.name,
+            arguments: target.arguments,
+            scopes: callerIdentity?.scopes,
+            identityHandle: callerIdentity?.subject,
+          });
+          if (preflight.reasonCode === "host_policy_blocked") {
+            result = {
+              content: [{
+                type: "text",
+                text: `HOST_POLICY_BLOCKED: ${preflight.message} ${preflight.remediation || ""}`,
+              }],
+              isError: true,
+            };
+          } else if (preflight.reasonCode === "unsupported_action") {
+            result = {
+              content: [{
+                type: "text",
+                text: `UNSUPPORTED_ACTION: ${preflight.message}`,
+              }],
+              isError: true,
+            };
+          } else {
+            result = await handleMcpCall({
               ...request,
               params: { ...request.params, name: target.name, arguments: target.arguments },
             });
+          }
+        }
       } else {
         result = await dispatchMcpToolCall(request, auditContext);
       }

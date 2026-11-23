@@ -4,7 +4,7 @@
 
 import { McpToolResult } from "../types.js";
 import { fileRulesRegistered } from "../../tools/registeredFileToolGate.js";
-import { certifiedBrowserObservation, certifiedDelegateWebAction, certifiedRemoteWebUrl } from "../../tools/browserFilePolicyCertification.js";
+import { certifiedBrowserObservation, certifiedDelegateWebAction, certifiedBrowserUpload, certifiedRemoteWebUrl } from "../../tools/browserFilePolicyCertification.js";
 import { safeManagedChromeObservation } from "../../tools/safeManagedChromeObservation.js";
 import { safeDelegateChromeObservation } from "../../tools/safeDelegateChromeObservation.js";
 import { delegateCdpTransport, runWithCertifiedDelegateWebScope } from "../../delegate/cdpTransport.js";
@@ -96,7 +96,8 @@ export async function handleControlChromeCdp(args: any, options: { hostOwned?: b
       const filePolicyActive=fileRulesRegistered();
       const certified=certifiedBrowserObservation({name:"superagent_chrome_cdp",args:args||{}});
       const certifiedWeb=certifiedDelegateWebAction({name:"superagent_chrome_cdp",args:args||{}});
-      if(filePolicyActive&&!certified&&!certifiedWeb) {
+      const certifiedUpload=certifiedBrowserUpload({name:"superagent_chrome_cdp",args:args||{}});
+      if(filePolicyActive&&!certified&&!certifiedWeb&&!certifiedUpload) {
         return {content:[{type:"text",text:"Chrome command is not certified for permanent file access restrictions."}],isError:true};
       }
       // Forward only the narrow metadata command; Core reconstructs a filtered

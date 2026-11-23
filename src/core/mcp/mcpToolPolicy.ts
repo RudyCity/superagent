@@ -49,6 +49,8 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   superagent_tool_search: "safe",
   superagent_tool_describe: "safe",
   superagent_tool_status: "safe",
+  superagent_tool_preflight: "safe",
+  superagent_tool_doctor: "safe",
   // The gateway router is safe to invoke: it re-authorizes the selected
   // target and cannot elevate scopes or bypass the HTTP tool allowlist.
   superagent_tool_execute: "safe",

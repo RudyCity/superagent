@@ -11,6 +11,8 @@ export const R1_OWNER_TOOLS: readonly string[] = Object.freeze([
   "superagent_tool_describe",
   "superagent_tool_execute",
   "superagent_tool_status",
+  "superagent_tool_preflight",
+  "superagent_tool_doctor",
   "superagent_read_files",
   "superagent_list_files",
   "superagent_grep_search",
