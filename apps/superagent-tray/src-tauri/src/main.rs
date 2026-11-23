@@ -284,6 +284,10 @@ fn record_verified_device_incident(
                 .body("A previously paired LAN device disconnected. Review LAN Devices.");
             if let Some(ticket_id) = ticket { builder = builder.id(ticket_id); }
             if let Err(error) = builder.show() {
+                if let Some(ticket_id) = ticket {
+                    tray_os_action::cancel(ticket_id);
+                }
+                eprintln!("[tray] LAN device desktop alert unavailable: {error}");
             }
         }
     }
