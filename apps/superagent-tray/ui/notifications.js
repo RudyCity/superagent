@@ -25,6 +25,7 @@
     items: [], history: [], digest: null, prefs: null, sourceLevels: {},
     unreadCount: 0, filter: "all", popoverTab: "action", source: "all", device: "all", period: "all",
     grouped: false, search: "", open: false, busy: false, error: "", securitySync: "unknown", prefsDirty: false, evictedCount: 0,
+    refreshQueued: false, securityRefreshQueued: false,
   };
   // A click must not lose its read receipt just because a refresh or native
   // action is currently running. Read receipts wait for the existing request.
@@ -683,8 +684,19 @@
     const save = $("notification-save-preferences");
     if (save) save.disabled = state.busy || !state.prefsDirty;
   }
+  function flushQueuedRefresh() {
+    if (state.busy || !state.refreshQueued) return;
+    const syncSecurity = state.securityRefreshQueued;
+    state.refreshQueued = false;
+    state.securityRefreshQueued = false;
+    void Promise.resolve().then(() => refresh(syncSecurity));
+  }
   async function refresh(syncSecurity = false) {
-    if (state.busy) return;
+    if (state.busy) {
+      state.refreshQueued = true;
+      state.securityRefreshQueued ||= syncSecurity === true;
+      return;
+    }
     state.busy = true;
     render();
     try {
@@ -712,7 +724,13 @@
       if (syncSecurity === true) state.securitySync = "unavailable";
       state.error = "Cannot load notifications. Open the installed Tray or retry.";
       render();
-    } finally { state.busy = false; render(); flushPendingReads(); finishOsActivation(); }
+    } finally {
+      state.busy = false;
+      render();
+      flushPendingReads();
+      finishOsActivation();
+      flushQueuedRefresh();
+    }
   }
   // Keep the click synchronous for navigation and coalesce repeated read
   // receipts until the native write has completed.
@@ -738,7 +756,7 @@
     try { apply(await invoke(action, id)); }
     catch {
       state.error = "Notification change could not be saved. Retry after checking Tray.";
-    } finally { state.busy = false; render(); flushPendingReads(); }
+    } finally { state.busy = false; render(); flushPendingReads(); flushQueuedRefresh(); }
   }
   function collectPrefs() {
     const mode = $("notification-dnd-mode")?.value || "off";
@@ -784,7 +802,7 @@
       if (feedback) feedback.textContent = "Notification preferences saved.";
     } catch {
       if (feedback) feedback.textContent = "Couldn't save preferences. Bring the native Tray to the foreground and retry.";
-    } finally { state.busy = false; render(); flushPendingReads(); }
+    } finally { state.busy = false; render(); flushPendingReads(); flushQueuedRefresh(); }
   }
   function close() { state.open = false; render(); }
   function toggle() {
@@ -917,7 +935,9 @@
     });
     // Catch an OS click delivered before the WebView attached its listener.
     void takeOsActivation();
-    window.__TAURI__?.event?.listen?.("tray-notifications-changed", refresh);
+    window.__TAURI__?.event?.listen?.("tray-notifications-changed", () => { void refresh(); });
+    window.__TAURI__?.event?.listen?.("access-manager://requests-updated", () => { void refresh(true); });
+    window.__TAURI__?.event?.listen?.("access-manager://new-request", () => { void refresh(true); });
     window.__TAURI__?.event?.listen?.("desktop-server-started", refresh);
     window.__TAURI__?.event?.listen?.("desktop-server-stopped", refresh);
     window.__TAURI__?.event?.listen?.("desktop-server-start-failed", refresh);

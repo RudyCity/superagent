@@ -33,6 +33,7 @@ function routeForFixture(id: string, items: Record<string, unknown>[]) {
 function mount(items: Record<string, unknown>[] = []) {
   const elements = new Map<string, any>();
   const domEvents = new Map<string, (...args: any[]) => any>();
+  const nativeEvents = new Map<string, (event: unknown) => unknown>();
   const mockInvocations: { action: string; id?: string | null }[] = [];
   const nav = vi.fn();
   let preferences: any = {
@@ -149,7 +150,10 @@ function mount(items: Record<string, unknown>[] = []) {
           }
           return snapshot();
         }) },
-        event: { listen: vi.fn(async () => () => {}) },
+        event: { listen: vi.fn(async (name: string, listener: (event: unknown) => unknown) => {
+          nativeEvents.set(name, listener);
+          return () => nativeEvents.delete(name);
+        }) },
       },
       setInterval: vi.fn(),
       addEventListener: vi.fn(),
@@ -158,7 +162,8 @@ function mount(items: Record<string, unknown>[] = []) {
     Object, Date, Number, String, Promise,
   });
   vm.runInContext(js, context);
-  return { get, filters, quickFilters, mockInvocations, nav, window: context.window };
+  const emit = (name: string) => nativeEvents.get(name)?.({ payload: null });
+  return { get, filters, quickFilters, mockInvocations, nav, window: context.window, emit };
 }
 
 describe("Tray Notification Manager", () => {
@@ -306,7 +311,7 @@ describe("Tray Notification Manager", () => {
     mounted.window.__superagentLanFocusNotificationDevice = focus;
     await new Promise<void>((done) => setImmediate(done));
     const card = mounted.get("tray-notification-recent").children[0];
-    const open = card.children[1].children[3].children[0];
+    const open = card.children[1].children[3].children.find((node: any) => node.className === "notification-link");
     expect(open.textContent).toBe("Review LAN device");
     open.trigger("click");
     await new Promise<void>((done) => setImmediate(done));
@@ -450,6 +455,27 @@ describe("Tray Notification Manager", () => {
     expect(rust).not.toContain("approveProjectAccessRequest(&app)");
   });
 
+  it("queues request and notification change events while the inbox is busy", async () => {
+    const mounted = mount();
+
+    // The initial list read starts during mount. Events arriving before it
+    // completes must survive the busy guard and coalesce into one secure sync.
+    mounted.emit("tray-notifications-changed");
+    mounted.emit("access-manager://requests-updated");
+    mounted.emit("access-manager://new-request");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(mounted.mockInvocations.filter(call => call.action === "sync-security"))
+      .toHaveLength(1);
+    expect(js).toContain('"access-manager://requests-updated"');
+    expect(js).toContain('"access-manager://new-request"');
+
+    mounted.emit("access-manager://new-request");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(mounted.mockInvocations.filter(call => call.action === "sync-security"))
+      .toHaveLength(2);
+  });
+
   it("opens pending access from its card or action and preserves request focus across startup", async () => {
     const mounted = mount([{
       id: "mcp-pending:request-42", source: "security", severity: "critical",
@@ -460,7 +486,7 @@ describe("Tray Notification Manager", () => {
     // just the first two microtasks; this is deterministic across CI OSes.
     await new Promise<void>((resolve) => setImmediate(resolve));
     const card = mounted.get("tray-notification-recent").children[0];
-    const open = card.children[1].children[3].children[0];
+    const open = card.children[1].children[3].children.find((node: any) => node.className === "notification-link");
     expect(open.textContent).toBe("Review pending access");
     card.trigger("click", { target: { closest: () => null } });
     expect(mounted.nav).toHaveBeenCalledWith("security");
@@ -495,7 +521,7 @@ describe("Tray Notification Manager", () => {
     // just the first two microtasks; this is deterministic across CI OSes.
     await new Promise<void>((resolve) => setImmediate(resolve));
     const card = mounted.get("tray-notification-recent").children[0];
-    const open = card.children[1].children[3].children[0];
+    const open = card.children[1].children[3].children.find((node: any) => node.className === "notification-link");
     expect(open.textContent).toBe(label);
     card.trigger("click", { target: { closest: () => null } });
     expect(mounted.nav).toHaveBeenCalledWith("security:mcp");
@@ -657,7 +683,7 @@ describe("Tray Notification Manager", () => {
     // just the first two microtasks; this is deterministic across CI OSes.
     await new Promise<void>((resolve) => setImmediate(resolve));
       const card = mounted.get("tray-notification-recent").children[0];
-      const open = card.children[1].children[3].children[0];
+      const open = card.children[1].children[3].children.find((node: any) => node.className === "notification-link");
       mounted.window.__superagentAccessManagerFocusRequest = vi.fn(async () =>
         ({targetFound:true,tab:"mcp"}));
       if (mode === "card") card.trigger("click", { target: { closest: () => null } });
