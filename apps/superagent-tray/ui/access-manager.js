@@ -1087,24 +1087,6 @@
     // state but never writes a project or grants a capability.
     window.__superagentEditProject = project => { editingProject = project; };
 
-    // Section 1: Pending Access Requests
-    const reqSection = make("section", "access-stored access-mcp-card");
-    const reqHead = make("div", "access-stored-head");
-    const reqTitle = make("h3", "", "Permintaan Akses Masuk");
-    const reqBadge = make("span", "access-count", "0 permintaan");
-    reqBadge.id = "access-mcp-pending-count";
-    const reqControls = make("div", "access-mcp-pending-controls");
-    const reqLoad = action("Load", "access-audit-refresh", () => void refreshMcpRequests());
-    reqLoad.id = "access-mcp-project-pending-load";
-    reqLoad.title = "Muat ulang permintaan akses masuk";
-    reqLoad.setAttribute("aria-label", reqLoad.title);
-    reqControls.append(reqBadge, reqLoad);
-    reqHead.append(reqTitle, reqControls);
-
-    const reqList = make("div", "access-mcp-list");
-    reqList.id = "access-mcp-pending-list";
-    reqSection.append(reqHead, reqList);
-
     // Section 2: Direct Grant Form
     const grantSection = make("section", "access-editor access-mcp-card");
     const grantTitle = make("h3", "", "Berikan Akses Proyek ke Agent MCP");
@@ -1177,10 +1159,7 @@
     grantSection.append(grantTitle, grantDesc, grantForm);
 
     const workspaceGrid = make("div", "access-mcp-grid access-mcp-grid-workspace");
-    workspaceGrid.append(reqSection, grantSection);
-
-    // All tools are sourced from the same Core catalog as MCP discovery.
-    // The inventory is advisory; navigation to a grant form never grants access.
+    workspaceGrid.append(projectSection, grantSection);
     const toolsSection = make("section", "access-stored access-mcp-card access-mcp-tools-card");
     toolsSection.id = "access-mcp-tool-catalog";
     const toolsHead = make("div", "access-stored-head");
@@ -1217,6 +1196,9 @@
     const toolSummary = make("p", "access-summary", "Memuat inventaris dari Core…");
     toolSummary.id = "access-mcp-tool-summary";
     toolSummary.setAttribute("role", "status");
+    const matrixInspector = make("div", "access-mcp-matrix-inspector");
+    matrixInspector.id = "access-mcp-matrix-inspector";
+    matrixInspector.hidden = true;
     const toolList = make("div", "access-mcp-tool-list");
     toolList.id = "access-mcp-tool-list";
     const toolMore = action("Tampilkan 25 lagi", "access-audit-refresh", () => {
@@ -1224,7 +1206,7 @@
     });
     toolMore.id = "access-mcp-tool-more";
     toolMore.hidden = true;
-    toolsSection.append(toolsHead, toolFilters, toolSummary, toolList, toolMore);
+    toolsSection.append(toolsHead, toolFilters, toolSummary, matrixInspector, toolList, toolMore);
 
     const legacySection = make("section", "access-stored access-mcp-card");
     legacySection.id = "access-mcp-legacy-requests";
@@ -1270,6 +1252,45 @@
       action_dependent: "Capability bervariasi menurut tindakan; pilih tindakan sebelum meninjau Akses Proyek.",
     };
     return messages[tool.grantState] || "Izin proyek dan Aturan Aktif diperiksa saat eksekusi.";
+  }
+
+  function inspectToolMatrix(tool) {
+    const inspector = $("access-mcp-matrix-inspector");
+    if (!inspector) return;
+    inspector.replaceChildren();
+    inspector.hidden = false;
+
+    const head = make("div", "access-mcp-matrix-head");
+    head.append(
+      make("strong", "", "Matrix & Preflight: " + tool.name),
+      make("span", "access-mcp-tool-badge " + (tool.risk === "dangerous" ? "is-risky" : ""), tool.risk === "dangerous" ? "Berisiko" : "Read-only")
+    );
+
+    const closeBtn = action("Tutup", "access-audit-refresh", () => {
+      inspector.hidden = true;
+      inspector.replaceChildren();
+    });
+    closeBtn.id = "access-mcp-matrix-close";
+    head.append(closeBtn);
+
+    const grid = make("div", "access-mcp-matrix-grid");
+    const addField = (label, val, isFlag, isWarn) => {
+      const field = make("div", "access-mcp-matrix-field");
+      field.append(make("span", "access-mcp-matrix-label", label));
+      field.append(make("span", "access-mcp-matrix-val" + (isWarn ? " is-blocked" : isFlag ? " is-ready" : ""), String(val)));
+      grid.append(field);
+    };
+
+    addField("OAuth Scopes", Array.isArray(tool.oauthScopesRequired) ? tool.oauthScopesRequired.join(", ") : "mcp:tools");
+    addField("Project Capability", tool.capability || (tool.capabilitiesByAction ? "action-dependent" : "none"));
+    addField("Host Requirement", tool.hostRequirement || "none");
+    addField("Host Readiness", tool.hostReadiness || "unknown", false, tool.hostBlocked);
+    addField("Staging Ingress", tool.name.includes("chrome") || tool.name.includes("upload") ? "Certified Ingress (0o700)" : "Standard Execution");
+    addField("Preflight Baseline", tool.hostBlocked ? "host_policy_blocked" : tool.grantState === "missing" ? "project_grant_missing" : "ready", tool.grantState === "granted" && !tool.hostBlocked, tool.hostBlocked);
+
+    inspector.append(head, grid);
+    inspector.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+    status("Inspeksi Matrix & Preflight dibuka untuk " + tool.name, "info");
   }
 
   function reviewToolCapability(tool, capability) {
@@ -1400,6 +1421,12 @@
         inspect.id = "access-mcp-tool-host-" + tool.name;
         buttons.append(inspect);
       }
+      const inspectMatrix = action("Matrix & Preflight", "access-audit-refresh", () => {
+        inspectToolMatrix(tool);
+      });
+      inspectMatrix.id = "access-mcp-tool-matrix-" + tool.name;
+      inspectMatrix.title = "Inspeksi Unified Capability Matrix dan status Preflight";
+      buttons.append(inspectMatrix);
       row.append(header, description, grant, oauth, host, buttons);
       list.append(row);
     }
@@ -1620,6 +1647,11 @@
     }
     if ($("access-req-center-rules-count")) {
       $("access-req-center-rules-count").textContent = rulePending.length + " permintaan";
+    }
+    const permitBadge = $("access-rules-pending-permit-badge");
+    if (permitBadge) {
+      permitBadge.textContent = rulePending.length + " permintaan";
+      permitBadge.className = "access-nav-tab-badge" + (rulePending.length > 0 ? " pending" : " zero");
     }
   }
 
@@ -2679,11 +2711,8 @@
     tabMcp.setAttribute("aria-selected", "false");
     tabMcp.setAttribute("aria-controls", "access-pane-mcp");
     tabMcp.tabIndex = -1;
-    const mcpBadge = make("span", "access-nav-tab-badge zero", "0");
-    mcpBadge.id = "access-tab-badge-mcp";
     tabMcp.append(
-      make("span", "access-nav-tab-label", "Akses Proyek"),
-      mcpBadge
+      make("span", "access-nav-tab-label", "Akses Proyek")
     );
     tabMcp.addEventListener("click", () => setActiveTab("mcp"));
 
@@ -2718,6 +2747,38 @@
     paneRegister.setAttribute("aria-labelledby", "access-nav-tab-register");
     paneRegister.append(hostOverview, onboarding, split);
 
+    const rulePermitBar = make("section", "access-editor access-mcp-intro access-rule-permit-banner");
+    rulePermitBar.id = "access-rule-permit-banner";
+    const permitHead = make("div", "access-mcp-intro-head");
+    const permitCopy = make("div", "access-mcp-intro-copy");
+    permitCopy.append(
+      make("h3", "", "Request Permit Aturan Aktif"),
+      make("p", "access-hint",
+        "Semua permohonan izin (request permit) untuk file/folder host atau aplikasi desktop masuk dan dikelola di Pusat Permintaan bersama permohonan proyek.")
+    );
+    const permitControls = make("div", "access-mcp-pending-controls");
+    const openPermitBtn = action("+ Ajukan Request Permit", "access-submit", () => {
+      setActiveTab("requests");
+      setRequestSubTab("rules");
+      const form = $("access-req-rule-form");
+      if (form) form.hidden = false;
+      const toggle = $("access-req-new-rule-toggle");
+      if (toggle) toggle.textContent = "Tutup Form";
+    });
+    openPermitBtn.id = "access-rules-open-permit-form";
+
+    const viewPendingPermitsBtn = action("Buka Pusat Permintaan", "access-audit-refresh", () => {
+      setActiveTab("requests");
+      setRequestSubTab("rules");
+    });
+    viewPendingPermitsBtn.id = "access-rules-view-pending-permits";
+    const pendingPermitBadge = make("span", "access-nav-tab-badge zero", "0 permintaan");
+    pendingPermitBadge.id = "access-rules-pending-permit-badge";
+    viewPendingPermitsBtn.append(pendingPermitBadge);
+    permitControls.append(openPermitBtn, viewPendingPermitsBtn);
+    permitHead.append(permitCopy, permitControls);
+    rulePermitBar.append(permitHead);
+
     const paneRules = make("div", "access-pane");
     paneRules.id = "access-pane-rules";
     paneRules.setAttribute("role", "tabpanel");
@@ -2726,6 +2787,7 @@
     paneRules.append(
       make("p", "access-hint",
         "Aturan Aktif adalah kebijakan host untuk aplikasi, jendela, dan file/folder Core. Bukan daftar grant MCP per proyek. Untuk mengubah kemampuan agent, gunakan Akses Proyek."),
+      rulePermitBar,
       stored);
 
     const paneAudit = make("div", "access-pane");

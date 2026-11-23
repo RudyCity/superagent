@@ -302,6 +302,15 @@
 #access-mcp-tool-more{justify-self:start}
 #access-mcp-tool-more[hidden],#access-mcp-legacy-requests[hidden]{display:none!important}
 #access-mcp-tool-summary{line-height:1.55;margin:0}
+.access-mcp-matrix-inspector{display:grid;gap:10px;padding:12px;border:1px solid var(--r-ui-color-accent-primary,rgba(56,189,248,.35));border-radius:var(--r-ui-radius-sm,8px);background:var(--r-ui-color-canvas-surface-raised,rgba(15,23,42,.85));margin-bottom:6px}
+.access-mcp-matrix-inspector[hidden]{display:none!important}
+.access-mcp-matrix-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.access-mcp-matrix-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.access-mcp-matrix-field{display:flex;flex-direction:column;gap:2px;font-size:11px}
+.access-mcp-matrix-label{color:var(--r-ui-color-text-secondary,#94a3b8);font-weight:600}
+.access-mcp-matrix-val{color:var(--r-ui-color-text-primary,#f8fafc);font-family:var(--r-ui-font-mono,monospace)}
+.access-mcp-matrix-val.is-ready{color:#4ade80}
+.access-mcp-matrix-val.is-blocked{color:#f87171}
 @media(max-width:640px){
   .access-mcp-tool-filters{grid-template-columns:minmax(0,1fr)}
   .access-mcp-tool-head{display:grid}

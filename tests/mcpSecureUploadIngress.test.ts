@@ -21,6 +21,9 @@ import {
   getIngressReceipt,
   isCertifiedIngressStagedFile,
   computeFileSha256,
+  pruneExpiredIngressStaging,
+  detectAndValidateMagicBytes,
+  OFFICE_MIME_TYPES,
   MAX_UPLOAD_FILE_BYTES,
 } from "../src/core/mcp/mcpUploadIngress.js";
 import { certifiedBrowserUpload } from "../src/core/tools/browserFilePolicyCertification.js";
@@ -144,5 +147,71 @@ describe("Secure Browser Upload Ingress Pipeline", () => {
     ).rejects.toThrow("SECURE_INGRESS_REPLAY_DETECTED");
 
     await cleanupIngressReceipt(receipt.receiptId);
+  });
+
+  // Extended Magic Bytes Verification
+  it("detects and validates MP4, WebM, and Office Open XML documents", async () => {
+    // 1. MP4
+    const mp4Path = path.join(FIXTURE_DIR, "video.mp4");
+    const mp4Buf = Buffer.alloc(32);
+    mp4Buf.write("ftyp", 4, "ascii");
+    await fs.writeFile(mp4Path, mp4Buf);
+    const mp4Res = await detectAndValidateMagicBytes(mp4Path, "video/mp4");
+    expect(mp4Res.mime).toBe("video/mp4");
+    expect(mp4Res.verified).toBe(true);
+
+    // 2. WebM
+    const webmPath = path.join(FIXTURE_DIR, "clip.webm");
+    const webmBuf = Buffer.alloc(32);
+    webmBuf[0] = 0x1a; webmBuf[1] = 0x45; webmBuf[2] = 0xdf; webmBuf[3] = 0xa3;
+    await fs.writeFile(webmPath, webmBuf);
+    const webmRes = await detectAndValidateMagicBytes(webmPath, "video/webm");
+    expect(webmRes.mime).toBe("video/webm");
+    expect(webmRes.verified).toBe(true);
+
+    // 3. DOCX
+    const docxPath = path.join(FIXTURE_DIR, "doc.docx");
+    const zipBuf = Buffer.alloc(32);
+    zipBuf[0] = 0x50; zipBuf[1] = 0x4b; zipBuf[2] = 0x03; zipBuf[3] = 0x04;
+    await fs.writeFile(docxPath, zipBuf);
+    const docxRes = await detectAndValidateMagicBytes(docxPath, OFFICE_MIME_TYPES.DOCX);
+    expect(docxRes.mime).toBe(OFFICE_MIME_TYPES.DOCX);
+    expect(docxRes.verified).toBe(true);
+
+    // 4. XLSX
+    const xlsxPath = path.join(FIXTURE_DIR, "sheet.xlsx");
+    await fs.writeFile(xlsxPath, zipBuf);
+    const xlsxRes = await detectAndValidateMagicBytes(xlsxPath, OFFICE_MIME_TYPES.XLSX);
+    expect(xlsxRes.mime).toBe(OFFICE_MIME_TYPES.XLSX);
+    expect(xlsxRes.verified).toBe(true);
+
+    // 5. PPTX
+    const pptxPath = path.join(FIXTURE_DIR, "deck.pptx");
+    await fs.writeFile(pptxPath, zipBuf);
+    const pptxRes = await detectAndValidateMagicBytes(pptxPath, OFFICE_MIME_TYPES.PPTX);
+    expect(pptxRes.mime).toBe(OFFICE_MIME_TYPES.PPTX);
+    expect(pptxRes.verified).toBe(true);
+  });
+
+  // Pruning expired ingress staging
+  it("prunes expired staged files and in-memory receipts when TTL has elapsed", async () => {
+    const fixturePath = path.join(FIXTURE_DIR, "prune_me.txt");
+    await fs.writeFile(fixturePath, "Content to be pruned");
+    const operationId = crypto.randomBytes(16).toString("hex");
+
+    const receipt = await stageUploadArtifact({
+      sourcePath: fixturePath,
+      operationId,
+    });
+    expect(receipt).toBeDefined();
+    expect(getIngressReceipt(receipt.receiptId)).not.toBeNull();
+
+    // Call prune with future timestamp (beyond expiresAt)
+    const futureTime = receipt.expiresAt + 2000;
+    const pruned = await pruneExpiredIngressStaging(futureTime);
+    expect(pruned).toBeGreaterThanOrEqual(1);
+
+    // Confirm in-memory receipt is gone
+    expect(getIngressReceipt(receipt.receiptId)).toBeNull();
   });
 });

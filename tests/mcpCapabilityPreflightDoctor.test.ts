@@ -19,6 +19,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { runToolPreflight } from "../src/core/mcp/mcpToolPreflight.js";
 import { runToolDoctor } from "../src/core/mcp/mcpToolDoctor.js";
+import { doctorCommand } from "../src/core/commands/coreCommands.js";
 import {
   getBaseToolCapability,
   getToolActionCapabilities,
@@ -245,5 +246,22 @@ describe("Tool Doctor Diagnostics", () => {
     );
     expect(mutatingAction).toBeDefined();
     expect(mutatingAction?.status).toBe("not_tested_by_design");
+  });
+
+  it("doctorCommand executes and writes formatted audit report to context", async () => {
+    const lines: Array<{ type: string; content: string }> = [];
+    const mockCtx = {
+      addLine: (line: { type: string; content: string }) => lines.push(line),
+    };
+
+    await doctorCommand.execute("fast", mockCtx as any);
+
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    const reportLine = lines.find((l) => l.content.includes("SUPERAGENT MCP TOOL DOCTOR AUDIT REPORT"));
+    expect(reportLine).toBeDefined();
+    expect(reportLine?.content).toContain("Total Audited Tools");
+    expect(reportLine?.content).toContain("STATUS TIERS");
+    expect(reportLine?.content).toContain("Discovered");
+    expect(reportLine?.content).toContain("RUNTIME DEPENDENCIES");
   });
 });

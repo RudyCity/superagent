@@ -554,7 +554,8 @@ describe("independent MCP Connections and Project Access UI", () => {
     ui.document.getElementById("access-nav-tab-mcp")!.click();await flush();
     expect(connection.hidden).toBe(true);
     expect(project.hidden).toBe(false);
-    expect(ui.document.getElementById("access-mcp-pending-list")!.children).toHaveLength(1);
+    expect(ui.document.getElementById("access-mcp-pending-list")).toBeNull();
+    expect(ui.document.getElementById("access-req-center-incoming-list")!.children).toHaveLength(1);
     expect(ui.document.getElementById("access-mcp-connection-pending-list")).toBeNull();
     expect(connection.textContent).toContain("alur OAuth MCP owner");
   });
@@ -562,26 +563,24 @@ describe("independent MCP Connections and Project Access UI", () => {
   it("loads both pending approval lists from their own Load buttons without granting access", async () => {
     const ui = boot(true, fixtures);
     await flush();
-    const project = ui.document.getElementById("access-mcp-project-pending-load")!;
+    const project = ui.document.getElementById("access-mcp-projects-refresh")!;
     const connection = ui.document.getElementById("access-mcp-connection-pending-load")!;
-    expect(project.textContent).toBe("Load");
+    expect(project.textContent).toBe("Muat ulang");
     expect(connection.textContent).toBe("Load");
     const requestCallCount = () => ui.calls.filter(c =>
       c.name === "mcp_project_access_action" && c.args.action === "requests").length;
     const initialCalls = requestCallCount();
     project.click();
-    expect(project.disabled).toBe(true);
     expect(connection.disabled).toBe(true);
-    expect(project.textContent).toBe("Memuat…");
     await flush();
     expect(project.disabled).toBe(false);
     expect(connection.disabled).toBe(false);
-    expect(project.textContent).toBe("Load");
+    expect(project.textContent).toBe("Muat ulang");
     expect(requestCallCount()).toBe(initialCalls + 1);
     connection.click();
     await flush();
     expect(requestCallCount()).toBe(initialCalls + 2);
-    expect(ui.document.getElementById("access-mcp-pending-count")!.textContent).toBe("1 permintaan");
+    expect(ui.document.getElementById("access-req-center-incoming-count")!.textContent).toBe("1 permintaan");
     expect(ui.document.getElementById("access-tab-badge-connections")!.textContent).toBe("0");
     expect(ui.calls.some(c => c.name === "mcp_project_access_action" &&
       ["approve", "deny", "direct_grant"].includes(c.args.action))).toBe(false);
@@ -904,8 +903,8 @@ describe("independent MCP Connections and Project Access UI", () => {
 
   it("permits the owner to narrow the pending project request before approval", async () => {
     const ui=boot(true,fixtures);await flush();
-    ui.document.getElementById("approval-req_project-write")!.checked=false;
-    const requestCard=ui.document.getElementById("access-mcp-pending-list")!.firstChild!;
+    ui.document.getElementById("req-center-req_project-write")!.checked=false;
+    const requestCard=ui.document.getElementById("access-req-center-incoming-list")!.firstChild!;
     requestCard.lastChild!.firstChild!.click();await flush();
     const approve=ui.calls.find(c=>c.name==="mcp_project_access_action" &&
       c.args.action==="approve");
@@ -917,7 +916,7 @@ describe("independent MCP Connections and Project Access UI", () => {
     const alert=ui.document.getElementById("access-mcp-project-load-error")!;
     expect(alert.hidden).toBe(false);
     expect(alert.textContent).toContain("requests");
-    expect(ui.document.getElementById("access-mcp-pending-list")!.firstChild!.textContent)
+    expect(ui.document.getElementById("access-req-center-incoming-list")!.firstChild!.textContent)
       .toContain("belum dapat dimuat");
   });
 
@@ -945,14 +944,11 @@ describe("independent MCP Connections and Project Access UI", () => {
       status:"pending",
       requestedAt:Date.now(),
     });
-    const outcome=await ui.window.__superagentAccessManagerFocusRequest("req_late","mcp");
-    expect(outcome).toEqual({targetFound:true,tab:"mcp"});
-    const list=ui.document.getElementById("access-mcp-pending-list")!;
+    const outcome=await ui.window.__superagentAccessManagerFocusRequest("req_late","requests");
+    expect(outcome).toEqual({targetFound:true,tab:"requests"});
+    const list=ui.document.getElementById("access-req-center-incoming-list")!;
     expect(list.children.some(c=>c.dataset.requestId==="req_late")).toBe(true);
   });
-});
-
-describe("complete MCP tool catalog in Security Approval Manager", () => {
   const identityHandle="idh_0123456789abcdef";
   const base={
     identities:[{identityHandle,subject:"ChatGPT test",mode:"oauth",scopes:["mcp:tools","mcp:tools:write"]}],
@@ -1022,6 +1018,24 @@ describe("complete MCP tool catalog in Security Approval Manager", () => {
       ["direct_grant","approve"].includes(c.args.action))).toBe(false);
   });
 
+  it("opens matrix and preflight inspection drawer with capability matrix metadata", async () => {
+    const ui = boot(true, base); await flush();
+    const matrixBtn = ui.document.getElementById("access-mcp-tool-matrix-superagent_git_action")!;
+    expect(matrixBtn).not.toBeNull();
+    matrixBtn.click();
+
+    const inspector = ui.document.getElementById("access-mcp-matrix-inspector")!;
+    expect(inspector.hidden).toBe(false);
+    expect(inspector.textContent).toContain("Matrix & Preflight: superagent_git_action");
+    expect(inspector.textContent).toContain("OAuth Scopes");
+    expect(inspector.textContent).toContain("Project Capability");
+
+    const closeBtn = ui.document.getElementById("access-mcp-matrix-close")!;
+    expect(closeBtn).not.toBeNull();
+    closeBtn.click();
+    expect(inspector.hidden).toBe(true);
+  });
+
   it("fails closed when catalog loading fails; never displays stale grants", async () => {
     const ui=boot(true,{...base,failActions:["tools"]});await flush();
     expect(ui.document.getElementById("access-mcp-tool-list")!.textContent)
@@ -1039,18 +1053,16 @@ describe("complete MCP tool catalog in Security Approval Manager", () => {
     const panel=ui.document.getElementById("access-mcp-legacy-requests")!;
     expect(panel.hidden).toBe(false);
     expect(panel.textContent).toContain("tidak boleh disetujui");
-    const focus=await ui.window.__superagentAccessManagerFocusRequest("req_legacy","connections");
-    expect(focus).toEqual({targetFound:true,tab:"mcp"});
     expect(ui.document.getElementById("access-pane-connections")!.hidden).toBe(true);
-    expect(ui.document.getElementById("access-mcp-pending-list")!.textContent)
+    expect(ui.document.getElementById("access-req-center-incoming-list")!.textContent)
       .not.toContain("req_legacy");
-    const deny=ui.document.getElementById("access-mcp-legacy-list")!.firstChild!.lastChild!;
+    const deny = ui.document.getElementById("access-mcp-legacy-list")!.firstChild!.lastChild!;
     expect(deny.textContent).toBe("Tolak permintaan lama");
-    deny.click();await flush();
-    expect(ui.calls.some(c=>c.name==="mcp_project_access_action" && c.args.action==="deny" &&
-      c.args.payload.requestId==="req_legacy")).toBe(true);
-    expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
-      ["approve","direct_grant"].includes(c.args.action))).toBe(false);
+    deny.click(); await flush();
+    expect(ui.calls.some(c => c.name === "mcp_project_access_action" && c.args.action === "deny" &&
+      c.args.payload.requestId === "req_legacy")).toBe(true);
+    expect(ui.calls.some(c => c.name === "mcp_project_access_action" &&
+      ["approve", "direct_grant"].includes(c.args.action))).toBe(false);
   });
 });
 
@@ -1173,5 +1185,35 @@ describe("Pusat Permintaan (Request Center)", () => {
     expect(ui.document.getElementById("access-req-center-incoming-list")!.textContent).toContain("Gemini MCP");
     expect(ui.document.getElementById("access-req-center-rules-list")!.textContent)
       .toContain("Tidak ada permintaan aturan aktif");
+  });
+
+  it("ensures all requests stay in Pusat Permintaan, Akses Proyek has no request badge, and Aturan Aktif has Request Permit banner", async () => {
+    const ui = boot(true, { requests: [] });
+    await flush();
+
+    // 1. Tab Akses Proyek should NOT have request badge (clean tab)
+    const tabMcp = ui.document.getElementById("access-nav-tab-mcp")!;
+    expect(tabMcp).not.toBeNull();
+    expect(ui.document.getElementById("access-tab-badge-mcp")).toBeNull();
+    expect(tabMcp.textContent.trim()).toBe("Akses Proyek");
+
+    // 2. Tab Aturan Aktif has Request Permit banner
+    ui.document.getElementById("access-nav-tab-rules")!.click();
+    await flush();
+    expect(ui.document.getElementById("access-pane-rules")!.hidden).toBe(false);
+    const permitBanner = ui.document.getElementById("access-rule-permit-banner")!;
+    expect(permitBanner).not.toBeNull();
+    expect(permitBanner.textContent).toContain("Request Permit Aturan Aktif");
+    expect(permitBanner.textContent).toContain("Pusat Permintaan");
+
+    // 3. Clicking "+ Ajukan Request Permit" navigates to Pusat Permintaan, rules sub-tab, and opens form
+    const openPermitBtn = ui.document.getElementById("access-rules-open-permit-form")!;
+    expect(openPermitBtn).not.toBeNull();
+    openPermitBtn.click();
+    await flush();
+
+    expect(ui.document.getElementById("access-pane-requests")!.hidden).toBe(false);
+    expect(ui.document.getElementById("access-pane-rules")!.hidden).toBe(true);
+    expect(ui.document.getElementById("access-req-rule-form")!.hidden).toBe(false);
   });
 });

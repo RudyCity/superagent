@@ -21,7 +21,13 @@ import { fileRulesRegistered, isPathAllowedByPermanentRegistry } from "../tools/
 
 export const MAX_UPLOAD_FILE_BYTES = 100 * 1024 * 1024; // 100 MiB per file
 export const MAX_TOTAL_UPLOAD_BYTES = 200 * 1024 * 1024; // 200 MiB combined
-const INGRESS_RETENTION_MS = 15 * 60 * 1000; // 15 minutes TTL
+export const INGRESS_RETENTION_MS = 15 * 60 * 1000; // 15 minutes TTL
+
+export const OFFICE_MIME_TYPES = {
+  DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  XLSX: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  PPTX: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+} as const;
 
 export interface IngressArtifactReceipt {
   receiptId: string;
@@ -76,9 +82,26 @@ export async function detectAndValidateMagicBytes(filePath: string, expectedMime
   else if (buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") {
     detectedMime = "image/webp";
   }
-  // ZIP: PK..
+  // MP4: ....ftyp
+  else if (buffer.toString("ascii", 4, 8) === "ftyp") {
+    detectedMime = "video/mp4";
+  }
+  // WebM: 1A 45 DF A3
+  else if (buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3) {
+    detectedMime = "video/webm";
+  }
+  // ZIP / Office Open XML: PK..
   else if (buffer[0] === 0x50 && buffer[1] === 0x4b && (buffer[2] === 0x03 || buffer[2] === 0x05)) {
-    detectedMime = "application/zip";
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === ".docx" || expectedMime === OFFICE_MIME_TYPES.DOCX) {
+      detectedMime = OFFICE_MIME_TYPES.DOCX;
+    } else if (ext === ".xlsx" || expectedMime === OFFICE_MIME_TYPES.XLSX) {
+      detectedMime = OFFICE_MIME_TYPES.XLSX;
+    } else if (ext === ".pptx" || expectedMime === OFFICE_MIME_TYPES.PPTX) {
+      detectedMime = OFFICE_MIME_TYPES.PPTX;
+    } else {
+      detectedMime = "application/zip";
+    }
   }
   // Text / CSV (check no null bytes in sample)
   else if (!buffer.includes(0x00)) {
@@ -226,4 +249,52 @@ export function isCertifiedIngressStagedFile(filePath: string): boolean {
   const resolved = path.resolve(filePath);
   const relative = path.relative(ingressRoot, resolved);
   return !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+/**
+ * Prunes expired staged ingress files and receipts older than INGRESS_RETENTION_MS.
+ * Returns the count of pruned staging directories or receipts.
+ */
+export async function pruneExpiredIngressStaging(now: number = Date.now()): Promise<number> {
+  let prunedCount = 0;
+
+  // 1. Prune in-memory receipts and remove expired files
+  for (const [receiptId, receipt] of activeReceipts.entries()) {
+    if (now > receipt.expiresAt) {
+      activeReceipts.delete(receiptId);
+      try {
+        await fs.unlink(receipt.stagedPath).catch(() => {});
+        const stageDir = path.dirname(receipt.stagedPath);
+        await fs.rm(stageDir, { recursive: true, force: true }).catch(() => {});
+        prunedCount++;
+      } catch {
+        // ignore disk errors
+      }
+    }
+  }
+
+  // 2. Scan physical ingress directory for orphaned or stale staging dirs
+  const ingressRoot = getIngressRootDir();
+  try {
+    const entries = await fs.readdir(ingressRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const dirPath = path.join(ingressRoot, entry.name);
+        try {
+          const stat = await fs.stat(dirPath);
+          const age = now - stat.mtimeMs;
+          if (age > INGRESS_RETENTION_MS) {
+            await fs.rm(dirPath, { recursive: true, force: true });
+            prunedCount++;
+          }
+        } catch {
+          // ignore stat/removal errors for individual directory
+        }
+      }
+    }
+  } catch {
+    // ingressRoot might not exist yet
+  }
+
+  return prunedCount;
 }
