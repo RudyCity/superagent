@@ -437,14 +437,13 @@ function navigateToPage(pageId) {
   // Preserve only known pages and sub-tabs. Notification content and opaque
   // incident IDs are never interpreted as arbitrary navigation destinations.
   const allowedSubtabs = {
-    security: ["connections", "mcp", "register", "rules", "audit"],
+    security: ["requests", "connections", "mcp", "register", "rules", "audit"],
     runtime: ["core", "mcp", "cloudflare", "muse", "chrome", "processes", "hosts"],
     settings: ["general", "security", "tunnel", "muse"],
     delegate: ["connection", "orchestrator", "diagnostics", "cdp"],
     "lan-devices": ["devices", "terminal", "files", "screen"],
   };
   const parts = typeof pageId === "string" ? pageId.split(":") : [];
-  const routePage = parts[0];
   const subTab = parts.length === 2 &&
     allowedSubtabs[routePage]?.includes(parts[1]) ? parts[1] : null;
   const target = subTab ? routePage : validPages.includes(pageId) ? pageId : "overview";

@@ -1,21 +1,21 @@
 ---
 name: r-ui
-description: Universal UI/UX Design System, Multi-Theme, Modular Color Accent, 9-Pillar Complete Dashboard Kit Architecture (45+ Production Components), Spatial Harmony & Layout Precision Doctrine, Color Science & Palette Architecture (60-30-10, Tonal Ramps, Undertones), Typographic Composition Doctrine (3-Tier Font Pairing, Modular Scale, Leading Ratios, Tracking Inversion, 3-Weight Discipline), Kinetic Physics & Micro-Interactions (Designspells Delight, Spring Curves, Tactile Press), Accessibility & Keyboard Spatial Navigation (WCAG 2.2 AAA Double-Ring Focus, Roving Tabindex, ARIA Live Regions), Component State Machine Exhaustiveness (6 Universal Visual States), Project-Adaptive & Live Playground Architecture Skill. Enforces anti-slop aesthetic standards, anti-rigid project adaptation (5 project archetypes & 4 visual dials), zero-neon and anti-heavy shadow discipline, visual-first density, dual-layer theming (5 Canvas Themes + 8 Calibrated Color Themes), strict componentized form policy (zero raw native forms), headless/unstyled component flexibility, live interactive showcase, multi-framework integration (React, Next.js, Tailwind v3/v4, Vue, Svelte, Ink CLI), fluid cross-platform responsiveness (Web, Windows, macOS, Linux, Android, iOS, Foldables, Smart TV), and integration with curated design references (jiro.build, designspells.com, styles.refero.design, supahero.io, mobbin.com).
+description: Universal UI/UX Design System, Multi-Theme, Modular Color Accent, 9-Pillar Complete Dashboard Kit Architecture (45+ Production Components), Spatial Harmony & Layout Precision Doctrine, Color Science & Palette Architecture (60-30-10, Tonal Ramps, Undertones), Typographic Composition Doctrine (3-Tier Font Pairing, Modular Scale, Leading Ratios, Tracking Inversion, 3-Weight Discipline), Kinetic Physics & Micro-Interactions (Designspells Delight, Spring Curves, Tactile Press), Accessibility & Keyboard Spatial Navigation (WCAG 2.2 AAA Double-Ring Focus, Roving Tabindex, ARIA Live Regions), Component State Machine Exhaustiveness (6 Universal Visual States), Project-Adaptive & Live Playground Architecture Skill. Enforces anti-slop aesthetic standards (11 Anti-Slop Visual Laws: zero thick asymmetric left borders, crisp 1px uniform perimeter, zero generic purple haze, zero neon, zero heavy shadows), anti-rigid project adaptation (5 project archetypes & 4 visual dials), visual-first density, dual-layer theming (5 Canvas Themes + 8 Calibrated Color Themes), strict componentized form policy (zero raw native forms), headless/unstyled component flexibility, live interactive showcase, multi-framework integration (React, Next.js, Tailwind v3/v4, Vue, Svelte, Ink CLI), fluid cross-platform responsiveness (Web, Windows, macOS, Linux, Android, iOS, Foldables, Smart TV), and integration with curated design references (jiro.build, designspells.com, styles.refero.design, supahero.io, mobbin.com).
 when_to_use: Use whenever designing, building, auditing, refactoring, or reviewing user interfaces (UI), user experiences (UX), dashboard kits, admin consoles, SaaS platforms, responsive layouts, design systems, design tokens, micro-interactions, components, color themes, project adaptation, interactive showcases, or cross-platform web/app experiences.
-version: 3.0.0
+version: 3.1.0
 ---
 
 # r-ui: Universal UI/UX Design System & Visual-First Architecture
 
-`r-ui` is the authoritative operational skill for engineering production-grade user interfaces (UI) and user experiences (UX) with top-tier agency aesthetics: **Visual-First**, **Dense & Concise (Anti-Wall-of-Text)**, **Free of Murky Heavy Shadows**, **Free of Neon & Cyberpunk Glows**, **Adaptive to Project DNA**, and **Context-Aware Token Architecture** (Standard clean `--r-ui-*` namespace for greenfield projects, with zero-friction adaptation to any existing project token system).
+`r-ui` is the authoritative operational skill for engineering production-grade user interfaces (UI) and user experiences (UX) with top-tier agency aesthetics: **Visual-First**, **Dense & Concise (Anti-Wall-of-Text)**, **Free of Murky Heavy Shadows**, **Free of Neon & Cyberpunk Glows**, **Free of Thick Asymmetric Left Borders (100% Crisp 1px Uniform Perimeter)**, **Adaptive to Project DNA**, and **Context-Aware Token Architecture** (Standard clean `--r-ui-*` namespace for greenfield projects, with zero-friction adaptation to any existing project token system).
 
 ---
 
-## 1. THE 10 ANTI-SLOP VISUAL LAWS (Non-Negotiable)
+## 1. THE 11 ANTI-SLOP VISUAL LAWS (Non-Negotiable)
 
 ```text
 +---------------------------------------------------------------------------------+
-|                       THE 10 ANTI-SLOP DESIGN LAWS                              |
+|                       THE 11 ANTI-SLOP DESIGN LAWS                              |
 +---------------------------------------------------------------------------------+
 |  1. BAN THE PURPLE HAZE     ---> No generic AI-purple/pink mesh gradients       |
 |  2. BAN SYMMETRIC BENTO     ---> Asymmetric weights & hierarchy (2:1 spans)     |
@@ -27,8 +27,18 @@ version: 3.0.0
 |  8. BAN NEON & CYBERPUNK    ---> Calibrated optical tones; zero glow rings      |
 |  9. BAN RAW NATIVE FORMS    ---> Zero unstyled <select>; 100% componentized     |
 | 10. BAN COLOR HIJACKING     ---> Honor existing color system; zero rogue hex    |
+| 11. BAN THICK LEFT BORDERS  ---> Zero border-l-4/asymmetric strips; 1px uniform  |
 +---------------------------------------------------------------------------------+
 ```
+
+### Detailed Mandate for Law 11: Absolute Ban on Thick Left Borders & Asymmetric Accent Strips
+- **The Visual Defect (Corner Curvature Collision)**: Applying an asymmetric thick border (`border-l-4`, `border-l-2`, `border-left: 3px/4px solid ...`) to a container with rounded corners (`border-radius`) severely distorts corner geometry. The top-left and bottom-left curves bend awkwardly into asymmetrical ellipses, creating an amateurish and deformed visual appearance.
+- **The Outdated AI-Slop Artifact**: Thick colored left border strips on active navigation items, workspace cards, alerts, or callout blocks are obsolete relics of 2016-era Bootstrap templates and low-effort Tailwind starter kits. High-end modern design systems (Linear, Apple, Vercel, Raycast, Supabase) **NEVER** use thick asymmetric border strokes on rounded cards or active list items.
+- **Mandatory Modern Replacements**:
+  1. **Crisp 1px Uniform Perimeter**: Maintain an uninterrupted, uniform 1px hairline border around all four edges (`border: 1px solid var(--r-ui-color-border-standard)`).
+  2. **Soft Tint Active Background**: Communicate selected or active states using a soft tonal background fill (`background: rgba(var(--r-ui-color-accent-primary-rgb), 0.08)`) coupled with a subtle 1px border accent (`border-color: rgba(var(--r-ui-color-accent-primary-rgb), 0.35)`).
+  3. **Decoupled Floating Indicator Pill**: If a directional vertical indicator is required to indicate active selection, **decouple it completely from the container's border stroke**. Render a separate floating vertical capsule/pill inside the item padding (e.g. `width: 3px; height: 16px; border-radius: 9999px; background: var(--r-ui-color-accent-primary); margin-right: 8px;`), preserving pristine card borders.
+  4. **Subtle 1px Optical Focus / Selection Ring**: Utilize an interior or exterior 1px box-shadow ring (`box-shadow: 0 0 0 1px var(--r-ui-color-accent-primary)`), never an unbalanced single-edge border width.
 
 ---
 
@@ -133,7 +143,7 @@ When designing, reviewing, or refactoring UI/UX, verify patterns against the 5 e
 
 ---
 
-## 8. PRE-FLIGHT UI/UX AUDIT CHECKLIST (25-Point Master Gate)
+## 8. PRE-FLIGHT UI/UX AUDIT CHECKLIST (26-Point Master Gate)
 
 ```text
 [ ] 1.  Anti-Slop Check: Free of AI-purple mesh gradients, monotonous uniform bentos, & "Lorem Ipsum" dummy text.
@@ -161,6 +171,7 @@ When designing, reviewing, or refactoring UI/UX, verify patterns against the 5 e
 [ ] 23. Kinetic Micro-Interactions & Spring Dynamics: All transitions use calibrated cubic-bezier springs; interactive buttons feature tactile scale depression (scale 0.975); staggered cascade delays on lists.
 [ ] 24. Accessibility & Keyboard Spatial Navigation: Passes WCAG 2.2 AAA focus-visible criteria (2px ring + 2px offset + 4px canvas shadow); roving tabindex on toolbars/tabs; overlays trap focus and restore it on Escape.
 [ ] 25. State Machine Exhaustiveness: 100% of interactive components explicitly define all 6 universal states (Idle, Hover, Active, Focus-Visible, Disabled, Loading/Skeleton) with zero visual ambiguity.
+[ ] 26. Anti-Thick Left Border & Asymmetric Strip Check: 100% free of asymmetric border-l-4 / border-l-2 or thick accent bars on rounded cards, callouts, and active items; strictly utilizes crisp 1px uniform perimeter borders and soft background tint or decoupled floating indicators.
 ```
 
 ---
@@ -334,6 +345,51 @@ Before marking any layout or component complete:
 3. `[ ]` Do nested rounded elements strictly follow $R_{\text{inner}} = R_{\text{outer}} - P$?
 4. `[ ]` Do all numeric metrics use `tabular-nums` and align cleanly?
 5. `[ ]` Does the container adapt fluidly across viewports without unintended horizontal scrollbars?
+6. `[ ]` Are all borders crisp, uniform 1px around the full perimeter (100% free of thick asymmetric left borders or `border-l-4` on rounded containers)?
+
+### 12.7. Crisp Uniform 1px Perimeter & Ban on Asymmetric Left Borders (Anti-Slop Callout & Card Doctrine)
+
+```text
++---------------------------------------------------------------------------------+
+|              UNIFORM 1PX PERIMETER VS THICK ASYMMETRIC BORDER SLOP             |
++---------------------------------------------------------------------------------+
+| ❌ SLOP:  border-left: 4px solid var(--accent); border-radius: 8px; (Distorted) |
+| ✅ R-UI:  border: 1px solid var(--border); bg: rgba(accent, 0.08); + Pill Dot   |
++---------------------------------------------------------------------------------+
+```
+
+#### Why Are Thick Left Borders Banned on Rounded Containers?
+1. **Geometric Corner Distortion**: When `border-left-width` (e.g. 3px or 4px) differs from top/bottom/right (1px or 0px) on an element with `border-radius`, browser layout engines distort the ellipse of the rounded corner. The curve stretches unevenly, producing a visible bulge or pinch at the top-left and bottom-left seams.
+2. **Outdated Low-Effort Visual Language**: The single thick colored left border was an expedient pattern in early UI frameworks to indicate "active workspace" or "warning callout". In modern high-craft interfaces, this visual shortcut feels heavy, distracting, and dated.
+
+#### The 3 Canonical Modern Alternatives:
+```css
+/* 1. RECOMMENDED: Uniform 1px border with subtle tonal background */
+.r-ui-nav-item.is-active,
+.r-ui-card--selected {
+  border: 1px solid rgba(var(--r-ui-color-accent-primary-rgb), 0.35);
+  background-color: rgba(var(--r-ui-color-accent-primary-rgb), 0.08);
+  color: var(--r-ui-color-text-primary);
+}
+
+/* 2. DECOUPLED FLOATING PILL: When a directional vertical indicator is required */
+.r-ui-nav-item-active-indicator {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: var(--r-ui-radius-full);
+  background-color: var(--r-ui-color-accent-primary);
+}
+
+/* 3. OPTICAL 1PX INNER RING: When highlighting without expanding layout box */
+.r-ui-card--highlighted {
+  border: 1px solid var(--r-ui-color-border-standard);
+  box-shadow: 0 0 0 1px var(--r-ui-color-accent-primary), var(--r-ui-shadow-xs);
+}
+```
 
 ---
 

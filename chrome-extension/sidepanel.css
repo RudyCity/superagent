@@ -4051,7 +4051,7 @@ input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:foc
 
 .msg-system .msg-content {
   background: var(--bg-vscode-inner);
-  border-left: 3px solid var(--text-vscode-muted);
+  border: 1px solid var(--border-vscode);
   border-radius: 12px;
   font-style: italic;
 }
@@ -4062,7 +4062,7 @@ input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:foc
 
 .msg-question .msg-content {
   background: var(--bg-vscode-inner);
-  border-left: 3px solid var(--border-vscode-bright);
+  border: 1px solid var(--border-vscode-bright);
   border-radius: 18px 18px 18px 4px;
 }
 
@@ -4071,7 +4071,7 @@ input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:foc
 }
 
 .msg-question-answered .msg-content {
-  border-left-color: var(--color-green);
+  border-color: var(--color-green);
   opacity: .75;
 }
 
@@ -4200,7 +4200,7 @@ input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:foc
 
 .reasoning-block {
   font-family: var(--font-mono);
-  border-left: 3px solid var(--text-vscode-muted);
+  border: 1px solid rgba(110, 110, 110, 0.2);
   border-radius: var(--border-radius-sm);
   color: #6a9955;
   white-space: pre-wrap;

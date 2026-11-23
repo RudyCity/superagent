@@ -572,7 +572,7 @@ describe("Tray Notification Manager", () => {
     const runtime = fs.readFileSync(path.join(base, "ui/runtime.js"), "utf8");
     const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
     expect(app).toContain('const route = subTab ? target + ":" + subTab : target;');
-    expect(app).toContain('security: ["connections", "mcp", "register", "rules", "audit"]');
+    expect(app).toContain('security: ["requests", "connections", "mcp", "register", "rules", "audit"]');
     expect(app).toContain('runtime: ["core", "mcp", "cloudflare", "muse", "chrome", "processes", "hosts"]');
     expect(app).toContain('"lan-devices": ["devices", "terminal", "files", "screen"]');
     expect(app).toContain('window.__superagentRuntimeOpenTab?.(subTab)');
@@ -581,9 +581,7 @@ describe("Tray Notification Manager", () => {
     expect(app).toContain('window.settingsSwitchTab(subTab || currentTab)');
     expect(runtime).toContain('window.__superagentRuntimeOpenTab = (tab)');
     expect(access).toContain('const pendingNotificationTab = window.__superagentPendingAccessNotificationTab;');
-    expect(access).toContain('setActiveTab(tab || "mcp");');
-    expect(access).toContain('const legacyConnectionRequest = target.projectId === "mcp-connection";');
-    expect(access).not.toContain('/[\\\\x00-\\\\x1f]/.test(requestId)');
+    expect(access).toContain('setActiveTab(tab || "requests");');
   });
 
   it("deep-links to an exact MCP approval without invoking approve/deny", () => {

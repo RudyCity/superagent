@@ -52,6 +52,9 @@ Enterprise-grade application scaffold framework.
 - **Expanded State (240px–260px)**: Displays system logo, workspace switcher, menu groups (`.r-ui-nav-group-title`), navigation links with leading icons, labels, and trailing badge counters.
 - **Mini Rail State (56px–64px)**: Space-saving compact rail for secondary tablet/desktop viewports; displays icons only with floating tooltips on hover.
 - **Organization / Workspace Switcher**: Top popover dropdown for instant project/organization switching with active status indicator.
+- **Active Navigation & Selection Item Standard (Zero Thick Left Border Slop)**:
+  - ❌ **Strictly Banned**: Asymmetric thick left border strips (`border-l-4`, `border-l-2`, or `border-left: 3px/4px solid ...`) that cause corner curvature collision on rounded items.
+  - ✅ **Approved Modern Standard**: Uniform 1px perimeter border with soft background tint (`rgba(var(--r-ui-color-accent-primary-rgb), 0.08)`), or a decoupled floating pill/dot indicator positioned inside the item padding.
 - **User Profile Pill**: Bottom-pinned profile dock displaying user avatar, name, role badge (`Admin`), and popover status triggers.
 
 ### 1.2 App Navigation Header (`.r-ui-header`)
@@ -209,6 +212,10 @@ Non-intrusive notifications, dialogs, and contextual inspection panels.
 ### 6.5 Tooltips & Context Menus (`.r-ui-tooltip`, `.r-ui-popover`)
 - Micro-tooltips with directional pointer arrows, appearing instantly on hover/keyboard focus.
 - Context menu popovers for right-click or kebab actions (`...`).
+
+### 6.6 Alert Banners & Callout Blocks (`.r-ui-alert`)
+- Full 1px perimeter border with soft tonal background tint (Success, Warning, Error, Info).
+- **Strict Ban**: Never use thick left accent borders (`border-l-4` / `border-l-2`) on callouts or alert cards; keep borders uniform 1px.
 
 ---
 

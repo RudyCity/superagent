@@ -175,7 +175,16 @@
     if (item.source !== "security" || !item.id.startsWith("mcp-pending:")) return null;
     let requestId = item.id.slice("mcp-pending:".length);
     let tab = null;
-    if (requestId.startsWith("connections:")) {
+    let subCategory = null;
+    if (requestId.startsWith("requests:rule:")) {
+      requestId = requestId.slice("requests:rule:".length);
+      tab = "requests";
+      subCategory = "rules";
+    } else if (requestId.startsWith("requests:")) {
+      requestId = requestId.slice("requests:".length);
+      tab = "requests";
+      subCategory = "incoming";
+    } else if (requestId.startsWith("connections:")) {
       requestId = requestId.slice("connections:".length);
       tab = "mcp";
     } else if (requestId.startsWith("mcp:")) {
@@ -183,7 +192,7 @@
       tab = "mcp";
     }
     if (!requestId || requestId.length > 150 || /[\x00-\x1f]/.test(requestId)) return null;
-    return { requestId, tab };
+    return { requestId, tab, subCategory };
   }
   // Use bounded run IDs only to focus an existing history row. Never put
   // untrusted IDs into a hash, selector, query, or native approval action.
@@ -362,11 +371,13 @@
     const actions = element("div", "notification-item-actions");
     if (page) {
       const pending = pendingAccessTarget(item);
-      const label = pending?.tab === "mcp" ? "Review MCP Project Access"
-          : pending ? "Review pending access"
-            : item.source === "security" ? "Open Security Approval"
-              : lanDeviceTarget(item) ? "Review LAN device"
-              : "View " + page.replace(":", " · ").replaceAll("-", " ");
+      const label = pending?.subCategory === "rules" ? "Tinjau Permintaan Aturan Aktif"
+          : pending?.tab === "requests" ? "Buka Pusat Permintaan"
+            : pending?.tab === "mcp" ? "Review MCP Project Access"
+              : pending ? "Review pending access"
+                : item.source === "security" ? "Open Security Approval"
+                  : lanDeviceTarget(item) ? "Review LAN device"
+                  : "View " + page.replace(":", " · ").replaceAll("-", " ");
       const open = element("button", "notification-link", label);
       open.type = "button";
       open.disabled = state.busy;
@@ -374,7 +385,6 @@
       actions.append(open);
     }
     addAction(actions, item.readAt ? "Mark unread" : "Mark read",
-      item.readAt ? "unread" : "read", item.id,
       (item.readAt ? "Mark unread: " : "Mark read: ") + item.title);
     if (!compact) {
       if (!item.resolvedAt && kindOf(item) === "action") {
@@ -495,6 +505,11 @@
       if (!el) continue;
       el.hidden = count === 0;
       el.textContent = count > 99 ? "99+" : String(count);
+    }
+    const actionEl = $("tray-notification-action-count");
+    if (actionEl) {
+      actionEl.hidden = counts.action === 0;
+      actionEl.textContent = counts.action > 99 ? "99+" : String(counts.action);
     }
     const bell = $("tray-notification-bell");
     if (bell) {

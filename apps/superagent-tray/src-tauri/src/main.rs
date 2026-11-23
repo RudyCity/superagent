@@ -241,15 +241,22 @@ fn record_operational_incident(
         let _ = app.emit("tray-notifications-changed", ());
         if tray_notification_center::should_notify_os(&dir, source, severity)? &&
             os_alert_budget_available() {
-            // The OS surface is intentionally generic; detailed text stays in
-            // the private, authenticated native Tray inbox.
-            let ticket=tray_os_action::issue(&dir,id).ok();
-            let mut builder=app.notification().builder()
-                .title("SuperAgent needs attention")
-                .body("A system event requires review. Open the Tray Notification Center.");
-            if let Some(id)=ticket {builder=builder.id(id);}
-            if let Err(error)=builder.show(){
-                if let Some(id)=ticket {tray_os_action::cancel(id);}
+            let ticket = tray_os_action::issue(&dir, id).ok();
+            let result = if source == "security" {
+                notifications::dispatch_os_notification(app, title, body, ticket)
+            } else {
+                let mut builder = app.notification().builder()
+                    .title("SuperAgent needs attention")
+                    .body("A system event requires review. Open the Tray Notification Center.");
+                if let Some(id) = ticket {
+                    builder = builder.id(id);
+                }
+                builder.show().map_err(|e| e.to_string())
+            };
+            if let Err(error) = result {
+                if let Some(id) = ticket {
+                    tray_os_action::cancel(id);
+                }
                 eprintln!("[tray] Critical desktop alert unavailable: {error}");
             }
         }
@@ -277,8 +284,6 @@ fn record_verified_device_incident(
                 .body("A previously paired LAN device disconnected. Review LAN Devices.");
             if let Some(ticket_id) = ticket { builder = builder.id(ticket_id); }
             if let Err(error) = builder.show() {
-                if let Some(ticket_id) = ticket { tray_os_action::cancel(ticket_id); }
-                eprintln!("[tray] LAN device notification unavailable: {error}");
             }
         }
     }
@@ -3870,9 +3875,13 @@ async fn poll_pending_security_requests(app: &tauri::AppHandle) -> Result<(), St
         if id.is_empty() || id.len() > 150 || id.chars().any(char::is_control) { continue; }
         // Identity and lifecycle are from authenticated Core inventory, not the
         // notification body or a WebView-supplied approval result.
-        // Operation access requests ALWAYS belong to Akses Proyek.
-        // Historical virtual mcp-connection requests are denial-only there.
-        let tab = "mcp";
+        // Operation access requests route to Pusat Permintaan (requests), while
+        // historical virtual mcp-connection requests stay denial-only in Akses Proyek.
+        let tab = if request.get("projectId").and_then(Value::as_str) == Some("mcp-connection") {
+            "mcp"
+        } else {
+            "requests"
+        };
         let key = format!("mcp-pending:{tab}:{id}");
         let status = request.get("status").and_then(Value::as_str).unwrap_or("");
         if status != "pending" {
@@ -3897,9 +3906,17 @@ async fn poll_pending_security_requests(app: &tauri::AppHandle) -> Result<(), St
         };
         record_operational_incident(
             app, "security", "critical", &key,
-            "Security approval pending",
+            "Permintaan Akses Masuk",
             &details,
         )?;
+    }
+    if let Ok(dir) = config_dir() {
+        if let Ok(rule_items) = desktop_access_registry::load_pending_rule_requests(&dir) {
+            for item in rule_items.iter().filter(|r| r.status == "pending") {
+                let rule_key = format!("mcp-pending:requests:rule:{}", item.id);
+                active.insert(rule_key);
+            }
+        }
     }
     // The API is unpaginated; avoid false resolves if a future revision
     // returns a partial/bounded projection.
@@ -3911,7 +3928,6 @@ async fn poll_pending_security_requests(app: &tauri::AppHandle) -> Result<(), St
     }
     Ok(())
 }
-
 #[derive(Default)]
 struct HealthObservation {
     core_seen: bool,

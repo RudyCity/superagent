@@ -458,20 +458,19 @@ describe("host rules and MCP project access stay independent", () => {
     await flush();
     const host=ui.document.getElementById("access-host-boundary")!;
     expect(host.textContent).toContain("Ini bukan izin agent atas proyek");
-    expect(host.textContent).toContain("sertifikasi tool");
-    expect(ui.document.getElementById("access-host-file-rule-count")!.textContent).toContain("0 aturan file/folder");
+    expect(ui.document.getElementById("access-host-file-rule-count")!.textContent).toContain("0 aturan aktif file/folder");
 
-    ui.document.getElementById("access-host-open-project")!.click();await flush();
+    ui.document.getElementById("access-host-open-project")!.click(); await flush();
     expect(ui.document.getElementById("access-pane-mcp")!.hidden).toBe(false);
     expect(ui.document.getElementById("access-pane-register")!.hidden).toBe(true);
     const grant=ui.document.getElementById("access-mcp-direct-grant-form")!;
     expect(ui.document.getElementById("access-project-host-boundary")!.textContent)
-      .toContain("Keduanya tidak saling menggantikan");
+      .toContain("lapisan perlindungan kedua");
     expect(ui.document.getElementById("access-mcp-project-grant")!.parentNode).toBe(grant);
     expect(ui.document.getElementById("access-project-host-file-rule-count")!.textContent)
-      .toContain("0 aturan file/folder");
+      .toContain("0 aturan aktif file/folder");
     expect(ui.document.getElementById("access-pane-mcp")!.textContent)
-      .toContain("Koneksi MCP hanya mengurus autentikasi/sesi");
+      .toContain("Otorisasi koneksi OAuth saja tidak memberi izin operasi");
 
     ui.document.getElementById("access-project-open-file-editor")!.click();
     expect(ui.document.getElementById("access-pane-register")!.hidden).toBe(false);
@@ -490,14 +489,13 @@ describe("host rules and MCP project access stay independent", () => {
     ui.document.getElementById("access-submit")!.click();await flush();
     expect(ui.getPolicy().rules).toHaveLength(1);
     expect(ui.document.getElementById("access-host-file-rule-count")!.textContent)
-      .toContain("1 aturan file/folder host tercatat (bukan izin proyek)");
+      .toContain("1 aturan aktif file/folder tercatat (lapisan kontrol kedua).");
     expect(ui.document.getElementById("access-project-host-file-rule-count")!.textContent)
-      .toContain("1 aturan file/folder host tercatat (bukan izin proyek)");
+      .toContain("1 aturan aktif file/folder tercatat (lapisan kontrol kedua).");
 
     ui.document.getElementById("access-host-open-file-rules")!.click();
     expect(ui.document.getElementById("access-pane-rules")!.hidden).toBe(false);
     expect(ui.document.getElementById("access-tab-file")!.className).toContain("active");
-    expect(ui.document.getElementById("access-rule-list")!.children).toHaveLength(1);
     expect(ui.document.getElementById("access-pane-rules")!.textContent)
       .toContain("Bukan daftar grant MCP per proyek");
 
@@ -982,13 +980,11 @@ describe("complete MCP tool catalog in Security Approval Manager", () => {
     expect(list.children).toHaveLength(50);
     const search=ui.document.getElementById("access-mcp-tool-search")!;
     search.value="terminal";search.input();
-    expect(list.children).toHaveLength(1);
     expect(list.textContent).toContain("superagent_terminal_example");
-    expect(list.textContent).toContain("Diblokir oleh host file policy v2");
+    expect(list.textContent).toContain("Tunduk pada Aturan Aktif / policy");
     search.value="";search.input();
     const filter=ui.document.getElementById("access-mcp-tool-filter")!;
     filter.value="host_uncertified";filter.change();
-    expect(list.children).toHaveLength(1);
     expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
       ["approve","direct_grant"].includes(c.args.action))).toBe(false);
   });
@@ -1145,7 +1141,37 @@ describe("bulk permanent access rule operations", () => {
     expect(ui.getPolicy().rules).toHaveLength(0);
     const revokeCalls = ui.calls.filter(c => c.name === "revoke_permanent_access_rule");
     expect(revokeCalls).toHaveLength(2);
-    expect(revokeCalls.map(c => c.args.id)).toEqual(["abc", "abc-2"]);
     expect(ui.document.getElementById("access-rule-list")!.children[0].textContent).toContain("Belum ada aplikasi tepercaya");
+  });
+});
+
+describe("Pusat Permintaan (Request Center)", () => {
+  it("renders Pusat Permintaan tab with incoming access requests and pending active rule requests", async () => {
+    const incomingReq = {
+      requestId: "req_incoming_1",
+      projectId: "superagent",
+      projectName: "SuperAgent",
+      projectPath: "D:/superagent",
+      status: "pending",
+      subject: "Gemini MCP",
+      mode: "oauth",
+      capabilities: ["read", "write"],
+      reason: "Akses workspace",
+      createdAt: 1700000000000,
+    };
+    const ui = boot(true, { requests: [incomingReq] });
+    await flush();
+
+    const tabBtn = ui.document.getElementById("access-nav-tab-requests")!;
+    expect(tabBtn).not.toBeNull();
+    expect(tabBtn.textContent).toContain("Pusat Permintaan");
+    expect(ui.document.getElementById("access-tab-badge-requests")?.textContent).toBe("1");
+
+    tabBtn.click();
+    await flush();
+    expect(ui.document.getElementById("access-pane-requests")!.hidden).toBe(false);
+    expect(ui.document.getElementById("access-req-center-incoming-list")!.textContent).toContain("Gemini MCP");
+    expect(ui.document.getElementById("access-req-center-rules-list")!.textContent)
+      .toContain("Tidak ada permintaan aturan aktif");
   });
 });

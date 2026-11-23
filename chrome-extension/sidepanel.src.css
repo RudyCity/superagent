@@ -358,7 +358,7 @@ select:focus {
 .msg-system .msg-content {
   background: var(--bg-vscode-inner);
   border-radius: 12px;
-  border-left: 3px solid var(--text-vscode-muted);
+  border: 1px solid var(--border-vscode);
   font-style: italic;
 }
 
@@ -370,7 +370,7 @@ select:focus {
 .msg-question .msg-content {
   background: var(--bg-vscode-inner);
   border-radius: 18px 18px 18px 4px;
-  border-left: 3px solid var(--border-vscode-bright);
+  border: 1px solid var(--border-vscode-bright);
 }
 
 .msg-question-answered .msg-header {
@@ -378,7 +378,7 @@ select:focus {
 }
 
 .msg-question-answered .msg-content {
-  border-left-color: var(--color-green);
+  border-color: var(--color-green);
   opacity: 0.75;
 }
 
@@ -510,7 +510,7 @@ select:focus {
 .reasoning-block {
   font-family: var(--font-mono);
   background: rgba(110, 110, 110, 0.05);
-  border-left: 3px solid var(--text-vscode-muted);
+  border: 1px solid rgba(110, 110, 110, 0.2);
   padding: 6px 10px;
   margin-bottom: 8px;
   border-radius: var(--border-radius-sm);

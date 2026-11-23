@@ -372,6 +372,7 @@ Raw native <select> and <option> elements are **strictly banned** because OS pop
 ---
 
 ## 9. Toast Notifications & Alert Banners
+
 ```css
 .r-ui-toast-container {
   position: fixed;
@@ -393,6 +394,36 @@ Raw native <select> and <option> elements are **strictly banned** because OS pop
   gap: var(--r-ui-space-3);
   font-size: 0.8125rem;
   animation: r-ui-slide-toast 0.2s var(--r-ui-ease-spring);
+}
+
+/* Alert Banner (BANS THICK ASYMMETRICAL LEFT BORDERS / border-l-4) */
+/* ❌ SLOP: .r-ui-alert { border-left: 4px solid var(--r-ui-color-accent); } */
+/* ✅ R-UI: Crisp 1px uniform perimeter border + soft tinted surface */
+.r-ui-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--r-ui-space-3);
+  padding: var(--r-ui-space-3) var(--r-ui-space-4);
+  border-radius: var(--r-ui-radius-xs);
+  border: 1px solid var(--r-ui-color-border-standard);
+  background-color: var(--r-ui-color-surface-elevated);
+  font-size: 0.8125rem;
+}
+.r-ui-alert--info {
+  border-color: rgba(14, 165, 233, 0.35);
+  background-color: rgba(14, 165, 233, 0.08);
+}
+.r-ui-alert--warning {
+  border-color: rgba(245, 158, 11, 0.35);
+  background-color: rgba(245, 158, 11, 0.08);
+}
+.r-ui-alert--error {
+  border-color: rgba(239, 68, 68, 0.35);
+  background-color: rgba(239, 68, 68, 0.08);
+}
+.r-ui-alert--success {
+  border-color: rgba(16, 185, 129, 0.35);
+  background-color: rgba(16, 185, 129, 0.08);
 }
 ```
 
@@ -507,6 +538,39 @@ Raw native <select> and <option> elements are **strictly banned** because OS pop
   align-items: center;
   gap: 8px;
   font-size: 0.75rem;
+}
+
+/* Card & Workspace Item Active Selection (BANS THICK ASYMMETRICAL LEFT BORDERS) */
+/* ❌ STRICTLY BANNED: .r-ui-card.is-active { border-left: 4px solid #10b981; } (Corner collision slop) */
+/* ✅ R-UI APPROVED PATTERN 1: Crisp 1px perimeter + soft accent background tint */
+.r-ui-stat-card.is-active,
+.r-ui-card--active,
+.r-ui-workspace-card.is-active {
+  border: 1px solid rgba(var(--r-ui-color-accent-primary-rgb), 0.45);
+  background-color: rgba(var(--r-ui-color-accent-primary-rgb), 0.08);
+  box-shadow: 0 0 0 1px rgba(var(--r-ui-color-accent-primary-rgb), 0.2);
+}
+
+/* ✅ R-UI APPROVED PATTERN 2: Decoupled floating vertical indicator pill inside padding */
+.r-ui-workspace-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--r-ui-space-3);
+  padding: 10px 14px;
+  border-radius: var(--r-ui-radius-xs);
+  border: 1px solid var(--r-ui-color-border-standard);
+  background-color: var(--r-ui-color-surface);
+}
+.r-ui-workspace-card.is-active .r-ui-workspace-card__pill {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: var(--r-ui-radius-full);
+  background-color: var(--r-ui-color-accent-primary);
 }
 
 /* Telemetry Ribbon (Anti-Card Overuse) */

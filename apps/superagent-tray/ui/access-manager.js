@@ -3,7 +3,7 @@
   // Native Tray Access Manager: no WebView-side policy writes or localStorage.
   // All grants are performed by the native host after OS verification + dialog.
   const $ = (id) => document.getElementById(id);
-  const state = { registry: null, windows: [], installedApps: [], appSource: "active", selected: "", busy: false, view: "desktop", ruleFilter: "all", ruleSearch: "", auditLogs: [], activeTab: "register", selectedRuleIds: new Set() };
+  const state = { registry: null, windows: [], installedApps: [], appSource: "active", selected: "", busy: false, view: "desktop", ruleFilter: "all", ruleSearch: "", auditLogs: [], activeTab: "register", selectedRuleIds: new Set(), pendingRuleRequests: [], requestSubTab: "all" };
   const invoke = (name, args) => {
     const native = window.__TAURI__?.core?.invoke;
     if (typeof native !== "function") throw Error("Installed native Tray required");
@@ -679,19 +679,46 @@
     }
     updateSelection();
   }
+  function setRequestSubTab(subTab) {
+    state.requestSubTab = ["all", "incoming", "rules"].includes(subTab) ? subTab : "all";
+    for (const [id, val] of [
+      ["access-req-subtab-all", "all"],
+      ["access-req-subtab-incoming", "incoming"],
+      ["access-req-subtab-rules", "rules"],
+    ]) {
+      const btn = $(id);
+      if (btn) btn.className = "access-filter-btn" + (state.requestSubTab === val ? " active" : "");
+    }
+    const grid = $("access-req-center-grid");
+    const incomingCard = $("access-req-center-incoming-card");
+    const rulesCard = $("access-req-center-rules-card");
+    if (incomingCard) incomingCard.hidden = state.requestSubTab === "rules";
+    if (rulesCard) rulesCard.hidden = state.requestSubTab === "incoming";
+    if (grid) {
+      grid.className = "access-req-center-grid" + (state.requestSubTab !== "all" ? " is-single" : "");
+    }
+  }
   function setActiveTab(tabName) {
     state.activeTab = tabName;
+    const tabRequests = $("access-nav-tab-requests");
     const tabRegister = $("access-nav-tab-register");
     const tabRules = $("access-nav-tab-rules");
     const tabAudit = $("access-nav-tab-audit");
     const tabMcp = $("access-nav-tab-mcp");
     const tabConnections = $("access-nav-tab-connections");
+    const paneRequests = $("access-pane-requests");
     const paneRegister = $("access-pane-register");
     const paneRules = $("access-pane-rules");
     const paneAudit = $("access-pane-audit");
     const paneMcp = $("access-pane-mcp");
     const paneConnections = $("access-pane-connections");
 
+    if (tabRequests) {
+      const active = tabName === "requests";
+      tabRequests.className = "access-nav-tab" + (active ? " active" : "");
+      tabRequests.setAttribute("aria-selected", active ? "true" : "false");
+      tabRequests.tabIndex = active ? 0 : -1;
+    }
     if (tabRegister) {
       const active = tabName === "register";
       tabRegister.className = "access-nav-tab" + (active ? " active" : "");
@@ -724,6 +751,13 @@
       tabConnections.setAttribute("aria-selected", active ? "true" : "false");
       tabConnections.tabIndex = active ? 0 : -1;
     }
+    if (paneRequests) {
+      paneRequests.hidden = tabName !== "requests";
+      if (tabName === "requests") {
+        void refreshMcpRequests();
+        void refreshPendingRuleRequests();
+      }
+    }
     if (paneConnections) {
       paneConnections.hidden = tabName !== "connections";
       if (tabName === "connections") void refreshMcpRequests();
@@ -738,13 +772,15 @@
   }
   function updateTabFromHash() {
     const hash = typeof location !== "undefined" ? location.hash || "" : "";
-    if (hash.includes(":audit")) {
+    if (hash.includes(":requests")) {
+      setActiveTab("requests");
+    } else if (hash.includes(":audit")) {
       setActiveTab("audit");
     } else if (hash.includes(":rules")) {
       setActiveTab("rules");
     } else if (hash.includes(":connections") || hash.includes(":connection")) {
       setActiveTab("connections");
-    } else if (hash.includes(":mcp") || hash.includes(":projects") || hash.includes(":requests")) {
+    } else if (hash.includes(":mcp") || hash.includes(":projects")) {
       setActiveTab("mcp");
     } else if (hash.includes(":register")) {
       setActiveTab("register");
@@ -755,7 +791,6 @@
         $("access-initial-setup-reminder")) return;
     const reminder = make("section", "access-setup-reminder");
     reminder.id = "access-initial-setup-reminder";
-    reminder.setAttribute("role", "region");
     reminder.setAttribute("aria-label", "SuperAgent first-run access registration");
     const message = make("div");
     message.append(make("strong", "", "Atur izin aplikasi SuperAgent"),
@@ -1429,19 +1464,34 @@
 
   function highlightMcpNotificationRequest() {
     const id = mcpNotificationFocus.id;
-    if (!id || !Array.isArray(mcpCache.requests)) return false;
-    const target = mcpCache.requests.find((request) => request.requestId === id);
-    if (!target) return false; // A resolved/expired request is not an active approval.
-    // Historical mcp-connection Execute requests cannot be approved anymore.
-    // Route them to the explicit legacy denial panel in Project Access, never
-    // to OAuth connection sessions or a non-existent approval list.
-    const legacyConnectionRequest = target.projectId === "mcp-connection";
-    if (state.activeTab !== "mcp") setActiveTab("mcp");
-    if (legacyConnectionRequest) {
-      status("Permintaan izin koneksi lama tidak berlaku. Buka penolakan permintaan lama di Akses Proyek; buat grant baru pada proyek terdaftar jika diperlukan.", "warning");
+    if (!id) return false;
+    const mcpTarget = Array.isArray(mcpCache.requests)
+      ? mcpCache.requests.find((request) => request.requestId === id)
+      : null;
+    const ruleTarget = Array.isArray(state.pendingRuleRequests)
+      ? state.pendingRuleRequests.find((request) => request.id === id)
+      : null;
+    if (!mcpTarget && !ruleTarget) return false;
+    if (ruleTarget) {
+      if (state.activeTab !== "requests") setActiveTab("requests");
+      if (state.requestSubTab === "incoming") setRequestSubTab("all");
+    } else if (mcpTarget) {
+      const legacyConnectionRequest = mcpTarget.projectId === "mcp-connection";
+      if (legacyConnectionRequest) {
+        if (state.activeTab !== "mcp") setActiveTab("mcp");
+        status("Permintaan izin koneksi lama tidak berlaku. Buka penolakan permintaan lama di Akses Proyek; buat grant baru pada proyek terdaftar jika diperlukan.", "warning");
+      } else if (state.activeTab !== "requests" && state.activeTab !== "mcp") {
+        setActiveTab("requests");
+      }
     }
-    for (const listId of ["access-mcp-pending-list", "access-mcp-legacy-list",
-      "access-mcp-history-list"]) {
+    for (const listId of [
+      "access-req-center-incoming-list",
+      "access-req-center-rules-list",
+      "access-req-center-rules-history",
+      "access-mcp-pending-list",
+      "access-mcp-legacy-list",
+      "access-mcp-history-list",
+    ]) {
       const root = $(listId);
       if (!root) continue;
       for (const entry of root.children) {
@@ -1455,10 +1505,8 @@
         }
       }
     }
-    // UI-local receipt only. This is not a native owner attestation or grant.
     return mcpNotificationFocus.didFocus === true;
   }
-
   function setMcpLoadError(id, problems) {
     const node = $(id);
     if (!node) return;
@@ -1485,7 +1533,7 @@
     }
   }
 
-  function renderMcpPending(id, requests, isConnection) {
+  function renderMcpPending(id, requests, isConnection, idPrefix = "approval") {
     const root = $(id);
     if (!root) return;
     root.replaceChildren();
@@ -1518,7 +1566,7 @@
       const chips = make("div", "access-mcp-capabilities");
       const selections = [];
       for (const cap of Array.isArray(req.capabilities) ? req.capabilities : []) {
-        const checkLabel = checkbox("approval-" + req.requestId + "-" + cap, String(cap), true);
+        const checkLabel = checkbox(idPrefix + "-" + req.requestId + "-" + cap, String(cap), true);
         const input = checkLabel.firstChild;
         selections.push({ capability: cap, input });
         chips.append(checkLabel);
@@ -1545,6 +1593,350 @@
       card.append(title, ...(ownerSubtitle ? [ownerSubtitle] : []), scope, ...(description ? [description] : []), chips, actions);
       root.append(card);
     }
+  }
+
+  function updateRequestCenterBadges() {
+    const projectPending = Array.isArray(mcpCache.requests)
+      ? mcpCache.requests.filter(req => req.projectId !== "mcp-connection" && req.status === "pending")
+      : [];
+    const rulePending = Array.isArray(state.pendingRuleRequests)
+      ? state.pendingRuleRequests.filter(req => req.status === "pending")
+      : [];
+    const total = projectPending.length + rulePending.length;
+
+    const badgeTotal = $("access-tab-badge-requests");
+    if (badgeTotal) {
+      badgeTotal.textContent = String(total);
+      badgeTotal.className = "access-nav-tab-badge" + (total > 0 ? " pending" : " zero");
+    }
+    const subAll = $("access-req-subtab-all");
+    const subIncoming = $("access-req-subtab-incoming");
+    const subRules = $("access-req-subtab-rules");
+    if (subAll) subAll.textContent = "Semua (" + total + ")";
+    if (subIncoming) subIncoming.textContent = "Permintaan Akses Masuk (" + projectPending.length + ")";
+    if (subRules) subRules.textContent = "Permintaan Aturan Aktif (" + rulePending.length + ")";
+    if ($("access-req-center-incoming-count")) {
+      $("access-req-center-incoming-count").textContent = projectPending.length + " permintaan";
+    }
+    if ($("access-req-center-rules-count")) {
+      $("access-req-center-rules-count").textContent = rulePending.length + " permintaan";
+    }
+  }
+
+  function renderPendingRuleRequests() {
+    const list = $("access-req-center-rules-list");
+    const histList = $("access-req-center-rules-history");
+    const items = Array.isArray(state.pendingRuleRequests) ? state.pendingRuleRequests : [];
+    const pending = items.filter(req => req.status === "pending");
+    const decided = items.filter(req => req.status !== "pending");
+    updateRequestCenterBadges();
+
+    if (list) {
+      list.replaceChildren();
+      if (!pending.length) {
+        list.append(make("p", "access-empty", "Tidak ada permintaan aturan aktif yang menunggu persetujuan."));
+      } else {
+        for (const req of pending) {
+          const card = make("article", "access-mcp-request-card");
+          card.dataset.requestId = String(req.id || "");
+          const headLine = make("div", "access-mcp-request-head");
+          const kindBadge = make("span", "access-scope-badge " + (req.kind === "file" ? "file" : "desktop"),
+            req.kind === "file" ? "File & Folder" : "Aplikasi Desktop");
+          const effectBadge = make("span", "access-rule-effect " + (req.effect === "deny" ? "deny" : "allow"),
+            req.effect === "deny" ? "Blokir" : "Izinkan");
+          const leftHead = make("div", "access-rule-header");
+          leftHead.append(make("strong", "", String(req.sourceName || "MCP / Host Client")), kindBadge, effectBadge);
+          headLine.append(
+            leftHead,
+            make("span", "access-mcp-meta", req.createdAt ? new Date(req.createdAt).toLocaleString() : "")
+          );
+
+          const scopeText = String(req.targetPath || "") + (req.kind === "file" && req.recursive ? " (termasuk subfolder)" : "");
+          const scopeEl = make("div", "access-mcp-target access-mcp-mono", scopeText);
+          const reasonEl = req.reason ? make("p", "access-mcp-description", String(req.reason)) : null;
+
+          const chips = make("div", "access-mcp-capabilities");
+          const opSelections = [];
+          for (const op of Array.isArray(req.operations) ? req.operations : []) {
+            const checkLabel = checkbox("rule-req-" + req.id + "-" + op, String(op), true);
+            opSelections.push({ op, input: checkLabel.firstChild });
+            chips.append(checkLabel);
+          }
+
+          const actions = make("div", "access-mcp-actions");
+          const approveBtn = action("Tinjau & Simpan ke Aturan Aktif", "access-submit", async () => {
+            const selectedOps = opSelections.filter(item => item.input?.checked).map(item => item.op);
+            if (!selectedOps.length) {
+              status("Pilih minimal satu operasi untuk aturan aktif.", "warning");
+              return;
+            }
+            approveBtn.disabled = true;
+            try {
+              const res = await invoke("approve_pending_active_rule_request", {
+                requestId: req.id,
+                operations: selectedOps,
+              });
+              if (res?.registry && registryValid(res.registry)) {
+                state.registry = res.registry;
+                renderRegistry();
+              }
+              if (Array.isArray(res?.requests)) {
+                state.pendingRuleRequests = res.requests;
+              } else {
+                await refreshPendingRuleRequests();
+              }
+              renderPendingRuleRequests();
+              void refreshAuditLog();
+              status("Permintaan aturan aktif disetujui dan disimpan permanen.", "success");
+            } catch (error) {
+              status("Persetujuan aturan aktif gagal: " + String(error?.message || error), "error");
+            } finally {
+              approveBtn.disabled = false;
+            }
+          });
+          const denyBtn = action("Tolak", "access-revoke", async () => {
+            denyBtn.disabled = true;
+            try {
+              const next = await invoke("deny_pending_active_rule_request", { requestId: req.id });
+              if (Array.isArray(next)) {
+                state.pendingRuleRequests = next;
+              } else {
+                await refreshPendingRuleRequests();
+              }
+              renderPendingRuleRequests();
+              void refreshAuditLog();
+              status("Permintaan aturan aktif ditolak.", "success");
+            } catch (error) {
+              status("Penolakan aturan aktif gagal: " + String(error?.message || error), "error");
+            } finally {
+              denyBtn.disabled = false;
+            }
+          });
+          actions.append(approveBtn, denyBtn);
+          card.append(headLine, scopeEl, ...(reasonEl ? [reasonEl] : []), chips, actions);
+          list.append(card);
+        }
+      }
+    }
+
+    if (histList) {
+      histList.replaceChildren();
+      if (!decided.length) {
+        histList.append(make("p", "access-empty", "Belum ada riwayat keputusan aturan aktif."));
+      } else {
+        for (const req of decided.slice(0, 20)) {
+          const row = make("div", "access-mcp-history-row");
+          row.dataset.requestId = String(req.id || "");
+          const details = make("div", "access-mcp-history-detail");
+          const h = make("div", "access-mcp-history-head");
+          h.append(
+            make("strong", "", String(req.targetPath || "")),
+            make("span", "access-mcp-state access-mcp-state-" + String(req.status || "unknown"),
+              req.status === "approved" ? "Disetujui" : "Ditolak")
+          );
+          const meta = make("span", "access-mcp-meta",
+            String(req.sourceName || "Client") + " · " +
+            (Array.isArray(req.operations) ? req.operations.join(", ") : "") +
+            " · " + new Date(req.decidedAt || req.createdAt || Date.now()).toLocaleString());
+          details.append(h, meta);
+          row.append(details);
+          histList.append(row);
+        }
+      }
+    }
+  }
+
+  async function refreshPendingRuleRequests() {
+    try {
+      const list = await invoke("get_pending_active_rule_requests");
+      if (Array.isArray(list)) {
+        state.pendingRuleRequests = list;
+        renderPendingRuleRequests();
+        highlightMcpNotificationRequest();
+      }
+    } catch {
+      // Gracefully ignore on legacy Tray without pending active rule requests command
+    }
+  }
+
+  function buildRequestCenterPane() {
+    const pane = make("div", "access-pane access-mcp-section");
+    pane.id = "access-pane-requests";
+    pane.setAttribute("role", "tabpanel");
+    pane.setAttribute("aria-labelledby", "access-nav-tab-requests");
+    pane.hidden = true;
+
+    const intro = make("div", "access-editor access-mcp-intro");
+    const introHead = make("div", "access-mcp-intro-head");
+    const introCopy = make("div", "access-mcp-intro-copy");
+    introCopy.append(
+      make("h3", "", "Pusat Permintaan"),
+      make("p", "access-mcp-description",
+        "Kelola Permintaan Akses Masuk (izin proyek & capability agen MCP) serta Permintaan Aturan Aktif (izin path file/folder dan aplikasi host) dalam satu tempat dengan notifikasi OS native.")
+    );
+    const introActions = make("div", "access-mcp-pending-controls");
+    const toggleNewRuleReq = action("+ Ajukan Permintaan Aturan Aktif", "access-submit", () => {
+      ruleReqForm.hidden = !ruleReqForm.hidden;
+      toggleNewRuleReq.textContent = ruleReqForm.hidden ? "+ Ajukan Permintaan Aturan Aktif" : "Tutup Form";
+    });
+    toggleNewRuleReq.id = "access-req-new-rule-toggle";
+    const refreshAllBtn = action("Muat ulang", "access-audit-refresh", () => {
+      void refreshMcpRequests();
+      void refreshPendingRuleRequests();
+    });
+    refreshAllBtn.id = "access-req-center-refresh";
+    introActions.append(toggleNewRuleReq, refreshAllBtn);
+    introHead.append(introCopy, introActions);
+
+    const subBar = make("div", "access-req-center-subtabs");
+    const subTabs = make("div", "access-filter-tabs");
+    const subAll = action("Semua (0)", "access-filter-btn active", () => setRequestSubTab("all"));
+    subAll.id = "access-req-subtab-all";
+    const subIncoming = action("Permintaan Akses Masuk (0)", "access-filter-btn", () => setRequestSubTab("incoming"));
+    subIncoming.id = "access-req-subtab-incoming";
+    const subRules = action("Permintaan Aturan Aktif (0)", "access-filter-btn", () => setRequestSubTab("rules"));
+    subRules.id = "access-req-subtab-rules";
+    subTabs.append(subAll, subIncoming, subRules);
+    subBar.append(subTabs);
+
+    const ruleReqForm = make("div", "access-req-rule-form");
+    ruleReqForm.id = "access-req-rule-form";
+    ruleReqForm.hidden = true;
+    const reqSourceInput = make("input", "access-search");
+    reqSourceInput.id = "access-req-rule-source";
+    reqSourceInput.placeholder = "Contoh: Gemini MCP / T-Line";
+    reqSourceInput.value = "MCP Client";
+    const reqKindSelect = select("access-req-rule-kind", [
+      ["file", "File & Folder Host"],
+      ["desktop", "Aplikasi Desktop"],
+    ]);
+    const reqPathInput = make("input", "access-search");
+    reqPathInput.id = "access-req-rule-path";
+    reqPathInput.placeholder = "Pilih folder, file, atau aplikasi...";
+    const pickDirBtn = action("Pilih Folder", "access-revoke", async () => {
+      const chosen = await invoke("pick_permanent_access_path", { directory: true }).catch(() => null);
+      if (typeof chosen === "string" && chosen) {
+        reqPathInput.value = chosen;
+        reqRecCheck.firstChild.checked = true;
+      }
+    });
+    const pickFileBtn = action("Pilih File", "access-revoke", async () => {
+      const chosen = await invoke("pick_permanent_access_path", { directory: false }).catch(() => null);
+      if (typeof chosen === "string" && chosen) {
+        reqPathInput.value = chosen;
+        reqRecCheck.firstChild.checked = false;
+      }
+    });
+    const pathRow = make("div", "access-project-target access-req-span-all");
+    pathRow.append(reqPathInput, pickDirBtn, pickFileBtn);
+
+    const reqRecCheck = checkbox("access-req-rule-recursive", "Berlaku rekursif untuk subfolder", true);
+    const reqReasonInput = make("input", "access-search");
+    reqReasonInput.id = "access-req-rule-reason";
+    reqReasonInput.placeholder = "Alasan permintaan aturan aktif...";
+
+    const opsRow = make("div", "access-req-rule-ops access-req-span-all");
+    const opRead = checkbox("access-req-op-read", "read", true);
+    const opWrite = checkbox("access-req-op-write", "write", true);
+    const opDelete = checkbox("access-req-op-delete", "delete", false);
+    opsRow.append(opRead, opWrite, opDelete);
+
+    const submitRuleReqBtn = action("Kirim ke Pusat Permintaan & Notifikasi OS", "access-submit access-req-span-all", async () => {
+      const targetPath = reqPathInput.value.trim();
+      if (!targetPath) {
+        status("Pilih path folder/file terlebih dahulu.", "warning");
+        return;
+      }
+      const ops = [];
+      if (opRead.firstChild.checked) ops.push("read");
+      if (opWrite.firstChild.checked) ops.push("write");
+      if (opDelete.firstChild.checked) ops.push("delete");
+      if (!ops.length) {
+        status("Pilih minimal satu operasi.", "warning");
+        return;
+      }
+      submitRuleReqBtn.disabled = true;
+      try {
+        await invoke("submit_active_rule_request", {
+          sourceName: reqSourceInput.value.trim() || "MCP Client",
+          kind: reqKindSelect.value,
+          effect: "allow",
+          targetPath,
+          recursive: Boolean(reqRecCheck.firstChild.checked),
+          operations: ops,
+          reason: reqReasonInput.value.trim() || "Permintaan aturan aktif baru",
+        });
+        reqPathInput.value = "";
+        reqReasonInput.value = "";
+        ruleReqForm.hidden = true;
+        toggleNewRuleReq.textContent = "+ Ajukan Permintaan Aturan Aktif";
+        await refreshPendingRuleRequests();
+        status("Permintaan aturan aktif dikirim dan notifikasi OS dipicu.", "success");
+      } catch (error) {
+        status("Gagal mengirim permintaan aturan aktif: " + String(error?.message || error), "error");
+      } finally {
+        submitRuleReqBtn.disabled = false;
+      }
+    });
+
+    ruleReqForm.append(
+      field("Sumber / Koneksi Pemohon", reqSourceInput),
+      field("Jenis Aturan", reqKindSelect),
+      pathRow,
+      reqRecCheck,
+      field("Catatan / Alasan", reqReasonInput),
+      opsRow,
+      submitRuleReqBtn
+    );
+
+    intro.append(introHead, subBar, ruleReqForm);
+
+    const grid = make("div", "access-req-center-grid");
+    grid.id = "access-req-center-grid";
+
+    const incomingCard = make("section", "access-stored access-mcp-card");
+    incomingCard.id = "access-req-center-incoming-card";
+    const incomingHead = make("div", "access-stored-head");
+    const incomingTitle = make("h3", "", "Permintaan Akses Masuk");
+    const incomingBadge = make("span", "access-count", "0 permintaan");
+    incomingBadge.id = "access-req-center-incoming-count";
+    incomingHead.append(incomingTitle, incomingBadge);
+    const incomingList = make("div", "access-mcp-list");
+    incomingList.id = "access-req-center-incoming-list";
+    incomingCard.append(
+      incomingHead,
+      make("p", "access-hint", "Permintaan akses proyek dan hak capability agen MCP yang menunggu persetujuan."),
+      incomingList
+    );
+
+    const rulesCard = make("section", "access-stored access-mcp-card");
+    rulesCard.id = "access-req-center-rules-card";
+    const rulesHead = make("div", "access-stored-head");
+    const rulesTitle = make("h3", "", "Permintaan Aturan Aktif");
+    const rulesBadge = make("span", "access-count", "0 permintaan");
+    rulesBadge.id = "access-req-center-rules-count";
+    rulesHead.append(rulesTitle, rulesBadge);
+    const rulesList = make("div", "access-mcp-list");
+    rulesList.id = "access-req-center-rules-list";
+    rulesList.append(make("p", "access-empty", "Tidak ada permintaan aturan aktif yang menunggu persetujuan."));
+    rulesCard.append(
+      rulesHead,
+      make("p", "access-hint", "Permintaan izin permanen pada file/folder atau aplikasi desktop di host."),
+      rulesList
+    );
+
+    grid.append(incomingCard, rulesCard);
+
+    const ruleHistCard = make("section", "access-stored access-mcp-card");
+    const ruleHistHead = make("div", "access-stored-head");
+    ruleHistHead.append(make("h3", "", "Riwayat Keputusan Aturan Aktif"));
+    const ruleHistList = make("div", "access-mcp-list access-mcp-scroll-list");
+    ruleHistList.id = "access-req-center-rules-history";
+    ruleHistList.append(make("p", "access-empty", "Belum ada riwayat keputusan aturan aktif."));
+    ruleHistCard.append(ruleHistHead, ruleHistList);
+
+    pane.append(intro, grid, ruleHistCard);
+    return pane;
   }
 
   function renderMcpHistory(id, requests) {
@@ -1946,10 +2338,11 @@
           projectPending ? projectPending.length + " permintaan" : "Belum dimuat";
       }
       // Failed refreshes never leave stale, actionable approval buttons on screen.
-      renderMcpPending("access-mcp-pending-list", failures.requests ? null : projectPending, false);
+      renderMcpPending("access-mcp-pending-list", failures.requests ? null : projectPending, false, "approval");
+      renderMcpPending("access-req-center-incoming-list", failures.requests ? null : projectPending, false, "req-center");
       renderMcpHistory("access-mcp-history-list", failures.requests ? null : projectHistory);
       renderLegacyMcpRequests(failures.requests ? null : allRequests);
-      highlightMcpNotificationRequest();
+      updateRequestCenterBadges();
       renderMcpConnectedClients(mcpCache.live);
       renderMcpRegisteredConnections(mcpCache.live);
       renderMcpIdentities(failures.identities ? null : mcpCache.identities);
@@ -2220,6 +2613,21 @@
     navTabs.setAttribute("role", "tablist");
     navTabs.setAttribute("aria-label", "Kelompok Bagian Security Approval Manager");
 
+    const tabRequests = make("button", "access-nav-tab");
+    tabRequests.id = "access-nav-tab-requests";
+    tabRequests.type = "button";
+    tabRequests.setAttribute("role", "tab");
+    tabRequests.setAttribute("aria-selected", "false");
+    tabRequests.setAttribute("aria-controls", "access-pane-requests");
+    tabRequests.tabIndex = -1;
+    const requestsBadge = make("span", "access-nav-tab-badge zero", "0");
+    requestsBadge.id = "access-tab-badge-requests";
+    tabRequests.append(
+      make("span", "access-nav-tab-label", "Pusat Permintaan"),
+      requestsBadge
+    );
+    tabRequests.addEventListener("click", () => setActiveTab("requests"));
+
     const tabRegister = make("button", "access-nav-tab active");
     tabRegister.id = "access-nav-tab-register";
     tabRegister.type = "button";
@@ -2291,8 +2699,8 @@
     tabConnections.append(make("span", "access-nav-tab-label", "Koneksi MCP"), connectionBadge);
     tabConnections.addEventListener("click", () => setActiveTab("connections"));
 
-    navTabs.append(tabRegister, tabRules, tabConnections, tabMcp, tabAudit);
-    const tabOrder = [tabRegister, tabRules, tabConnections, tabMcp, tabAudit];
+    navTabs.append(tabRequests, tabRegister, tabRules, tabConnections, tabMcp, tabAudit);
+    const tabOrder = [tabRequests, tabRegister, tabRules, tabConnections, tabMcp, tabAudit];
     navTabs.addEventListener("keydown", event => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
       const selected = tabOrder.findIndex(tab => tab.getAttribute("aria-selected") === "true");
@@ -2332,10 +2740,12 @@
     footer.setAttribute("role", "status");
     footer.setAttribute("aria-live", "polite");
 
+    const paneRequests = buildRequestCenterPane();
     const paneConnections = buildMcpConnectionsPane();
     const paneMcp = buildMcpPane();
-    root.append(head, navTabs, paneRegister, paneRules, paneConnections, paneMcp, paneAudit, footer);
+    root.append(head, navTabs, paneRequests, paneRegister, paneRules, paneConnections, paneMcp, paneAudit, footer);
     void refreshMcpRequests();
+    void refreshPendingRuleRequests();
     parent.insertBefore(root, old);
     // Permanent host ACL and attended desktop input sessions are different
     // approvals. Retain the full trusted-session controls on demand.
@@ -2372,45 +2782,52 @@
       // this, notification clicks during Tray startup silently lose their target.
       // Navigation only. Runtime Detection cannot issue or modify grants.
       window.__superagentAccessManagerOpenTab = (tabName) => {
-        if (tabName !== "connections" && tabName !== "mcp") return;
+        if (tabName !== "requests" && tabName !== "connections" && tabName !== "mcp") return;
         setActiveTab(tabName);
         void refreshMcpRequests();
+        void refreshPendingRuleRequests();
       };
       // Navigation-only notification affordance. The actual approval/deny
       // buttons remain protected by their existing native human review.
       window.__superagentAccessManagerFocusRequest = async (requestId, tabHint = null) => {
         if (typeof requestId !== "string" || !requestId || requestId.length > 150 ||
           /[\x00-\x1f]/.test(requestId)) return {targetFound:false};
-        const tab = tabHint === "connections" || tabHint === "mcp" ? tabHint : null;
+        const tab = tabHint === "requests" || tabHint === "connections" || tabHint === "mcp" ? tabHint : null;
         if (window.__superagentPendingAccessNotificationId === requestId) {
           window.__superagentPendingAccessNotificationId = null;
           window.__superagentPendingAccessNotificationTab = null;
         }
         mcpNotificationFocus.id = requestId;
         mcpNotificationFocus.didFocus = false;
-        // The native incident identifies the tab even if Core is still loading.
-        // Authenticated request data can correct stale hints on refresh.
-        setActiveTab(tab || "mcp");
+        setActiveTab(tab || "requests");
         const wasRefreshing = Boolean(mcpCache.refreshing);
-        await refreshMcpRequests();
+        await Promise.all([refreshMcpRequests(), refreshPendingRuleRequests()]);
         let found = highlightMcpNotificationRequest() === true;
         if (!found && wasRefreshing) {
-          await refreshMcpRequests();
+          await Promise.all([refreshMcpRequests(), refreshPendingRuleRequests()]);
           found = highlightMcpNotificationRequest() === true;
         }
         return {targetFound:found,
           tab:state.activeTab};
       };
       window.__superagentAccessManagerRefresh = () => {
-        // Pending MCP approvals may have arrived since the page was first built.
-        // Refresh the actual request list on every Security page entry.
         void refreshMcpRequests();
+        void refreshPendingRuleRequests();
         void refreshRegistry().catch(() => {});
         void refreshWindows().catch(() => {});
         void refreshInstalledApps().catch(() => {});
         void refreshAuditLog().catch(() => {});
         updateTabFromHash();
       };
+      window.__TAURI__?.event?.listen?.("access-manager://requests-updated", () => {
+        void refreshMcpRequests();
+        void refreshPendingRuleRequests();
+      });
+      window.__TAURI__?.event?.listen?.("access-manager://focus-request-center", () => {
+        setActiveTab("requests");
+        void refreshMcpRequests();
+        void refreshPendingRuleRequests();
+      });
       const pendingNotificationId = window.__superagentPendingAccessNotificationId;
       const pendingNotificationTab = window.__superagentPendingAccessNotificationTab;
       if (typeof pendingNotificationId === "string")
@@ -2432,6 +2849,6 @@
       // Older installed Tray: preserve legacy panel, never fake active v2.
     }
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded",()=>void install());
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => void install());
   else void install();
 })();

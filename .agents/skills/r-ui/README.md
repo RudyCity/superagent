@@ -32,11 +32,11 @@ All tokens and classes operate under the original `--r-ui-*` namespace for green
 
 ---
 
-## 🛡️ The 10 Anti-Slop Visual Laws
+## 🛡️ The 11 Anti-Slop Visual Laws
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                       THE 10 ANTI-SLOP DESIGN LAWS                          │
+│                       THE 11 ANTI-SLOP DESIGN LAWS                          │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  1. BAN THE PURPLE HAZE     ──► No generic AI-purple/pink mesh gradients    │
 │  2. BAN SYMMETRIC BENTO     ──► Asymmetric weights & hierarchy (2:1 spans)  │
@@ -48,8 +48,12 @@ All tokens and classes operate under the original `--r-ui-*` namespace for green
 │  8. BAN NEON & CYBERPUNK    ──► Calibrated optical tones; zero glow rings   │
 │  9. BAN RAW NATIVE FORMS    ──► Zero unstyled <select>; 100% componentized  │
 │ 10. BAN COLOR HIJACKING     ──► Honor existing color system; zero rogue hex │
+│ 11. BAN THICK LEFT BORDERS  ──► Zero border-l-4 slop; 1px uniform perimeter │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+> **Law 11 Focus: Absolute Ban on Thick Left Borders & Asymmetric Accent Strips**  
+> Applying asymmetric thick borders (`border-l-4`, `border-l-2`, or thick accent bars attached to the left edge) on rounded cards or active items distorts corner curvature geometry and constitutes outdated 2016-era callout slop. Modern agency aesthetics demand **crisp 1px uniform perimeter hairlines**, with active selection signaled via subtle background tint (`rgba(accent, 0.08)`), decoupled floating indicator pills, or subtle 1px optical selection rings.
 
 ---
 

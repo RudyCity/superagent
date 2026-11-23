@@ -2708,7 +2708,6 @@ tbody tr:hover {
   padding: 12px 14px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-strong);
-  border-left: 4px solid var(--accent);
   background: var(--bg-surface-elevated);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
   color: var(--text-primary);
@@ -2718,9 +2717,18 @@ tbody tr:hover {
   pointer-events: auto;
 }
 
-.tray-toast-success { border-left-color: var(--success); }
-.tray-toast-warning { border-left-color: var(--warning); }
-.tray-toast-error { border-left-color: var(--danger); }
+.tray-toast-success {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: color-mix(in srgb, var(--success) 8%, var(--bg-surface-elevated));
+}
+.tray-toast-warning {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: color-mix(in srgb, var(--warning) 8%, var(--bg-surface-elevated));
+}
+.tray-toast-error {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg-surface-elevated));
+}
 .tray-toast-message { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .tray-toast-review {
   order: 0;

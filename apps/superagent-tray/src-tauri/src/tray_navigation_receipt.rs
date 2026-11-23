@@ -48,7 +48,11 @@ fn fixed_route(source: &str, id: &str) -> Option<(&'static str, Option<(String, 
     if !safe_event_id(id) { return None; }
     if source == "security" && id.starts_with("mcp-pending:") {
         let rest = &id["mcp-pending:".len()..];
-        let (tab, request) = if let Some(rest) = rest.strip_prefix("connections:") {
+        let (tab, request) = if let Some(rest) = rest.strip_prefix("requests:rule:") {
+            ("requests", rest)
+        } else if let Some(rest) = rest.strip_prefix("requests:") {
+            ("requests", rest)
+        } else if let Some(rest) = rest.strip_prefix("connections:") {
             // Backward-compatible incident identifier; operations now use Project Access.
             ("mcp", rest)
         } else if let Some(rest) = rest.strip_prefix("mcp:") {
@@ -56,6 +60,7 @@ fn fixed_route(source: &str, id: &str) -> Option<(&'static str, Option<(String, 
         } else { ("legacy", rest) };
         if !safe_id(request, 150) { return None; }
         let route=match tab {
+            "requests" => "security:requests",
             "mcp" => "security:mcp",
             _ => "security",
         };

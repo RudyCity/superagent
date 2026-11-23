@@ -309,3 +309,14 @@
   .access-mcp-tool-list{max-height:570px}
   .access-mcp-tool-actions .access-audit-refresh{min-height:44px}
 }
+
+/* Pusat Permintaan (Request Center) */
+.access-req-center-subtabs{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.access-req-center-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;min-width:0}
+.access-req-center-grid.is-single{grid-template-columns:minmax(0,1fr)}
+.access-req-rule-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:15px;border:1px solid rgba(167,139,250,.32);border-radius:12px;background:var(--bg-surface-raised,#172135)}
+.access-req-rule-form[hidden]{display:none!important}
+.access-req-rule-form .access-req-span-all{grid-column:1/-1}
+.access-req-rule-ops{display:flex;flex-wrap:wrap;gap:8px}
+@media(max-width:920px){.access-req-center-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:640px){.access-req-rule-form{grid-template-columns:minmax(0,1fr)}}
