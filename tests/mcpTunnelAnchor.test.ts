@@ -141,8 +141,17 @@ describe("Independent tunnel anchor / owner handoff (isolated mock tunnel)",()=>
       await old.close();old=null;
       expect(tunnel.stopQuickTunnel).not.toHaveBeenCalled();
       newClient=await connect(newer.info.bearerToken);
-      expect((await newClient.listTools()).tools.map(t=>t.name))
-        .toContain("superagent_delegate_read_chat");
+      // Gateway mode intentionally keeps Delegate tools out of the initial
+      // tools/list response. Verify the supported discovery path instead.
+      const initiallyAdvertised=(await newClient.listTools()).tools.map(t=>t.name);
+      expect(initiallyAdvertised).toContain("superagent_tool_search");
+      expect(initiallyAdvertised).not.toContain("superagent_delegate_read_chat");
+      const delegateSearch=await newClient.callTool({
+        name:"superagent_tool_search",
+        arguments:{query:"delegate",limit:20},
+      });
+      expect(delegateSearch.isError).not.toBe(true);
+      expect(JSON.stringify(delegateSearch)).toContain("superagent_delegate_read_chat");
       expect(tunnel.startQuickTunnel).toHaveBeenCalledTimes(1);
       expect((await control("status")).body.pid).toBe(process.pid);
     }finally{

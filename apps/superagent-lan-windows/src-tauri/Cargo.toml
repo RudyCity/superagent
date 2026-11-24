@@ -18,7 +18,7 @@ quircs = "0.10"
 tauri-plugin-dialog = "2.8"
 
 sha2 = "0.10"
-tauri-plugin-notification = "2.7"
+tauri-plugin-notification = "=2.8.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
