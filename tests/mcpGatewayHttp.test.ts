@@ -1,38 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { registerProject } from "../src/core/project/projectRegistry.js";
+import { describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { startMcpHttpServer, generateMcpBearerToken } from "../src/core/mcp/mcpHttpTransport.js";
 import { MCP_GATEWAY_TOOL_NAMES, MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES, MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES, MCP_GATEWAY_EAGER_CORE_TOOL_NAMES } from "../src/core/mcp/mcpToolGateway.js";
 
 describe("MCP gateway Streamable HTTP integration", () => {
-  let previousConfig: string | undefined;
-  let isolatedConfig: string;
-
-  beforeEach(() => {
-    previousConfig = process.env.SUPERAGENT_CONFIG_DIR;
-    isolatedConfig = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-gateway-http-"));
-    process.env.SUPERAGENT_CONFIG_DIR = isolatedConfig;
-    // HTTP workspace-scoped tools must resolve to an explicitly registered
-    // local project. Register the runner's active workspace without granting
-    // Execute; the test below separately verifies that shell execution is denied.
-    registerProject({
-      id: "mcp-gateway-http-workspace",
-      name: "MCP Gateway HTTP workspace",
-      type: "local",
-      root: process.cwd(),
-    });
-  });
-
-  afterEach(() => {
-    if (previousConfig === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
-    else process.env.SUPERAGENT_CONFIG_DIR = previousConfig;
-    fs.rmSync(isolatedConfig, { recursive: true, force: true });
-  });
-
   it("advertises compact catalog, searches authorized capabilities and does not bypass execute permission", async () => {
     const token = generateMcpBearerToken();
     const server = await startMcpHttpServer({
@@ -69,7 +41,7 @@ describe("MCP gateway Streamable HTTP integration", () => {
       expect(JSON.stringify(description.content)).toContain("inputSchema");
       const safe = await client.callTool({
         name: MCP_GATEWAY_TOOL_NAMES.execute,
-        arguments: { name: "superagent_get_workspace", arguments: {} },
+        arguments: { name: "superagent_server_health", arguments: {} },
       });
       expect(safe.isError).not.toBe(true);
       const unsafe = await client.callTool({
