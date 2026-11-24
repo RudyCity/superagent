@@ -60,6 +60,8 @@ describe("local-operator MCP full tool inventory authorization read model",()=>{
     expect(find(result,"superagent_tool_execute").approvalKind).toBe("target_dependent");
     expect(find(result,"superagent_register_project").approvalKind).toBe("operator_admin");
     expect(find(result,"superagent_request_project_access").approvalKind).toBe("request_only");
+    expect(find(result,"superagent_request_file_access").approvalKind).toBe("request_only");
+    expect(find(result,"superagent_request_application_access").approvalKind).toBe("request_only");
     expect(find(result,"superagent_lan_capabilities").approvalKind).toBe("read_only");
     expect(find(result,"superagent_git_action").capabilitiesByAction)
       .toMatchObject({status:"read",diff:"read",commit:"git",clean:"git"});

@@ -245,6 +245,51 @@ fn guardian_os_candidates(dir:&std::path::Path,system:&System)->Vec<Item> {
     }
     found
 }
+fn checkpoint_worker_birth_matches(since_ms:u64,birth_seconds:u64)->bool {
+    let born_ms=birth_seconds.saturating_mul(1000);
+    since_ms>0 && since_ms.saturating_add(5_000)>=born_ms &&
+        since_ms<=born_ms.saturating_add(60_000)
+}
+fn checkpoint_worker_candidates(dir:&std::path::Path,system:&System)->Vec<Item> {
+    let Ok(entries)=fs::read_dir(dir) else{return Vec::new()};
+    let mut seen_pids=HashSet::new();
+    let mut found=Vec::new();
+    for entry in entries.take(128).flatten() {
+        let file_name=entry.file_name();
+        let Some(raw)=file_name.to_str() else{continue};
+        let Some(public_port)=raw.strip_prefix("core-checkpoint-")
+            .and_then(|s|s.strip_suffix(".json"))
+            .and_then(|s|s.parse::<u16>().ok())
+            .filter(|port|*port>=1024) else {continue};
+        let path=entry.path();
+        let Ok(metadata)=fs::symlink_metadata(&path) else{continue};
+        if !metadata.file_type().is_file()||metadata.len()==0||
+            metadata.len()>512*1024 {continue}
+        let Some(cp)=fs::read(&path).ok()
+            .and_then(|bytes|serde_json::from_slice::<Value>(&bytes).ok())
+        else {continue};
+        if cp["version"]!=1 || cp["port"].as_u64()!=Some(u64::from(public_port)) {continue}
+        let Some(workers)=cp["workers"].as_array() else{continue};
+        for worker in workers.iter().take(32) {
+            let Some(pid)=pid_of(&worker["pid"]) else{continue};
+            if !seen_pids.insert(pid) {continue}
+            let Some(since)=worker["since"].as_u64() else{continue};
+            let worker_port=port_of(&worker["port"]);
+            let Some(process)=system.process(Pid::from_u32(pid)) else{continue};
+            if matches!(process.status(),ProcessStatus::Zombie|ProcessStatus::Dead) ||
+                !checkpoint_worker_birth_matches(since,process.start_time()) ||
+                !manual_process_allowed("core",pid,process.name()) {continue}
+            found.push(Item::new(
+                format!("checkpoint-worker:{public_port}:{pid}"),
+                &format!("Core worker (:{public_port})"),
+                "core","active",
+                "Core worker process from local checkpoint; ready to close",
+                false,false,None,worker_port,Some(pid)));
+            if found.len()>=32{return found}
+        }
+    }
+    found
+}
 
 async fn inspect() -> Result<Preview, String> {
     let dir = config_dir()?;
@@ -523,6 +568,10 @@ async fn inspect() -> Result<Preview, String> {
             }
         }
     }
+    for worker in checkpoint_worker_candidates(&dir,&force_system) {
+        if items.iter().any(|item|item.pid==worker.pid && running(&item.state)) {continue}
+        items.push(worker);
+    }
     if items.len()>100 {
         return Err("SHUTDOWN_TOO_MANY_OWNERS: narrow runtime before shutdown".into());
     }
@@ -677,6 +726,41 @@ fn manual_candidates(preview:&Preview,ids:&[String])->Result<Vec<Item>,String> {
             item.id.starts_with("guardian-os:")=>0,
         "cloudflare"=>1,"mcp"=>2,"muse-watch"=>3,"managed"=>4,
         "daemon-direct"=>5,"external"=>6,"core-supervisor"=>8,"core"=>9,_=>7,
+    });
+    Ok(chosen)
+}
+fn close_selected_candidates(preview:&Preview,ids:&[String])->Result<Vec<Item>,String> {
+    if ids.is_empty()||ids.len()>64{return Err("SHUTDOWN_SELECTION_SIZE_INVALID".into());}
+    let mut unique=HashSet::new();
+    let mut chosen=Vec::new();
+    for id in ids {
+        if !unique.insert(id){return Err("SHUTDOWN_DUPLICATE_SERVICE".into());}
+        let item=preview.services.iter().find(|item|item.id==*id)
+            .ok_or("SHUTDOWN_UNKNOWN_SERVICE")?;
+        if !running(&item.state){return Err("SHUTDOWN_UNVERIFIED_SELECTION".into());}
+        let can_force=item.force_selectable && item.process_started_at.is_some();
+        let can_manual=item.manual_kill_selectable && item.process_started_at.is_some() &&
+            item.process_name.as_deref().is_some_and(|name|
+                item.pid.is_some_and(|pid|manual_process_allowed(&item.kind,pid,name)));
+        let can_stop=item.selectable && item.owner_verified;
+        if !can_force && !can_manual && !can_stop {
+            return Err("SHUTDOWN_UNVERIFIED_SELECTION".into());
+        }
+        chosen.push(item.clone());
+    }
+    chosen.sort_by_key(|item|match item.kind.as_str(){
+        "managed" if item.id=="managed:guardian" ||
+            item.id.starts_with("guardian-os:")=>0,
+        "managed" if item.id=="managed:daemon"=>1,
+        "daemon-direct"=>1,
+        "core-supervisor"=>2,
+        "cloudflare"=>3,
+        "mcp"=>4,
+        "muse-watch"=>5,
+        "managed"=>6,
+        "external"=>7,
+        "core"=>9,
+        _=>8,
     });
     Ok(chosen)
 }
@@ -1165,6 +1249,38 @@ async fn run_shutdown(app:AppHandle, chosen:Vec<Item>, exit_after:bool, mut prog
     if let Ok(mut state)=locked(){state.busy=false;state.preview=None;}
 }
 
+async fn run_close_selected(app:AppHandle, chosen:Vec<Item>, mut progress:Progress) {
+    let mut partial=false;
+    for (index,item) in chosen.iter().enumerate() {
+        progress.steps[index].status="stopping".into();
+        progress.steps[index].message="Stopping daemon".into();
+        set_progress(&app,&progress);
+        let outcome = if item.force_selectable && item.process_started_at.is_some() {
+            force_stop_one(item).await
+        } else if item.manual_kill_selectable {
+            manual_kill_one(item).await
+        } else {
+            stop_one(item).await
+        };
+        match outcome {
+            Ok(())=>{
+                progress.steps[index].status="stopped".into();
+                progress.steps[index].message="Stopped".into();
+            }
+            Err(error)=>{
+                partial=true;
+                progress.steps[index].status="blocked".into();
+                progress.steps[index].message=redacted(&error);
+                progress.error=Some(redacted(&error));
+            }
+        }
+        set_progress(&app,&progress);
+    }
+    progress.stage=if partial {"partial"} else {"complete"}.into();
+    set_progress(&app,&progress);
+    if let Ok(mut state)=locked(){state.busy=false;state.preview=None;}
+}
+
 pub fn open(app:&AppHandle) {
     show_main(app,false);
     let _=app.emit("desktop-open-shutdown-manager",());
@@ -1351,6 +1467,69 @@ pub async fn shutdown_manager_action(
             set_progress(&app,&progress);
             let run_id=progress.run_id.clone();
             tauri::async_runtime::spawn(run_force_shutdown(app,chosen,progress));
+            Ok(json!({"accepted":true,"runId":run_id}))
+        }
+        "close_selected" => {
+            if !window.is_focused().unwrap_or(false) {
+                return Err("SHUTDOWN_FOCUSED_NATIVE_WINDOW_REQUIRED".into());
+            }
+            if exit_after.is_some() || force_confirmation.is_some() {
+                return Err("SHUTDOWN_UNEXPECTED_ARGUMENT".into());
+            }
+            let token=preview_id.ok_or("SHUTDOWN_PREVIEW_REQUIRED")?;
+            let ids=selected.ok_or("SHUTDOWN_SELECTION_REQUIRED")?;
+            let original={
+                let state=locked()?;
+                if state.busy{return Err("SHUTDOWN_ALREADY_RUNNING".into());}
+                state.preview.clone().ok_or("SHUTDOWN_PREVIEW_REQUIRED")?
+            };
+            if original.preview_id!=token ||
+                timestamp().saturating_sub(original.created_at)>PREVIEW_TTL_MS {
+                return Err("SHUTDOWN_PREVIEW_EXPIRED".into());
+            }
+            let chosen=close_selected_candidates(&original,&ids)?;
+            let mut summary=format!("Close {} selected daemon(s)?\n\n",chosen.len());
+            for item in chosen.iter().take(16) {
+                summary.push_str(&format!("• {} (PID {})\n",item.label,item.pid.unwrap_or(0)));
+            }
+            if chosen.len()>16 {
+                summary.push_str(&format!("...and {} more.\n",chosen.len()-16));
+            }
+            let dialog=app.clone();
+            let dialog_parent=window.clone();
+            let approved=tauri::async_runtime::spawn_blocking(move||{
+                use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
+                dialog.dialog().message(summary)
+                    .title("SuperAgent · Shutdown Manager")
+                    .parent(&dialog_parent)
+                    .buttons(
+                    MessageDialogButtons::OkCancelCustom(
+                        "Close Selected".into(),"Cancel".into()
+                    )).blocking_show()
+            }).await.map_err(|_|"SHUTDOWN_NATIVE_APPROVAL_FAILED")?;
+            if !approved{return Err("SHUTDOWN_OPERATOR_CANCELLED".into());}
+            let progress=Progress {run_id:Uuid::new_v4().simple().to_string(),
+                stage:"running".into(),exit_after:false,
+                steps:chosen.iter().map(|item|Step {
+                    id:item.id.clone(),
+                    label:match item.pid {
+                        Some(pid)=>format!("{} (PID {})",item.label,pid),
+                        None=>item.label.clone(),
+                    },
+                    status:"queued".into(),
+                    message:"Queued".into(),
+                }).collect(),error:None};
+            {
+                let mut state=locked()?;
+                if state.busy{return Err("SHUTDOWN_ALREADY_RUNNING".into());}
+                if state.preview.as_ref().is_none_or(|p|p.preview_id!=token){
+                    return Err("SHUTDOWN_PREVIEW_REPLACED".into());
+                }
+                state.busy=true;state.progress=Some(progress.clone());
+            }
+            set_progress(&app,&progress);
+            let run_id=progress.run_id.clone();
+            tauri::async_runtime::spawn(run_close_selected(app,chosen,progress));
             Ok(json!({"accepted":true,"runId":run_id}))
         }
         "execute" => {
@@ -1784,5 +1963,49 @@ mod tests {
         assert!(!same_owner(&before,&after));
         after=before.clone();after.selectable=false;
         assert!(!same_owner(&before,&after));
+    }
+    #[test]
+    fn checkpoint_worker_candidates_include_live_matching_workers_and_reject_dead_or_mismatched() {
+        let mut system=System::new();
+        system.refresh_processes();
+        let pid=std::process::id();
+        let current=system.process(Pid::from_u32(pid)).expect("current test pid");
+        let dir=std::env::temp_dir().join(format!("sa-cp-workers-{pid}-{}",timestamp()));
+        fs::create_dir_all(&dir).unwrap();
+        let born_ms=current.start_time().saturating_mul(1000);
+        // Use a disposable child so manual_process_allowed accepts it (self PID is blocked).
+        let mut child=if cfg!(windows) {
+            let mut cmd=std::process::Command::new("cmd");
+            cmd.args(["/C","ping -n 10 127.0.0.1 >NUL"]);
+            cmd
+        } else {
+            let mut cmd=std::process::Command::new("sleep");
+            cmd.arg("10");
+            cmd
+        }.spawn().expect("spawn disposable worker");
+        let child_pid=child.id();
+        system.refresh_processes();
+        let child_proc=system.process(Pid::from_u32(child_pid)).expect("child proc");
+        let child_born_ms=child_proc.start_time().saturating_mul(1000);
+        fs::write(dir.join("core-checkpoint-7888.json"),json!({
+            "version":1,
+            "port":7888,
+            "workers":[
+                {"pid":child_pid,"port":49381,"since":child_born_ms.saturating_add(500)},
+                {"pid":child_pid,"port":49382,"since":child_born_ms.saturating_add(500)},
+                {"pid":pid,"port":49383,"since":born_ms},
+                {"pid":999_999_991u32,"port":49384,"since":child_born_ms},
+                {"pid":child_pid,"port":49385,"since":1_000_000_000_000u64}
+            ]
+        }).to_string()).unwrap();
+        let found=checkpoint_worker_candidates(&dir,&system);
+        let _=child.kill();
+        let _=child.wait();
+        let _=fs::remove_dir_all(&dir);
+        assert_eq!(found.len(),1);
+        assert_eq!(found[0].id,format!("checkpoint-worker:7888:{child_pid}"));
+        assert_eq!(found[0].pid,Some(child_pid));
+        assert_eq!(found[0].port,Some(49381));
+        assert_eq!(found[0].state,"active");
     }
 }

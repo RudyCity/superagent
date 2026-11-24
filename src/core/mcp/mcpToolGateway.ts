@@ -30,6 +30,8 @@ export const MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES = Object.freeze([
   "superagent_remove_project",
   "superagent_list_project_access",
   "superagent_request_project_access",
+  "superagent_request_file_access",
+  "superagent_request_application_access",
   "superagent_grant_project_access",
   "superagent_revoke_project_access",
 ] as const);

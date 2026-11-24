@@ -533,7 +533,7 @@ function certifiedDiagnosticCommand(args:Args|undefined):boolean {
   const binary=parts[0]!.toLowerCase();
   const flag=parts[1]!.toLowerCase();
   if(!["--version","-v","-version"].includes(flag))return false;
-  return new Set(["bun","node","npm","pnpm","yarn","deno","git","python","python3",
+  return new Set(["bun","node","npm","pnpm","yarn","deno","git","gh","python","python3",
     "rustc","cargo","go","java","javac"]).has(binary);
 }
 function certifiedMixedAction(name:string,args:Args|undefined):boolean {

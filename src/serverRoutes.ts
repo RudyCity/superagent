@@ -6328,21 +6328,13 @@ export async function handleServerRoute(
       return true;
     }
     try {
-      const { execa } = await import("execa");
-      const result = await execa("git", ["worktree", "list"], { cwd: wsPath, reject: false, windowsHide: true });
-      if (result.failed) {
-        sendJSON(res, 200, { success: true, worktrees: [] });
-        return true;
-      }
-      const lines = result.stdout.trim().split("\n").filter(Boolean);
-      const worktrees = lines.map(line => {
-        const parts = line.split(/\s+/);
-        return {
-          path: parts[0],
-          sha: parts[1] || "",
-          branch: parts[2] ? parts[2].replace(/[()]/g, "") : ""
-        };
-      });
+      const { listIsolatedWorktrees } = await import("./core/tools/cliBridgeWorktreeManager.js");
+      const entries = await listIsolatedWorktrees(wsPath);
+      const worktrees = entries.map((entry) => ({
+        path: entry.worktreePath,
+        sha: entry.headSha,
+        branch: entry.branch ? (entry.branch.startsWith("refs/heads/") ? entry.branch.slice("refs/heads/".length) : entry.branch) : entry.bare ? "bare" : "detached",
+      }));
       sendJSON(res, 200, { success: true, worktrees });
     } catch (err: any) {
       sendJSON(res, 500, { error: err.message });
@@ -6372,22 +6364,34 @@ export async function handleServerRoute(
       sendJSON(res, 400, { error: "No active workspace path" });
       return true;
     }
+    let body: any;
     try {
-      const bodyStr = await readBody(req);
-      const { path: targetPath, force } = JSON.parse(bodyStr || "{}");
-      if (!targetPath) {
-        sendJSON(res, 400, { error: "Missing path" });
-        return true;
-      }
-      const { execa } = await import("execa");
-      const args = ["worktree", "remove"];
-      if (force) args.push("--force");
-      args.push(targetPath);
-      await execa("git", args, { cwd: wsPath, windowsHide: true });
-      await execa("git", ["worktree", "prune"], { cwd: wsPath, windowsHide: true });
+      const raw = await readBody(req);
+      if (Buffer.byteLength(raw, "utf8") > 8192) throw new Error("Worktree removal request is too large.");
+      body = JSON.parse(raw || "{}");
+    } catch (err: any) {
+      sendJSON(res, 400, { error: err.message || "Invalid worktree removal request." });
+      return true;
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body) ||
+        Object.keys(body).some((key) => key !== "path" && key !== "force") ||
+        typeof body.path !== "string" || !body.path ||
+        (body.force !== undefined && typeof body.force !== "boolean")) {
+      sendJSON(res, 400, { error: "A registered worktree path and optional boolean force flag are required." });
+      return true;
+    }
+    try {
+      const { resolveRegisteredWorktreeRemovalTarget, removeIsolatedWorktree } =
+        await import("./core/tools/cliBridgeWorktreeManager.js");
+      const target = await resolveRegisteredWorktreeRemovalTarget(wsPath, body.path, wsPath);
+      await removeIsolatedWorktree({
+        repoRoot: wsPath,
+        worktreePath: target.worktreePath,
+        force: body.force === true,
+      });
       sendJSON(res, 200, { success: true });
     } catch (err: any) {
-      sendJSON(res, 500, { error: err.message });
+      sendJSON(res, 409, { error: err.message || "Git worktree removal was refused." });
     }
     return true;
   }

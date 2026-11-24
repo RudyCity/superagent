@@ -10,6 +10,7 @@ import {
   assessAutomaticWorktreeCleanup,
   createIsolatedWorktree,
   removeIsolatedWorktree,
+  resolveRegisteredWorktreeRemovalTarget,
 } from "../src/core/tools/cliBridgeWorktreeManager.js";
 
 describe("CLI Bridge worktree opt-in and lossless cleanup", () => {
@@ -42,7 +43,7 @@ describe("CLI Bridge worktree opt-in and lossless cleanup", () => {
 describe("Automatic worktree cleanup preserves all unfinished work", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-safe-worktree-"));
   const repoRoot = path.join(tmp, "repo");
-  const worktreePath = path.join(tmp, "worktree");
+  const worktreePath = path.join(tmp, "worktree with spaces");
   const branchName = "probe-safe-cleanup";
   let created = false;
 
@@ -71,6 +72,17 @@ describe("Automatic worktree cleanup preserves all unfinished work", () => {
 
     await createIsolatedWorktree({ repoRoot, branchName, targetDir: worktreePath, linkNodeModules: false });
     created = true;
+
+    const resolvedTarget = await resolveRegisteredWorktreeRemovalTarget(repoRoot, worktreePath, repoRoot);
+    expect(path.resolve(resolvedTarget.worktreePath)).toBe(path.resolve(worktreePath));
+    await expect(resolveRegisteredWorktreeRemovalTarget(repoRoot, repoRoot, repoRoot))
+      .rejects.toThrow(/Refusing to remove/);
+    await expect(resolveRegisteredWorktreeRemovalTarget(worktreePath, repoRoot, worktreePath))
+      .rejects.toThrow(/primary Git worktree/);
+    const unregisteredPath = path.join(tmp, "unregistered-directory");
+    fs.mkdirSync(unregisteredPath);
+    await expect(resolveRegisteredWorktreeRemovalTarget(repoRoot, unregisteredPath, repoRoot))
+      .rejects.toThrow(/not a registered linked Git worktree/);
 
     expect((await assessAutomaticWorktreeCleanup({ repoRoot, worktreePath: repoRoot })).safe).toBe(false);
     expect((await assessAutomaticWorktreeCleanup({ repoRoot, worktreePath })).safe).toBe(true);

@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { augmentWindowsEnvPath, resolveWindowsBunExecutable, resolveWindowsGitExecutable } from "../src/core/tools/helpers.js";
+import {
+  augmentWindowsEnvPath,
+  resolveWindowsBunExecutable,
+  resolveWindowsGhExecutable,
+  resolveWindowsGitExecutable,
+} from "../src/core/tools/helpers.js";
 
 describe("Windows MCP toolchain PATH", () => {
   const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform")!;
@@ -62,6 +67,30 @@ describe("Windows MCP toolchain PATH", () => {
     // PATH augmentation should keep an existing path intact even if Git is not installed.
     const env = augmentWindowsEnvPath({ USERPROFILE: user, PATH: "C:\\Windows\\System32" });
     expect(env.PATH).toContain("C:\\Windows\\System32");
+  });
+
+  it("resolves an installed Windows GitHub CLI executable and injects it into stale PATH", () => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-gh-path-"));
+    roots.push(tempRoot);
+    const ghDir = path.join(tempRoot, "GitHub CLI");
+    fs.mkdirSync(ghDir, { recursive: true });
+    const ghExe = path.join(ghDir, "gh.exe");
+    fs.writeFileSync(ghExe, "");
+
+    expect(resolveWindowsGhExecutable({ ProgramFiles: tempRoot, PATH: "" })).toBe(ghExe);
+    expect(resolveWindowsGhExecutable({ ProgramFiles: tempRoot, PATH: "" }, () => false)).toBe("gh");
+
+    const env = augmentWindowsEnvPath({
+      USERPROFILE: tempRoot,
+      ProgramFiles: tempRoot,
+      PATH: "C:\\Windows\\System32",
+    });
+    expect(env.PATH?.split(";")).toContain(ghDir);
+    expect(env.Path).toBe(env.PATH);
+
+    const again = augmentWindowsEnvPath(env);
+    expect(again.PATH?.split(";").filter(value => value === ghDir)).toHaveLength(1);
   });
 
 });

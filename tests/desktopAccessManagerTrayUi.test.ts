@@ -1591,6 +1591,8 @@ describe("Access history placement and responsive layout", () => {
     const incomingCard = ui.document.getElementById("access-req-center-incoming-card")!;
     const rulesCard = ui.document.getElementById("access-req-center-rules-card")!;
     const desktopCard = ui.document.getElementById("access-req-center-desktop-card")!;
+    const projectHistoryCard = ui.document.getElementById("access-req-center-project-history-card")!;
+    const ruleHistoryCard = ui.document.getElementById("access-req-center-rules-history-card")!;
     const desktopHistoryCard = ui.document.getElementById("access-req-center-desktop-history-card")!;
     const projectPane = ui.document.getElementById("access-pane-mcp")!;
     const rulesPane = ui.document.getElementById("access-pane-rules")!;
@@ -1602,6 +1604,8 @@ describe("Access history placement and responsive layout", () => {
     expect(projectHistory.textContent).toContain("Disetujui");
     expect(ruleHistory.textContent).toContain("G:/project/superagent");
     expect(ruleHistory.textContent).toContain("Disetujui");
+    expect(projectHistoryCard.hidden).toBe(true);
+    expect(ruleHistoryCard.hidden).toBe(true);
     expect(desktopHistoryCard.hidden).toBe(true);
 
     ui.document.getElementById("access-nav-tab-requests")!.click();
@@ -1609,20 +1613,36 @@ describe("Access history placement and responsive layout", () => {
     expect(incomingCard.hidden).toBe(false);
     expect(rulesCard.hidden).toBe(true);
     expect(desktopCard.hidden).toBe(true);
+    expect(projectHistoryCard.hidden).toBe(false);
+    expect(ruleHistoryCard.hidden).toBe(true);
+    expect(desktopHistoryCard.hidden).toBe(true);
     expect(projectHistory.parentNode?.parentNode).toBe(incomingCard);
 
     ui.document.getElementById("access-req-subtab-rules")!.click();
     expect(incomingCard.hidden).toBe(true);
     expect(rulesCard.hidden).toBe(false);
     expect(desktopCard.hidden).toBe(true);
+    expect(projectHistoryCard.hidden).toBe(true);
+    expect(ruleHistoryCard.hidden).toBe(false);
+    expect(desktopHistoryCard.hidden).toBe(true);
     expect(ruleHistory.parentNode?.parentNode).toBe(rulesCard);
 
     ui.document.getElementById("access-req-subtab-desktop")!.click();
     expect(incomingCard.hidden).toBe(true);
     expect(rulesCard.hidden).toBe(true);
     expect(desktopCard.hidden).toBe(false);
+    expect(projectHistoryCard.hidden).toBe(true);
+    expect(ruleHistoryCard.hidden).toBe(true);
     expect(desktopHistoryCard.hidden).toBe(false);
     expect(desktopHistory.parentNode?.parentNode).toBe(desktopCard);
+
+    ui.document.getElementById("access-req-subtab-all")!.click();
+    expect(incomingCard.hidden).toBe(false);
+    expect(rulesCard.hidden).toBe(false);
+    expect(desktopCard.hidden).toBe(false);
+    expect(projectHistoryCard.hidden).toBe(true);
+    expect(ruleHistoryCard.hidden).toBe(true);
+    expect(desktopHistoryCard.hidden).toBe(true);
 
     ui.document.getElementById("access-nav-tab-rules")!.click();
     await flush();
@@ -1644,5 +1664,49 @@ describe("Access history placement and responsive layout", () => {
     expect(trayStyles).toContain("white-space: normal");
     expect(accessManagerStyles).toContain(".access-req-center-subtabs .access-filter-tabs");
     expect(accessManagerStyles).toContain("overflow-x:auto");
+  });
+
+  it("refreshes incoming project and active-rule requests on requests-updated and window focus", async () => {
+    const dynamicRules: any[] = [];
+    const ui = boot(true, { pendingRuleRequests: dynamicRules });
+    await flush();
+    expect(ui.document.getElementById("access-req-subtab-all")!.textContent).toBe("Semua (0)");
+
+    ui.mcpRequests.push({
+      requestId: "req_live_incoming_1",
+      projectId: "superagent",
+      projectName: "SuperAgent",
+      status: "pending",
+      subject: "yui",
+      ownerConnectionName: "yui",
+      mode: "oauth",
+      capabilities: ["read"],
+      reason: "Live incoming project request",
+      createdAt: Date.now(),
+    });
+    dynamicRules.push({
+      id: "rule_req_live_1",
+      status: "pending",
+      kind: "file",
+      effect: "allow",
+      sourceName: "MCP Agent yui",
+      targetPath: "D:/backup from pc asus/Documents Development/superagent/README.md",
+      recursive: false,
+      operations: ["read"],
+      reason: "Live active rule request",
+      createdAt: Date.now(),
+    });
+
+    await ui.nativeEvents.get("access-manager://requests-updated")!();
+    await flush();
+    expect(ui.document.getElementById("access-req-subtab-all")!.textContent).toBe("Semua (2)");
+    expect(ui.document.getElementById("access-req-center-incoming-list")!.textContent).toContain("yui");
+    expect(ui.document.getElementById("access-req-center-rules-list")!.textContent).toContain("README.md");
+
+    ui.mcpRequests.length = 0;
+    dynamicRules.length = 0;
+    ui.listeners.get("focus")!();
+    await flush();
+    expect(ui.document.getElementById("access-req-subtab-all")!.textContent).toBe("Semua (0)");
   });
 });

@@ -64,6 +64,9 @@ describe("static MCP gateway catalog", () => {
       "superagent_get_project",
       "superagent_check_project_health",
       "superagent_list_project_access",
+      "superagent_request_project_access",
+      "superagent_request_file_access",
+      "superagent_request_application_access",
     ]));
     // Delegate tools are now discovery-only, so they must NOT be eagerly advertised in the main catalog
     for (const toolName of safeDelegateTools) expect(advertised).not.toContain(toolName);
@@ -102,10 +105,16 @@ describe("static MCP gateway catalog", () => {
       "superagent_get_workspace",
       "superagent_list_projects",
       "superagent_discover_projects",
+      "superagent_request_project_access",
+      "superagent_request_file_access",
+      "superagent_request_application_access",
     ]));
     expect(status.initiallyAdvertisedTools).toEqual(expect.arrayContaining([
       MCP_GATEWAY_TOOL_NAMES.search,
       "superagent_list_projects",
+      "superagent_request_project_access",
+      "superagent_request_file_access",
+      "superagent_request_application_access",
     ]));
     await server.close();
   });

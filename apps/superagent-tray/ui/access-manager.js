@@ -698,10 +698,14 @@
     const incomingCard = $("access-req-center-incoming-card");
     const rulesCard = $("access-req-center-rules-card");
     const desktopCard = $("access-req-center-desktop-card");
+    const projectHistoryCard = $("access-req-center-project-history-card");
+    const ruleHistoryCard = $("access-req-center-rules-history-card");
     const desktopHistoryCard = $("access-req-center-desktop-history-card");
     if (incomingCard) incomingCard.hidden = state.requestSubTab === "rules" || state.requestSubTab === "desktop";
     if (rulesCard) rulesCard.hidden = state.requestSubTab === "incoming" || state.requestSubTab === "desktop";
     if (desktopCard) desktopCard.hidden = state.requestSubTab === "incoming" || state.requestSubTab === "rules";
+    if (projectHistoryCard) projectHistoryCard.hidden = state.requestSubTab !== "incoming";
+    if (ruleHistoryCard) ruleHistoryCard.hidden = state.requestSubTab !== "rules";
     if (desktopHistoryCard) desktopHistoryCard.hidden = state.requestSubTab !== "desktop";
     if (grid) {
       grid.className = "access-req-center-grid" + (state.requestSubTab !== "all" ? " is-single" : "");
@@ -2229,6 +2233,8 @@
     grid.append(incomingCard, rulesCard, desktopCard);
 
     const ruleHistCard = make("section", "access-stored access-mcp-card");
+    ruleHistCard.id = "access-req-center-rules-history-card";
+    ruleHistCard.hidden = state.requestSubTab !== "rules";
     const ruleHistHead = make("div", "access-stored-head");
     ruleHistHead.append(make("h3", "", "Riwayat Keputusan Aturan Aktif"));
     const ruleHistList = make("div", "access-mcp-list access-mcp-scroll-list");
@@ -2239,6 +2245,7 @@
 
     const projectHistCard = make("section", "access-stored access-mcp-card access-req-center-project-history");
     projectHistCard.id = "access-req-center-project-history-card";
+    projectHistCard.hidden = state.requestSubTab !== "incoming";
     const projectHistHead = make("div", "access-stored-head");
     projectHistHead.append(make("h3", "", "Riwayat Akses Proyek"));
     const projectHistList = make("div", "access-mcp-list access-mcp-scroll-list");
@@ -3224,6 +3231,18 @@
         void refreshPendingRuleRequests();
         void refreshDesktopUiSessionRequests();
       });
+      const refreshRequestsIfVisible = () => {
+        if (document.visibilityState === "hidden") return;
+        const pane = $("access-pane-requests");
+        if (state.activeTab !== "requests" || !pane || pane.hidden) return;
+        void refreshMcpRequests({ queueIfBusy: true });
+        void refreshPendingRuleRequests();
+        void refreshDesktopUiSessionRequests();
+      };
+      window.addEventListener("focus", refreshRequestsIfVisible);
+      if (typeof setInterval === "function") {
+        setInterval(refreshRequestsIfVisible, 4000);
+      }
       const pendingNotificationId = window.__superagentPendingAccessNotificationId;
       const pendingNotificationTab = window.__superagentPendingAccessNotificationTab;
       if (typeof pendingNotificationId === "string")

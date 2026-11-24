@@ -262,6 +262,9 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       expect(getPermanentFileToolReadiness(name)).not.toBe("uncertified");
       expect(gate(name,args as Record<string,unknown>)).toBeNull();
     }
+    expect(gate("superagent_exec_command",{command:"gh --version"})).toBeNull();
+    expect(gate("superagent_exec_command",{command:"gh -v"})).toBeNull();
+    expect(gate("superagent_exec_command",{command:"gh auth status"})).toMatch(/not certified/);
     expect(gate("superagent_exec_command",{command:"echo still-blocked"})).toMatch(/not certified/);
   });
 

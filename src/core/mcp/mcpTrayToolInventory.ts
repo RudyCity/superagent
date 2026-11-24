@@ -50,7 +50,9 @@ export function buildTrayToolInventory(selection: { identityHandle?: string; pro
     const registry = PROJECT_REGISTRY_TOOL_NAMES.has(name);
     const approvalKind: TrayToolKind = gateway ? "target_dependent"
       : privileged ? "operator_admin"
-      : name === "superagent_request_project_access" ? "request_only"
+      : (name === "superagent_request_project_access"
+        || name === "superagent_request_file_access"
+        || name === "superagent_request_application_access") ? "request_only"
       : registry ? "read_only"
       : workspaceScoped || risk === "dangerous" ? "project"
       : "read_only";

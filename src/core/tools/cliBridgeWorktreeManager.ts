@@ -122,6 +122,64 @@ export async function listIsolatedWorktrees(repoRoot: string): Promise<WorktreeE
   return entries;
 }
 
+
+/** Resolve a removal request to one existing, registered linked worktree. */
+export async function resolveRegisteredWorktreeRemovalTarget(
+  repoRoot: string,
+  requestedPath: unknown,
+  protectedWorkspacePath: string = repoRoot,
+): Promise<WorktreeEntry> {
+  if (typeof requestedPath !== "string" || !requestedPath ||
+      requestedPath.trim() !== requestedPath || requestedPath.length > 4096 ||
+      /[\u0000-\u001f\u007f]/.test(requestedPath)) {
+    throw new Error("A valid Git worktree path is required.");
+  }
+
+  const rootResult = await execa("git", ["rev-parse", "--show-toplevel"], headlessOpts({
+    cwd: path.resolve(repoRoot),
+    reject: false,
+  }));
+  if (rootResult.exitCode !== 0 || !rootResult.stdout.trim()) {
+    throw new Error("The selected workspace is not a Git worktree.");
+  }
+
+  const currentRoot = fs.realpathSync(rootResult.stdout.trim());
+  const protectedRoot = fs.realpathSync(path.resolve(protectedWorkspacePath));
+  const targetPath = fs.realpathSync(path.resolve(currentRoot, requestedPath));
+  if (!fs.statSync(targetPath).isDirectory()) {
+    throw new Error("The requested Git worktree target is not a directory.");
+  }
+
+  const comparable = (value: string) => {
+    const normalized = value.replace(/\\/g, "/");
+    return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  };
+  const targetKey = comparable(targetPath);
+  if (targetKey === comparable(currentRoot) || targetKey === comparable(protectedRoot)) {
+    throw new Error("Refusing to remove the selected workspace.");
+  }
+
+  const entries = await listIsolatedWorktrees(currentRoot);
+  const resolvedEntries = entries.flatMap((entry) => {
+    try {
+      return [{ entry, realPath: fs.realpathSync(entry.worktreePath) }];
+    } catch {
+      return [];
+    }
+  });
+  const primary = resolvedEntries[0];
+  if (primary && targetKey === comparable(primary.realPath)) {
+    throw new Error("Refusing to remove the primary Git worktree.");
+  }
+
+  const match = resolvedEntries.find(({ realPath }) => comparable(realPath) === targetKey);
+  if (!match || match.entry.bare) {
+    throw new Error("The requested path is not a registered linked Git worktree.");
+  }
+  return { ...match.entry, worktreePath: targetPath };
+}
+
+
 /**
  * Creates an isolated git worktree checked out to a new branch from a pinned base commit SHA.
  */

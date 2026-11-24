@@ -2534,9 +2534,10 @@ tbody tr:hover {
 }
 .runtime-content {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 20px;
   padding: 24px;
+  min-width: 0;
 }
 
 .column-header {
@@ -2576,12 +2577,15 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-width: 0;
+  width: 100%;
 }
 
 #runtime-remote-panel .column-header {
   margin-bottom: 0;
   gap: 10px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 #runtime-remote-panel .runtime-named-tunnel-entry {
@@ -2589,7 +2593,9 @@ tbody tr:hover {
 }
 
 #runtime-remote[data-runtime-view="mcp"] {
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  min-width: 0;
 }
 @media (max-width: 640px) {
   #runtime-remote[data-runtime-view="mcp"] {
@@ -2643,6 +2649,8 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
   transition: border-color var(--transition-fast);
 }
 
@@ -2695,7 +2703,14 @@ tbody tr:hover {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
+  min-width: 0;
+}
+
+.runtime-instance-head > div {
+  min-width: 0;
+  flex: 1 1 200px;
 }
 
 .runtime-instance-head strong {

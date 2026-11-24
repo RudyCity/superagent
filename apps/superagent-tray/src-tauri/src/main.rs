@@ -4091,58 +4091,93 @@ async fn poll_reminders(
 /// Passive, authenticated security projection. Never approves/revokes a
 /// capability; absence is trusted only after a complete successful inventory.
 async fn poll_pending_security_requests(app: &tauri::AppHandle) -> Result<(), String> {
-    let payload = core_request(Method::GET, "/api/desktop/access/requests", None).await?;
-    if payload.get("success") != Some(&Value::Bool(true)) {
-        return Err("Security request inventory unavailable".into());
-    }
-    let requests = payload.get("requests").and_then(Value::as_array)
-        .ok_or("Security inventory malformed")?;
+    let mut requests_updated = false;
     let mut active = HashSet::new();
-    for request in requests.iter().take(300) {
-        let Some(id) = request.get("requestId").and_then(Value::as_str) else { continue; };
-        if id.is_empty() || id.len() > 150 || id.chars().any(char::is_control) { continue; }
-        // Identity and lifecycle are from authenticated Core inventory, not the
-        // notification body or a WebView-supplied approval result.
-        // Operation access requests route to Pusat Permintaan (requests), while
-        // historical virtual mcp-connection requests stay denial-only in Akses Proyek.
-        let tab = if request.get("projectId").and_then(Value::as_str) == Some("mcp-connection") {
-            "mcp"
-        } else {
-            "requests"
-        };
-        let key = format!("mcp-pending:{tab}:{id}");
-        let status = request.get("status").and_then(Value::as_str).unwrap_or("");
-        if status != "pending" {
-            let changed = if status == "expired" {
-                tray_notification_center::expire_verified(&config_dir()?, &key)?
-            } else if ["approved", "denied", "cancelled", "rejected", "revoked"].contains(&status) {
-                tray_notification_center::resolve(&config_dir()?, &key)?
-            } else { false };
-            if changed { let _ = app.emit("tray-notifications-changed", ()); }
-            continue;
+    let mut request_count: Option<usize> = None;
+    let mut requests_error: Option<String> = None;
+    match core_request(Method::GET, "/api/desktop/access/requests", None).await {
+        Ok(payload) => {
+            if payload.get("success") != Some(&Value::Bool(true)) {
+                requests_error = Some("Security request inventory unavailable".into());
+            } else if let Some(requests) = payload.get("requests").and_then(Value::as_array) {
+                request_count = Some(requests.len());
+                for request in requests.iter().take(300) {
+                    let Some(id) = request.get("requestId").and_then(Value::as_str) else { continue; };
+                    if id.is_empty() || id.len() > 150 || id.chars().any(char::is_control) { continue; }
+                    // Identity and lifecycle are from authenticated Core inventory, not the
+                    // notification body or a WebView-supplied approval result.
+                    // Operation access requests route to Pusat Permintaan (requests), while
+                    // historical virtual mcp-connection requests stay denial-only in Akses Proyek.
+                    let tab = if request.get("projectId").and_then(Value::as_str) == Some("mcp-connection") {
+                        "mcp"
+                    } else {
+                        "requests"
+                    };
+                    let key = format!("mcp-pending:{tab}:{id}");
+                    let status = request.get("status").and_then(Value::as_str).unwrap_or("");
+                    if status != "pending" {
+                        let changed = if status == "expired" {
+                            tray_notification_center::expire_verified(&config_dir()?, &key)?
+                        } else if ["approved", "denied", "cancelled", "rejected", "revoked"].contains(&status) {
+                            tray_notification_center::resolve(&config_dir()?, &key)?
+                        } else { false };
+                        if changed {
+                            let _ = app.emit("tray-notifications-changed", ());
+                            requests_updated = true;
+                        }
+                        continue;
+                    }
+                    active.insert(key.clone());
+                    // Informational only. The label was bound to a verified OAuth token
+                    // after owner consent; it is NEVER an approval or client identity.
+                    let approved_name = request.get("ownerConnectionName")
+                        .and_then(Value::as_str)
+                        .filter(|value| !value.is_empty() && value.chars().count() <= 64 &&
+                            !value.chars().any(char::is_control));
+                    let details = match approved_name {
+                        Some(name) => format!("{name} requested MCP permission. Review Security Approval."),
+                        None => "An MCP connection requested access. Review Security Approval.".to_owned(),
+                    };
+                    if record_operational_incident(
+                        app, "security", "critical", &key,
+                        "Permintaan Akses Masuk",
+                        &details,
+                    )? {
+                        requests_updated = true;
+                    }
+                }
+            } else {
+                requests_error = Some("Security inventory malformed".into());
+            }
         }
-        active.insert(key.clone());
-        // Informational only. The label was bound to a verified OAuth token
-        // after owner consent; it is NEVER an approval or client identity.
-        let approved_name = request.get("ownerConnectionName")
-            .and_then(Value::as_str)
-            .filter(|value| !value.is_empty() && value.chars().count() <= 64 &&
-                !value.chars().any(char::is_control));
-        let details = match approved_name {
-            Some(name) => format!("{name} requested MCP permission. Review Security Approval."),
-            None => "An MCP connection requested access. Review Security Approval.".to_owned(),
-        };
-        record_operational_incident(
-            app, "security", "critical", &key,
-            "Permintaan Akses Masuk",
-            &details,
-        )?;
+        Err(err) => {
+            requests_error = Some(err);
+        }
     }
     if let Ok(dir) = config_dir() {
         if let Ok(rule_items) = desktop_access_registry::load_pending_rule_requests(&dir) {
-            for item in rule_items.iter().filter(|r| r.status == "pending") {
+            for item in &rule_items {
                 let rule_key = format!("mcp-pending:requests:rule:{}", item.id);
-                active.insert(rule_key);
+                if item.status == "pending" {
+                    active.insert(rule_key.clone());
+                    let source: String = item.source_name.chars().filter(|c| !c.is_control()).take(64).collect();
+                    let target: String = item.target_path.chars().filter(|c| !c.is_control()).take(120).collect();
+                    let details = if source.is_empty() {
+                        format!("Permintaan aturan aktif untuk {target} menunggu persetujuan.")
+                    } else {
+                        format!("{source} meminta aturan aktif untuk {target}.")
+                    };
+                    if record_operational_incident(
+                        app, "security", "critical", &rule_key,
+                        "Permintaan Aturan Aktif",
+                        &details,
+                    )? {
+                        requests_updated = true;
+                    }
+                } else if tray_notification_center::resolve(&dir, &rule_key)? {
+                    let _ = app.emit("tray-notifications-changed", ());
+                    requests_updated = true;
+                }
             }
         }
     }
@@ -4168,16 +4203,18 @@ async fn poll_pending_security_requests(app: &tauri::AppHandle) -> Result<(), St
                                     "Permintaan Desktop Live",
                                     "A local Desktop UI session request is waiting for operator review in Request Center.",
                                 )?;
-                                if created { let _ = app.emit("access-manager://requests-updated", ()); }
+                                if created { requests_updated = true; }
                             }
                             "expired" => {
                                 if tray_notification_center::expire_verified(&config_dir()?, &key)? {
                                     let _ = app.emit("tray-notifications-changed", ());
+                                    requests_updated = true;
                                 }
                             }
                             "approved" | "denied" | "consumed" => {
                                 if tray_notification_center::resolve(&config_dir()?, &key)? {
                                     let _ = app.emit("tray-notifications-changed", ());
+                                    requests_updated = true;
                                 }
                             }
                             _ => {}
@@ -4186,18 +4223,30 @@ async fn poll_pending_security_requests(app: &tauri::AppHandle) -> Result<(), St
                     let resolved = tray_notification_center::resolve_missing(
                         &config_dir()?, "desktop-ui-pending:", &ui_active,
                     )?;
-                    if resolved > 0 { let _ = app.emit("tray-notifications-changed", ()); }
+                    if resolved > 0 {
+                        let _ = app.emit("tray-notifications-changed", ());
+                        requests_updated = true;
+                    }
                 }
             }
         }
     }
     // The API is unpaginated; avoid false resolves if a future revision
     // returns a partial/bounded projection.
-    if requests.len() <= 300 {
+    if request_count.is_some_and(|len| len <= 300) {
         let resolved = tray_notification_center::resolve_missing(
             &config_dir()?, "mcp-pending:", &active,
         )?;
-        if resolved > 0 { let _ = app.emit("tray-notifications-changed", ()); }
+        if resolved > 0 {
+            let _ = app.emit("tray-notifications-changed", ());
+            requests_updated = true;
+        }
+    }
+    if requests_updated {
+        let _ = app.emit("access-manager://requests-updated", ());
+    }
+    if let Some(err) = requests_error {
+        return Err(err);
     }
     Ok(())
 }
