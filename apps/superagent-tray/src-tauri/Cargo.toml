@@ -19,6 +19,7 @@ sha2 = "0.10"
 
 [dependencies]
 tauri = { version = "2.12", features = ["tray-icon"] }
+# Keep the Rust plugin aligned with @tauri-apps/plugin-notification in the root package.json.
 tauri-plugin-notification = "=2.8.1"
 tauri-plugin-dialog = "2.8"
 tauri-plugin-single-instance = "2.5.2"
