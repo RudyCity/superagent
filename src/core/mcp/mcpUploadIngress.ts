@@ -48,6 +48,9 @@ export interface IngressArtifactReceipt {
 const activeReceipts = new Map<string, IngressArtifactReceipt>();
 const usedOperationIds = new Set<string>();
 
+
+const OPERATION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$/;
+
 export function getIngressRootDir(): string {
   return path.join(os.homedir(), ".superagent-r", "ingress", "uploads");
 }
@@ -137,8 +140,8 @@ export interface StageArtifactOptions {
 /** Stages a user-selected artifact into isolated ingress */
 export async function stageUploadArtifact(opts: StageArtifactOptions): Promise<IngressArtifactReceipt> {
   // 1. Anti-replay check
-  if (!opts.operationId || opts.operationId.length < 16) {
-    throw new Error("SECURE_INGRESS_INVALID_OPERATION_ID: operationId must be at least 16 characters.");
+  if (typeof opts.operationId !== "string" || !OPERATION_ID_RE.test(opts.operationId)) {
+    throw new Error("SECURE_INGRESS_INVALID_OPERATION_ID: operationId must be 16-128 safe characters.");
   }
   if (usedOperationIds.has(opts.operationId)) {
     throw new Error("SECURE_INGRESS_REPLAY_DETECTED: operationId has already been used.");
@@ -242,13 +245,46 @@ export async function cleanupIngressReceipt(receiptId: string): Promise<boolean>
   }
 }
 
-/** Checks whether a file path is a certified ingress staged file */
+/** Finds an active receipt for one exact, ordinary file under the real ingress root. */
+export function getIngressReceiptByStagedPath(filePath: string): IngressArtifactReceipt | null {
+  if (!filePath || typeof filePath !== "string") return null;
+  try {
+    const ingressRoot = syncFs.realpathSync.native(path.resolve(getIngressRootDir()));
+    const resolved = path.resolve(filePath);
+    const resolvedStat = syncFs.lstatSync(resolved);
+    if (resolvedStat.isSymbolicLink() || !resolvedStat.isFile()) return null;
+    const resolvedReal = syncFs.realpathSync.native(resolved);
+    const relative = path.relative(ingressRoot, resolvedReal);
+    if (!relative || relative === "." || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+    const normalize = (value: string) => process.platform === "win32" ? path.resolve(value).toLowerCase() : path.resolve(value);
+    const expected = normalize(resolvedReal);
+    for (const receipt of activeReceipts.values()) {
+      if (receipt.expiresAt < Date.now()) continue;
+      const receiptPath = path.resolve(receipt.stagedPath);
+      const receiptStat = syncFs.lstatSync(receiptPath);
+      if (receiptStat.isSymbolicLink() || !receiptStat.isFile()) continue;
+      if (normalize(syncFs.realpathSync.native(receiptPath)) === expected) return receipt;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/** A staged path is usable only by the same authenticated MCP principal and exact tab lease. */
+export function isIngressReceiptBoundToSession(
+  filePath: string,
+  binding: { principalId: string; targetId: string; sessionToken: string },
+): boolean {
+  if (!binding || !binding.principalId || !binding.targetId || !binding.sessionToken) return false;
+  const receipt = getIngressReceiptByStagedPath(filePath);
+  return Boolean(receipt && receipt.principalId === binding.principalId &&
+    receipt.targetId === binding.targetId && receipt.sessionToken === binding.sessionToken);
+}
+
+/** A path is certified only while an active receipt owns that exact staged file. */
 export function isCertifiedIngressStagedFile(filePath: string): boolean {
-  if (!filePath || typeof filePath !== "string") return false;
-  const ingressRoot = path.resolve(getIngressRootDir());
-  const resolved = path.resolve(filePath);
-  const relative = path.relative(ingressRoot, resolved);
-  return !relative.startsWith("..") && !path.isAbsolute(relative);
+  return getIngressReceiptByStagedPath(filePath) !== null;
 }
 
 /**

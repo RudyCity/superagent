@@ -3,11 +3,13 @@
  */
 
 import { McpToolResult } from "../types.js";
+import { randomBytes } from "node:crypto";
 import { fileRulesRegistered } from "../../tools/registeredFileToolGate.js";
-import { certifiedBrowserObservation, certifiedDelegateWebAction, certifiedBrowserUpload, certifiedRemoteWebUrl } from "../../tools/browserFilePolicyCertification.js";
+import { certifiedBrowserObservation, certifiedDelegateWebAction, certifiedBrowserUpload, certifiedRemoteWebUrl, getCertifiedBrowserUploadSourcePath } from "../../tools/browserFilePolicyCertification.js";
 import { safeManagedChromeObservation } from "../../tools/safeManagedChromeObservation.js";
 import { safeDelegateChromeObservation } from "../../tools/safeDelegateChromeObservation.js";
 import { delegateCdpTransport, runWithCertifiedDelegateWebScope } from "../../delegate/cdpTransport.js";
+import { stageUploadArtifact, computeFileSha256, getIngressReceiptByStagedPath, isCertifiedIngressStagedFile, isIngressReceiptBoundToSession, cleanupIngressReceipt } from "../mcpUploadIngress.js";
 import { parseBrowserTargetId } from "../../browserTransport/targetIdentity.js";
 import { controlChromeCdpTool } from "../../tools/chromeCdpTools.js";
 import { controlChromeVisionTool } from "../../tools/chromeVisionTools.js";
@@ -77,6 +79,71 @@ async function assertLiveDelegateWebTarget(args: Record<string, unknown>): Promi
     throw new Error("DELEGATE_WEB_TARGET_NOT_PUBLIC_HTTP");
 }
 
+/**
+ * Resolve an explicit local source into host-owned ingress before any Delegate
+ * upload. The raw source path is read only after registeredFileToolGate and
+ * stageUploadArtifact independently confirm the permanent native read grant.
+ */
+async function prepareDelegateUploadArguments(
+  args: Record<string, unknown>, stagedReceiptIds: string[],
+): Promise<Record<string, unknown>> {
+  const principalId = getDelegateMcpPrincipalId();
+  const targetId = typeof args.targetId === "string" ? args.targetId : "";
+  const sessionToken = typeof args.sessionToken === "string" ? args.sessionToken : "";
+  const sourcePath = getCertifiedBrowserUploadSourcePath({ name: "superagent_chrome_cdp", args });
+
+  if (sourcePath) {
+    if (!principalId) throw new Error("DELEGATE_UPLOAD_VERIFIED_PRINCIPAL_REQUIRED");
+    if (!targetId || !sessionToken) throw new Error("DELEGATE_UPLOAD_TARGET_LEASE_REQUIRED");
+    const receipt = await stageUploadArtifact({
+      sourcePath,
+      operationId: randomBytes(16).toString("hex"),
+      expectedSha256: typeof args.expectedSha256 === "string" ? args.expectedSha256 : undefined,
+      expectedMime: typeof args.expectedMime === "string" ? args.expectedMime : undefined,
+      principalId,
+      targetId,
+      sessionToken,
+    });
+    stagedReceiptIds.push(receipt.receiptId);
+    if (!isIngressReceiptBoundToSession(receipt.stagedPath, { principalId, targetId, sessionToken }))
+      throw new Error("DELEGATE_UPLOAD_INGRESS_BINDING_FAILED");
+    const stagedHash = await computeFileSha256(receipt.stagedPath);
+    if (stagedHash !== receipt.sha256) {
+      await cleanupIngressReceipt(receipt.receiptId);
+      stagedReceiptIds.splice(stagedReceiptIds.indexOf(receipt.receiptId), 1);
+      throw new Error("DELEGATE_UPLOAD_INGRESS_HASH_MISMATCH");
+    }
+
+    const prepared: Record<string, unknown> = {
+      ...args,
+      filePath: receipt.stagedPath,
+      allowOutsideWorkspace: true,
+      confirmExternalFile: true,
+    };
+    delete prepared.confirmUpload;
+    delete prepared.expectedMime;
+    delete prepared.expectedSha256;
+    return prepared;
+  }
+
+  const command = String(args.command ?? args.cmd ?? "");
+  if (command !== "upload_file" && command !== "handle_file_chooser") return args;
+  const raw = args.files ?? args.filePaths ?? args.paths ?? args.filePath ?? args.path;
+  const inputs = typeof raw === "string" ? [raw] : Array.isArray(raw) ? raw : [];
+  if (!inputs.length || inputs.length > 10 || !inputs.every((item) => typeof item === "string" && isCertifiedIngressStagedFile(item)))
+    return args; // Legacy in-workspace uploads remain governed by their existing path validation.
+  if (!principalId || !targetId || !sessionToken) throw new Error("DELEGATE_UPLOAD_TARGET_LEASE_REQUIRED");
+  for (const filePath of inputs as string[]) {
+    const receipt = getIngressReceiptByStagedPath(filePath);
+    if (!receipt || !isIngressReceiptBoundToSession(filePath, { principalId, targetId, sessionToken }))
+      throw new Error("DELEGATE_UPLOAD_INGRESS_BINDING_MISMATCH");
+    if (await computeFileSha256(filePath) !== receipt.sha256)
+      throw new Error("DELEGATE_UPLOAD_INGRESS_HASH_MISMATCH");
+  }
+  return { ...args, allowOutsideWorkspace: true, confirmExternalFile: true };
+}
+
+
 /** Validated direct MCP entrypoint; implementation uses the EXISTING signed
  * Core forwarding path. A new browser WS/proxy or unguarded evaluate route
  * is intentionally not introduced.
@@ -92,6 +159,7 @@ export async function handleDelegateWebMcpTool(
 
 export async function handleControlChromeCdp(args: any, options: { hostOwned?: boolean } = {}): Promise<McpToolResult> {
   return runWithDelegateMcpBoundary(async () => {
+    const stagedReceiptIds: string[] = [];
     try {
       const filePolicyActive=fileRulesRegistered();
       const certified=certifiedBrowserObservation({name:"superagent_chrome_cdp",args:args||{}});
@@ -110,11 +178,10 @@ export async function handleControlChromeCdp(args: any, options: { hostOwned?: b
       // a metadata-only request certified by the outer host file-policy gate.
       if(certified) return toResult(await safeManagedChromeObservation(args));
       if (needsDelegateCoreHost(args)) {
-        if (certifiedWeb) {
-          // A signed MCP principal, exact profile and tab lease are required;
-          // the metadata-only certification never authorizes browser control.
+        if (certifiedWeb || certifiedUpload) {
+          // A signed MCP principal, exact profile and tab lease are required.
           if (!getDelegateMcpPrincipalId())
-            throw new Error("DELEGATE_WEB_VERIFIED_PRINCIPAL_REQUIRED");
+            throw new Error(certifiedUpload ? "DELEGATE_UPLOAD_VERIFIED_PRINCIPAL_REQUIRED" : "DELEGATE_WEB_VERIFIED_PRINCIPAL_REQUIRED");
           if (options.hostOwned && args.command !== "release_target")
             await assertLiveDelegateWebTarget(args);
         }
@@ -127,12 +194,23 @@ export async function handleControlChromeCdp(args: any, options: { hostOwned?: b
           return await dispatchDelegateBrowserMcpTool("superagent_chrome_cdp", args || {});
         }
       }
-      const execute = () => controlChromeCdpTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
+      const preparedArgs = certifiedUpload && options.hostOwned
+        ? await prepareDelegateUploadArguments(args || {}, stagedReceiptIds)
+        : args || {};
+      const execute = () => controlChromeCdpTool.execute(preparedArgs, resolveMcpWorkspace(args?.workspace).path);
       const res = certifiedWeb && options.hostOwned
         ? await runWithCertifiedDelegateWebScope(execute)
         : await execute();
-      return toResult(res);
+      const result = toResult(res);
+      if (stagedReceiptIds.length) {
+        // Chrome has copied the selected bytes into its File input by this point.
+        // Remove the temporary host copy immediately on either success or failure.
+        await Promise.all(stagedReceiptIds.map((receiptId) => cleanupIngressReceipt(receiptId)));
+        stagedReceiptIds.length = 0;
+      }
+      return result;
     } catch (err: any) {
+      if (stagedReceiptIds.length) await Promise.all(stagedReceiptIds.map((receiptId) => cleanupIngressReceipt(receiptId)));
       return {
         content: [{ type: "text", text: `control_chrome_cdp error: ${err?.message || String(err)}` }],
         isError: true,
@@ -414,12 +492,16 @@ export const CHROME_MCP_TOOL_DEFS = [
           description: "Optional JSON payload with command parameters.",
         },
          files: { type: "array", items: { type: "string" }, description: "Absolute local files for browser upload, 1-10." },
-         filePath: { type: "string", description: "One absolute local file path." },
+         filePath: { type: "string", description: "One absolute local source file path; Delegate upload stages it only when native host read permission is granted." },
+         confirmUpload: { type: "boolean", description: "Required explicit consent for a one-file Delegate upload through secure host ingress." },
+         expectedMime: { type: "string", description: "Optional expected MIME type checked against the file signature before staging." },
+         expectedSha256: { type: "string", description: "Optional expected SHA-256 digest checked before staging." },
          filePaths: { type: "array", items: { type: "string" }, description: "Alias for files." },
          inputIndex: { type: "number", description: "Zero-based file input index." },
          allowOutsideWorkspace: { type: "boolean", description: "Permit explicit path outside workspace only with confirmExternalFile=true." },
          confirmExternalFile: { type: "boolean", description: "Explicit consent for outside-workspace file upload." },
          successSelector: { type: "string", description: "Optional page evidence selector for verify_upload." },
+          expectedNames: { type: "array", items: { type: "string" }, description: "Expected selected file names for verify_upload; verifies browser selection only, not server acceptance." },
          nativeDialog: { type: "boolean", description: "Windows UI Automation fallback for already-open Open File dialog." },
          confirmNativeDialog: { type: "boolean", description: "Explicit opt-in for native Windows picker mutation." },
          windowTitle: { type: "string", description: "Optional exact picker window title." },
@@ -467,7 +549,7 @@ export const CHROME_MCP_TOOL_DEFS = [
         role: { type: "string", enum: ["observer", "contributor"], description: "invite_agent: access granted by the owner." },
         inviteId: { type: "string", description: "join_target: one-time invitation ID." },
         invitationToken: { type: "string", description: "join_target: secret invitation capability; never log." },
-        expectedRevision: { type: "number", description: "Reject action if tab revision changed. Used for multi-agent optimistic concurrency." },
+        expectedRevision: { type: "integer", minimum: 0, description: "Reject action if tab revision changed. Required for secure Delegate uploads and multi-agent optimistic concurrency." },
         queue_wait_ms: { type: "number", description: "Bounded queue wait (0-120000ms) for same-tab operations." },
         priority: { type: "number", description: "Queue priority 0 (highest) through 9 (lowest)." },
       },

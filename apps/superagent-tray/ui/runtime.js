@@ -629,6 +629,15 @@ function runtimeRemoteCard(service) {
        ${canRotate ? "" : "disabled"}
        title="Regenerate supported owner credential; new token is copied to OS clipboard">Regenerate Token</button>`
     : "";
+  const configureButton = service.kind === "mcp"
+    ? `<button type="button" class="button ghost runtime-configure-mcp"
+       data-runtime-port="${runtimeEscape(service.port)}"
+       data-runtime-pid="${runtimeEscape(service.pid)}"
+       ${service.canConfigureMcp === true ? "" : "disabled"}
+       title="${service.canConfigureMcp === true
+         ? "Edit this MCP owner's tool discovery and security policy"
+         : "Requires a verified reloadable Cloudflare owner with no active requests"}>Edit Configuration</button>`
+    : "";
   const controls = isExternalTunnel
     ? '<div class="runtime-instance-footer"><span class="subtle-badge">Read-only · External process</span></div>'
     : `<div class="runtime-instance-footer">
@@ -641,7 +650,8 @@ function runtimeRemoteCard(service) {
           data-runtime-port="${runtimeEscape(service.port)}" data-runtime-pid="${runtimeEscape(service.pid)}"
           ${service.canRestart ? "" : "disabled"} title="Owner-managed restart/reload with safety checks">Restart</button>
          ${rotateButton}
-       </div>`;
+         ${configureButton}
+      </div>`;
   return `<article class="runtime-instance compact" data-runtime-service-kind="${runtimeEscape(service.kind)}">
     <div class="runtime-instance-head">
       <div><strong>${runtimeEscape(name)}${runtimeEscape(port)}</strong>
@@ -1053,6 +1063,90 @@ async function runtimeRegenerateToken(event) {
     button.disabled=false;
   } finally {
     runtimeActionBusy=false;
+  }
+}
+
+let runtimeMcpConfigTarget = null;
+let runtimeMcpConfigReturnFocus = null;
+
+function runtimeCloseMcpConfig() {
+  const dialog = rt("runtime-mcp-config-dialog");
+  if (!dialog || dialog.hidden) return;
+  dialog.hidden = true;
+  runtimeMcpConfigTarget = null;
+  runtimeMcpConfigReturnFocus?.focus?.();
+  runtimeMcpConfigReturnFocus = null;
+}
+
+function runtimeOpenMcpConfig(event) {
+  const button = event.target?.closest?.("button.runtime-configure-mcp");
+  if (!button || button.disabled || runtimeActionBusy) return;
+  const port = Number(button.dataset.runtimePort);
+  const pid = Number(button.dataset.runtimePid);
+  if (!Number.isSafeInteger(port) || port < 1024 || !Number.isSafeInteger(pid) || pid <= 0) return;
+  const service = runtimeLastResult?.remoteServices?.find(item =>
+    item.kind === "mcp" && item.port === port && item.pid === pid);
+  if (!service || service.canConfigureMcp !== true) return;
+  runtimeMcpConfigTarget = {port, pid};
+  runtimeMcpConfigReturnFocus = button;
+  rt("runtime-mcp-config-owner").textContent =
+    `MCP HTTP Server :${port} · PID ${pid} · ${service.toolExposure || "mode not recorded"} / ${service.toolMode || "mode not recorded"}`;
+  rt("runtime-mcp-config-exposure").value = service.toolExposure || "gateway";
+  rt("runtime-mcp-config-mode").value = service.toolMode || "safe";
+  rt("runtime-mcp-config-feedback").textContent = "";
+  rt("runtime-mcp-config-dialog").hidden = false;
+  rt("runtime-mcp-config-close")?.focus?.();
+}
+
+async function runtimeSaveMcpConfig(event) {
+  event?.preventDefault?.();
+  if (runtimeActionBusy || !runtimeMcpConfigTarget) return;
+  const {port, pid} = runtimeMcpConfigTarget;
+  const service = runtimeLastResult?.remoteServices?.find(item =>
+    item.kind === "mcp" && item.port === port && item.pid === pid);
+  const toolExposure = rt("runtime-mcp-config-exposure")?.value;
+  const toolMode = rt("runtime-mcp-config-mode")?.value;
+  const feedback = rt("runtime-mcp-config-feedback");
+  const submit = rt("runtime-mcp-config-apply");
+  if (!service || service.canConfigureMcp !== true) {
+    if (feedback) feedback.textContent = "This MCP owner is no longer verified or has active requests. Refresh status and retry.";
+    return;
+  }
+  if (!["gateway", "full"].includes(toolExposure) || !["safe", "dangerous"].includes(toolMode)) {
+    if (feedback) feedback.textContent = "Select a valid tool exposure and security mode.";
+    return;
+  }
+  if (toolExposure === service.toolExposure && toolMode === service.toolMode) {
+    runtimeCloseMcpConfig();
+    return;
+  }
+  const summary = `Apply ${toolExposure.toUpperCase()} exposure and ${toolMode.toUpperCase()} security mode to MCP :${port} (PID ${pid})?\n\nThe public MCP URL and OAuth issuer stay the same. Existing MCP sessions will be closed and connected clients must reconnect. The change is blocked while requests/tool calls are running.`;
+  if (!window.confirm(summary)) return;
+  runtimeActionBusy = true;
+  if (submit) submit.disabled = true;
+  if (feedback) feedback.textContent = "Starting a verified MCP backend generation with the new configuration…";
+  try {
+    const result = await runtimeInvoke("configure_mcp", {port, pid, toolMode, toolExposure});
+    if (result?.success !== true || result.publicUrl !== service.publicUrl && service.publicUrl) {
+      throw new Error(result?.error || "MCP owner did not confirm the new configuration and stable endpoint");
+    }
+    const actionFeedback = rt("runtime-action-feedback");
+    if (actionFeedback) {
+      actionFeedback.hidden = false;
+      actionFeedback.textContent =
+        `MCP :${port} updated to ${toolExposure}/${toolMode}. Public URL preserved. ${Number(result.sessionsClosed || 0)} old session(s) closed; reconnect MCP clients.`;
+    }
+    window.TrayFeedback?.notify({
+      kind: "success", scope: "runtime",
+      message: `MCP :${port} configuration applied. Reconnect clients to use the new policy.`,
+    });
+    runtimeCloseMcpConfig();
+    await runtimeRefresh(true);
+  } catch (error) {
+    if (feedback) feedback.textContent = "Configuration was not applied or could not be verified: " + String(error);
+  } finally {
+    runtimeActionBusy = false;
+    if (submit) submit.disabled = false;
   }
 }
 
@@ -1593,6 +1687,16 @@ function runtimeInstall() {
   rt("runtime-servers")?.addEventListener("click", runtimeSelect);
   rt("runtime-remote")?.addEventListener("click", runtimeServiceAction);
   rt("runtime-remote")?.addEventListener("click", runtimeRegenerateToken);
+  rt("runtime-remote")?.addEventListener("click", runtimeOpenMcpConfig);
+  rt("runtime-mcp-config-form")?.addEventListener("submit", runtimeSaveMcpConfig);
+  rt("runtime-mcp-config-close")?.addEventListener("click", runtimeCloseMcpConfig);
+  rt("runtime-mcp-config-cancel")?.addEventListener("click", runtimeCloseMcpConfig);
+  rt("runtime-mcp-config-dialog")?.addEventListener("click", event => {
+    if (event.target === rt("runtime-mcp-config-dialog")) runtimeCloseMcpConfig();
+  });
+  rt("runtime-mcp-config-dialog")?.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.preventDefault(); runtimeCloseMcpConfig(); }
+  });
   rt("runtime-remote-panel")?.addEventListener("click", event => {
     void runtimeCopyPublicUrl(event);
     runtimeOpenMcpSecurity(event);

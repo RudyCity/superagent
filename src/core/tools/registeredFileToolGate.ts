@@ -11,7 +11,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { readPermanentAccessRegistry } from "../desktopUi/permanentRegistryStore.js";
 import { parseReadOnlyServiceArgs } from "../runtime/serviceReadPolicy.js";
-import { certifiedBrowserObservation, certifiedDelegateWebAction, certifiedBrowserUpload } from "./browserFilePolicyCertification.js";
+import { certifiedBrowserObservation, certifiedDelegateWebAction, certifiedBrowserUpload, getCertifiedBrowserUploadSourcePath } from "./browserFilePolicyCertification.js";
 import { certifiedExplicitGrepSearchArgs } from "./filePolicyArgumentCertification.js";
 export { certifiedExplicitGrepSearchArgs } from "./filePolicyArgumentCertification.js";
 import { evaluatePersistentAccess, type ExecutableIdentity, type FileOperation, type PersistentAccessPolicy }
@@ -273,7 +273,8 @@ const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace
   "superagent_tool_search","superagent_tool_describe","superagent_tool_status",
   "superagent_core_status","superagent_core_plan","superagent_server_health","get_current_time",
   "superagent_get_project","superagent_list_projects","superagent_list_project_access",
-  "superagent_request_project_access",
+  "superagent_request_project_access","superagent_request_file_access",
+  "superagent_request_application_access",
   "superagent_discover_projects","superagent_get_token_usage","superagent_get_remote_status",
   "superagent_delegate_doctor","superagent_delegate_list_chats",
   "superagent_delegate_read_chat","superagent_delegate_read_chat_full",
@@ -849,6 +850,9 @@ export function describePermanentFileToolReadiness(name:string):string {
     return "Only list_targets or transport_status with exact managed/Delegate arguments; HTTP(S) tab metadata is filtered, with no DOM read, navigation, evaluate, upload, or file:// access.";
   if(name==="superagent_chrome_cdp_web")
     return "Only exact certified Delegate web workflow commands on an explicit qualified HTTP(S) tab; write scope, separate human MCP approval, verified principal, tab lease and revision still required. No raw evaluation, files, terminal, screenshot or upload.";
+  if(name==="superagent_chrome_cdp"||name==="superagent_control_chrome_cdp")
+    return "Only exact certified browser metadata and leased public Delegate web actions are permitted. A single-file upload_file action is also certified only with transport=delegate, an exact qualified target and active lease, expectedRevision, confirmUpload:true, one explicit absolute filePath, and matching native host read approval. When read is denied, an agent may call superagent_request_file_access with that exact path and operations:[read]; the human must approve it in Tray Active Rules before retrying. Core stages the source in isolated ingress and verifies MIME and SHA-256 before CDP transfer. Managed uploads, arbitrary paths, unmediated file access, no evaluate, cookies and terminal commands remain blocked.";
+
   if(BROWSER_OBSERVATION_TOOLS.has(name))
     return "Only certified managed/Delegate HTTP(S) target metadata, local Chrome process inventory, or browser gateway identity/policy actions; no navigation, no evaluate, no upload, or file:// browsing.";
   if(CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name))
@@ -1046,7 +1050,15 @@ export function registeredFileToolGate(
   // operations qualify. All other browser/file-capable actions fail closed.
   if(certifiedBrowserObservation(call))return null;
   if(certifiedDelegateWebAction(call))return null;
-  if(certifiedBrowserUpload(call))return null;
+  if(certifiedBrowserUpload(call)){
+    const sourcePath=getCertifiedBrowserUploadSourcePath(call);
+    if(!sourcePath)return null; // Receipt-backed transfer or pathless, lease-bound verification.
+    const actual=absoluteCanonical(sourcePath,path.dirname(sourcePath));
+    if(!actual)return "Browser upload source must be an existing canonical local file.";
+    const decision=evaluatePersistentAccess(policy,{kind:"file",app:identity,path:actual,operation:"read"});
+    if(decision.effect!=="allow")return "Permanent file access denies read for the selected upload source. Request a native rule with superagent_request_file_access (the exact filePath and operations:[read]), then retry only after human approval in Tray > Access Manager > Requests > Active Rules.";
+    return null;
+  }
   if(certifiedLanInventory(call.name,call.args))return null;
   if(certifiedSupervisedCoreMutation(call.name,call.args))return null;
   if(call.name === "superagent_desktop_ui"){

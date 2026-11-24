@@ -146,6 +146,72 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
     expect(fs.existsSync(getMcpStateFile(port))).toBe(false);
   }, 70_000);
 
+  it("applies per-owner tool modes without changing the public URL and invalidates old sessions", async () => {
+    const port = await nextPort();
+    const nonce = "e".repeat(64);
+    const owner = await startReloadableMcpTunnelOwner({
+      port, nonce, createdAt: Date.now(), cliEntry: path.resolve("dist/cli.js"),
+      authMode: "static-bearer", allowDangerous: true, toolExposure: "full",
+    });
+    const root = "http://127.0.0.1:" + port;
+    const status = async () => fetch(root + "/_internal/owner/status", {
+      headers: {Authorization:"Bearer " + nonce},
+    }).then(r=>r.json());
+    const getClient = async (name:string) => {
+      const client = new Client({name,version:"1.0.0"},{capabilities:{}});
+      await client.connect(new StreamableHTTPClientTransport(new URL(root + "/mcp"), {
+        requestInit:{headers:{Authorization:"Bearer " + owner.info.bearerToken}},
+      }));
+      return client;
+    };
+    let old: Client | undefined;
+    let current: Client | undefined;
+    try {
+      const initial = await status();
+      const originalUrl = owner.info.publicUrl;
+      expect(initial).toMatchObject({toolMode:"dangerous",toolExposure:"full",safeToolsOnly:false});
+      old = await getClient("mcp-config-before");
+      expect((await old.listTools()).tools.map(tool=>tool.name)).toContain("superagent_delegate_read_chat");
+      const apply = await fetch(root + "/_internal/owner/configure", {
+        method:"POST",
+        headers:{
+          Authorization:"Bearer " + nonce,
+          "Content-Type":"application/json",
+        },
+        body:JSON.stringify({
+          toolMode:"safe",toolExposure:"gateway",
+          expectedBackendPid:initial.backendPid,expectedPublicUrl:originalUrl,
+        }),
+      });
+      expect(apply.status, JSON.stringify(await apply.clone().json())).toBe(200);
+      const result = await apply.json();
+      expect(result).toMatchObject({
+        success:true,url:originalUrl,toolMode:"safe",toolExposure:"gateway",sessionsClosed:1,
+      });
+      expect(result.backendPid).not.toBe(initial.backendPid);
+      const after = await status();
+      expect(after).toMatchObject({
+        pid:initial.pid,startedAt:initial.startedAt,publicUrl:originalUrl,
+        toolMode:"safe",toolExposure:"gateway",safeToolsOnly:true,activeSessions:0,
+      });
+      expect(after.backendPid).toBe(result.backendPid);
+      const state = readMcpStateFile(getMcpStateFile(port));
+      expect(state).toMatchObject({publicUrl:originalUrl,toolMode:"safe",toolExposure:"gateway"});
+      await expect(old.listTools()).rejects.toThrow();
+      current = await getClient("mcp-config-after");
+      expect((await current.listTools()).tools.map(tool=>tool.name)).not.toContain("superagent_delegate_read_chat");
+      expect(mock.startQuickTunnel).toHaveBeenCalledTimes(1);
+      expect(mock.stopQuickTunnel).not.toHaveBeenCalled();
+      expect((await status()).publicUrl).toBe(originalUrl);
+    } finally {
+      await current?.close().catch(()=>undefined);
+      await old?.close().catch(()=>undefined);
+      await owner.close();
+      fs.rmSync(getMcpStateFile(port),{force:true});
+      fs.rmSync(mcpOwnerLogPath(port),{force:true});
+    }
+  }, 70_000);
+
   it("rotates a truly single-use OAuth bootstrap code without touching tunnel, issuer, owner, backend or existing grants", async () => {
     const port = await nextPort();
     const nonce = "b".repeat(64);

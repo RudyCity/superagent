@@ -21,6 +21,12 @@ import {
   createProjectAccessRequest,
 } from "../../project/projectAccessRequestStore.js";
 import {
+  createActiveFileAccessRequest,
+  createActiveApplicationAccessRequest,
+  type ActiveFileOperation,
+  type ActiveDesktopOperation,
+} from "../../desktopUi/activeFileAccessRequestStore.js";
+import {
   queryWorkspaceCatalog,
   getWorkspaceCatalogEntry,
 } from "../../project/workspaceCatalog.js";
@@ -37,6 +43,8 @@ export const PROJECT_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerou
   superagent_list_project_access: "safe",
   superagent_check_project_health: "safe",
   superagent_request_project_access: "safe",
+  superagent_request_file_access: "safe",
+  superagent_request_application_access: "safe",
   superagent_grant_project_access: "dangerous",
   superagent_revoke_project_access: "dangerous",
 };
@@ -177,6 +185,43 @@ export const PROJECT_MCP_TOOL_DEFS = [
       required: ["capabilities", "reason"],
     },
   },
+  {
+    name: "superagent_request_file_access",
+    description: "Request a narrowly scoped native host file rule through the existing SuperAgent Tray Active Rules queue. Requests only an Allow rule for one explicit local path and selected operations. Does NOT grant access; the human operator must review it in Tray and approve it through the native confirmation dialog. The resulting rule applies to SuperAgent Core file tools, not just this MCP identity.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        filePath: { type: "string", minLength: 1, maxLength: 2048, description: "One explicit absolute local file or directory path on the Core host. UNC, device, relative, and filesystem-root paths are not accepted." },
+        operations: {
+          type: "array",
+          minItems: 1,
+          maxItems: 3,
+          uniqueItems: true,
+          items: { type: "string", enum: ["read", "write", "delete"] },
+          description: "Exact operations to request. Choose only the minimum required (for a browser upload, request read).",
+        },
+        recursive: { type: "boolean", description: "Request the directory and its descendants. Defaults to false; only set true when the target is a directory and recursive access is necessary." },
+        reason: { type: "string", minLength: 5, maxLength: 500, description: "Why this exact path and these operations are needed." },
+      },
+      required: ["filePath", "operations", "reason"],
+    },
+  },
+  {
+    name: "superagent_request_application_access",
+    description: "Request a narrowly scoped Allow rule for one exact application executable through the existing Tray Active Rules queue. Requests only view and/or input operations. Tray independently verifies the executable and requires an attended native confirmation; this request does not grant access.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        executablePath: { type: "string", minLength: 1, maxLength: 2048, description: "One normalized absolute local executable path on the Core host. On Windows this must be an .exe path; UNC, device, relative, and filesystem-root paths are rejected." },
+        operations: { type: "array", minItems: 1, maxItems: 2, uniqueItems: true, items: { type: "string", enum: ["view", "input"] } },
+        reason: { type: "string", minLength: 5, maxLength: 500 },
+      },
+      required: ["executablePath", "operations", "reason"],
+    },
+  },
+
   {
     name: "superagent_grant_project_access",
     description: "Legacy access request: NEVER grants project privileges, including in Full YOLO. Creates an auditable pending request for human approval in SuperAgent Tray. Prefer superagent_request_project_access.",
@@ -446,6 +491,26 @@ export async function dispatchProjectMcpTool(
         });
         return textResult(reqResult);
       }
+      case "superagent_request_file_access": {
+        if (!identity) throw new Error("File access requests require an authenticated MCP identity.");
+        const result = createActiveFileAccessRequest(identity, {
+          filePath: typeof args.filePath === "string" ? args.filePath : "",
+          operations: Array.isArray(args.operations) ? args.operations as ActiveFileOperation[] : [],
+          recursive: typeof args.recursive === "boolean" ? args.recursive : undefined,
+          reason: typeof args.reason === "string" ? args.reason : "",
+        });
+        return textResult(result);
+      }
+      case "superagent_request_application_access": {
+        if (!identity) throw new Error("Application access requests require an authenticated MCP identity.");
+        const result = createActiveApplicationAccessRequest(identity, {
+          executablePath: typeof args.executablePath === "string" ? args.executablePath : "",
+          operations: Array.isArray(args.operations) ? args.operations as ActiveDesktopOperation[] : [],
+          reason: typeof args.reason === "string" ? args.reason : "",
+        });
+        return textResult(result);
+      }
+
       case "superagent_grant_project_access": {
         if (!identity) throw new Error("Project access grants require an authenticated MCP identity.");
         const id = typeof args.projectId === "string" ? args.projectId.trim() : "";

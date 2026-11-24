@@ -19,6 +19,8 @@ import {
   stageUploadArtifact,
   cleanupIngressReceipt,
   getIngressReceipt,
+  getIngressReceiptByStagedPath,
+  isIngressReceiptBoundToSession,
   isCertifiedIngressStagedFile,
   computeFileSha256,
   pruneExpiredIngressStaging,
@@ -26,8 +28,7 @@ import {
   OFFICE_MIME_TYPES,
   MAX_UPLOAD_FILE_BYTES,
 } from "../src/core/mcp/mcpUploadIngress.js";
-import { certifiedBrowserUpload } from "../src/core/tools/browserFilePolicyCertification.js";
-
+import { certifiedBrowserUpload, getCertifiedBrowserUploadSourcePath } from "../src/core/tools/browserFilePolicyCertification.js";
 const FIXTURE_DIR = path.join(os.tmpdir(), `superagent_upload_test_${Date.now()}`);
 
 beforeAll(async () => {
@@ -49,38 +50,87 @@ describe("Secure Browser Upload Ingress Pipeline", () => {
     const expectedSha256 = await computeFileSha256(fixturePath);
     const operationId = crypto.randomBytes(16).toString("hex");
 
+    const principalId = "test_principal";
+    const delegateClientId = "testclient01";
+    const targetId = `delegate:${delegateClientId}:1`;
+    const sessionToken = "valid_session_token_12345678";
     const receipt = await stageUploadArtifact({
       sourcePath: fixturePath,
       operationId,
       expectedSha256,
       expectedMime: "image/png",
-      principalId: "test_principal",
-      targetId: "delegate:test:1",
-      sessionToken: "valid_session_token_12345678",
+      principalId,
+      targetId,
+      sessionToken,
     });
 
     expect(receipt).toBeDefined();
     expect(receipt.sha256).toBe(expectedSha256);
     expect(receipt.mimeType).toBe("image/png");
+    expect(getIngressReceiptByStagedPath(receipt.stagedPath)?.receiptId).toBe(receipt.receiptId);
     expect(isCertifiedIngressStagedFile(receipt.stagedPath)).toBe(true);
+    const unreceiptedPath = path.join(path.dirname(receipt.stagedPath), "not-in-receipt.bin");
+    await fs.writeFile(unreceiptedPath, Buffer.from("not staged"));
+    expect(isCertifiedIngressStagedFile(unreceiptedPath)).toBe(false);
+    const symlinkPath = path.join(path.dirname(receipt.stagedPath), "source-link.png");
+    await fs.symlink(fixturePath, symlinkPath).catch(() => undefined);
+    if (await fs.lstat(symlinkPath).then(() => true).catch(() => false))
+      expect(isCertifiedIngressStagedFile(symlinkPath)).toBe(false);
+    expect(isIngressReceiptBoundToSession(receipt.stagedPath, { principalId, targetId, sessionToken })).toBe(true);
+    expect(isIngressReceiptBoundToSession(receipt.stagedPath, { principalId, targetId, sessionToken: "wrong_session_token_123456" })).toBe(false);
+    expect(isIngressReceiptBoundToSession(receipt.stagedPath, { principalId: "other_principal", targetId, sessionToken })).toBe(false);
 
-    // Verify certifiedBrowserUpload approves the staged path
+    // Only the exact active receipt path and exact Delegate lease are certified.
     const uploadCall = {
       name: "superagent_chrome_cdp",
-      args: { command: "upload_file", files: [receipt.stagedPath] },
+      args: {
+        command: "upload_file", transport: "delegate", delegateClientId, targetId,
+        sessionToken, expectedRevision: 0, confirmUpload: true, files: [receipt.stagedPath],
+      },
     };
     expect(certifiedBrowserUpload(uploadCall)).toBe(true);
+    expect(certifiedBrowserUpload({
+      ...uploadCall,
+      args: { ...uploadCall.args, sessionToken: "wrong_session_token_123456" },
+    })).toBe(false);
+    expect(certifiedBrowserUpload({
+      ...uploadCall,
+      args: { ...uploadCall.args, confirmUpload: false },
+    })).toBe(false);
 
-    // Verify unmediated original file is rejected by certifiedBrowserUpload
-    const unmediatedCall = {
+    // Raw local paths require the separate secure one-file shape and native read grant.
+    const rawSourceCall = {
+      name: "superagent_chrome_cdp",
+      args: {
+        command: "upload_file", transport: "delegate", delegateClientId, targetId,
+        sessionToken, expectedRevision: 0, confirmUpload: true, filePath: fixturePath,
+      },
+    };
+    expect(getCertifiedBrowserUploadSourcePath(rawSourceCall)).toBe(fixturePath);
+    expect(certifiedBrowserUpload(rawSourceCall)).toBe(true);
+    expect(certifiedBrowserUpload({
+      ...rawSourceCall,
+      args: { ...rawSourceCall.args, allowOutsideWorkspace: true },
+    })).toBe(false);
+
+    const verifyCall = {
+      name: "superagent_chrome_cdp",
+      args: { command: "verify_upload", transport: "delegate", delegateClientId, targetId, sessionToken,
+        expectedNames: ["valid_image.png"] },
+    };
+    expect(certifiedBrowserUpload(verifyCall)).toBe(true);
+    expect(certifiedBrowserUpload({ ...verifyCall, args: { ...verifyCall.args, payload: {} } })).toBe(false);
+    expect(certifiedBrowserUpload({
       name: "superagent_chrome_cdp",
       args: { command: "upload_file", files: [fixturePath] },
-    };
-    expect(certifiedBrowserUpload(unmediatedCall)).toBe(false);
+    })).toBe(false);
 
-    // Cleanup
+    // Cleanup revokes path certification and receipt binding immediately.
     await cleanupIngressReceipt(receipt.receiptId);
     expect(getIngressReceipt(receipt.receiptId)).toBeNull();
+    expect(isCertifiedIngressStagedFile(receipt.stagedPath)).toBe(false);
+    expect(isIngressReceiptBoundToSession(receipt.stagedPath, { principalId, targetId, sessionToken })).toBe(false);
+    expect(certifiedBrowserUpload(uploadCall)).toBe(false);
   });
 
   // Scenario 12: Path traversal and symlink escape

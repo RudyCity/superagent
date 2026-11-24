@@ -158,7 +158,10 @@ export async function startReloadableMcpTunnelOwner(
   let draining = false;
   let closing = false;
   let reloading = false;
+  let configuring = false;
   let rotatingBootstrap = false;
+  let activeAllowDangerous = opts.allowDangerous;
+  let activeToolExposure = opts.toolExposure ?? getMcpToolExposure().mode;
   let baseUrl = "";
   let oauthPersistent = true;
   let bearerToken = generateMcpBearerToken();
@@ -189,6 +192,8 @@ export async function startReloadableMcpTunnelOwner(
       fs.writeFileSync(file, JSON.stringify({
         ...state, reloadable:true, backendPid:current?.pid ?? null,
         backendGeneration:reloadCount + 1,
+        toolMode:activeAllowDangerous ? "dangerous" : "safe",
+        toolExposure:activeToolExposure,
         ...(lastReloadAt !== undefined ? {lastReloadAt} : {}),
       }, null, 2) + String.fromCharCode(10), {mode:0o600});
     } catch { /* keep serving even if status persistence fails */ }
@@ -196,6 +201,9 @@ export async function startReloadableMcpTunnelOwner(
 
   function requestCount(): number {
     return [...generations].reduce((total, gen) => total + gen.inFlight, 0);
+  }
+  function nonStreamRequestCount(): number {
+    return Math.max(0, requestCount() - activeSseStreams);
   }
   function forgetSession(sessionId: string, expected?: BackendGeneration): boolean {
     const generation = sessions.get(sessionId);
@@ -441,13 +449,17 @@ export async function startReloadableMcpTunnelOwner(
     }
   }
 
-  const selectedToolExposure = opts.toolExposure ?? getMcpToolExposure().mode;
-  async function launch(entry = activeBackendEntry): Promise<BackendGeneration> {
+  async function launch(
+    entry = activeBackendEntry,
+    config: {allowDangerous: boolean; toolExposure: "gateway" | "full"} = {
+      allowDangerous: activeAllowDangerous, toolExposure: activeToolExposure,
+    },
+  ): Promise<BackendGeneration> {
     const gen = await createReloadWorker(entry, {
       port: opts.port, publicBaseUrl: baseUrl,
       authMode: opts.authMode,
-      allowDangerous: opts.allowDangerous,
-      toolExposure: selectedToolExposure,
+      allowDangerous: config.allowDangerous,
+      toolExposure: config.toolExposure,
       bearerToken,
       bootstrapCodeHash: bootCodeHash,
       auditLogPath: opts.auditLogPath,
@@ -471,7 +483,11 @@ export async function startReloadableMcpTunnelOwner(
     generations.add(gen);
     return gen;
   }
-  async function reload(candidate?: VerifiedMcpBackendRelease, expectedBackendPid?: number): Promise<{success: boolean; pid: number; previousPid: number | null; url: string; releaseDigest: string | null}> {
+  async function reload(
+    candidate?: VerifiedMcpBackendRelease,
+    expectedBackendPid?: number,
+    configOverride?: {allowDangerous: boolean; toolExposure: "gateway" | "full"},
+  ): Promise<{success: boolean; pid: number; previousPid: number | null; url: string; releaseDigest: string | null; sessionsClosed?: number}> {
     if (reloading || closing || draining || rotatingBootstrap) {
       record("backend_reload_failed", {backendPid:current?.pid, code:"MCP_RELOAD_BUSY_OR_DRAINING"});
       throw new Error("MCP_RELOAD_BUSY_OR_DRAINING");
@@ -484,9 +500,13 @@ export async function startReloadableMcpTunnelOwner(
       record("backend_reload_failed", {code:"MCP_RELOAD_NO_BACKEND"});
       throw new Error("MCP_RELOAD_NO_BACKEND");
     }
-    if (candidate && (!Number.isSafeInteger(expectedBackendPid) ||
+    if (expectedBackendPid !== undefined && (!Number.isSafeInteger(expectedBackendPid) ||
         current.pid !== expectedBackendPid)) throw new Error("MCP_RELEASE_BACKEND_PID_CHANGED");
+    if (configOverride && nonStreamRequestCount() > 0) {
+      throw new Error("MCP_CONFIG_BUSY_IN_FLIGHT: wait until active MCP requests and tool calls have completed");
+    }
     reloading = true;
+    if (configOverride) configuring = true;
     const started = Date.now();
     record("backend_reload_started", {backendPid:current.pid});
     try {
@@ -495,7 +515,9 @@ export async function startReloadableMcpTunnelOwner(
       // The release candidate is re-hashed at activation, after the owner
       // serializes mutations, so an old plan cannot select changed bytes.
       const selected = candidate ? verifyMcpBackendRelease(candidate.digest) : null;
-      const next = await launch(selected?.entry ?? activeBackendEntry);
+      const next = await launch(selected?.entry ?? activeBackendEntry, configOverride ?? {
+        allowDangerous: activeAllowDangerous, toolExposure: activeToolExposure,
+      });
       // A successful approval might consume the code while next was starting.
       if (opts.authMode === "oauth" && expectedBootstrapHash !== bootCodeHash) {
         await setBootstrapHash(next, bootCodeHash);
@@ -510,8 +532,23 @@ export async function startReloadableMcpTunnelOwner(
         // A crashed generation cannot serve its old sessions.
         for (const id of [...previous.sessions]) forgetSession(id, previous);
       }
-      previous.retireAt = Date.now() + Math.min(OLD_GENERATION_TTL, 30_000);
       current = next;
+      let sessionsClosed = 0;
+      if (configOverride) {
+        activeAllowDangerous = configOverride.allowDangerous;
+        activeToolExposure = configOverride.toolExposure;
+        // Configuration changes invalidate every old session so no client can
+        // continue using a previously exposed tool catalog/security policy.
+        for (const generation of [...generations]) {
+          if (generation === next) continue;
+          sessionsClosed += generation.sessions.size;
+          for (const id of [...generation.sessions]) forgetSession(id, generation);
+          generations.delete(generation);
+          try { generation.child.kill("SIGTERM"); } catch {}
+        }
+      } else {
+        previous.retireAt = Date.now() + Math.min(OLD_GENERATION_TTL, 30_000);
+      }
       if (selected) {
         activeBackendEntry = selected.entry;
         activeReleaseDigest = selected.digest;
@@ -523,9 +560,11 @@ export async function startReloadableMcpTunnelOwner(
       record("backend_reload_succeeded", {
         backendPid:next.pid, previousBackendPid:previous.pid,
         durationMs:Date.now()-started,
+        ...(configOverride ? {code:"MCP_CONFIGURATION_UPDATED"} : {}),
       });
       return { success: true, pid: next.pid, previousPid: previous.pid,
-        url: baseUrl + "/mcp", releaseDigest: activeReleaseDigest };
+        url: baseUrl + "/mcp", releaseDigest: activeReleaseDigest,
+        ...(configOverride ? {sessionsClosed} : {}) };
     } catch (error) {
       const match = error instanceof Error ? error.message.match(/^MCP_[A-Z0-9_]+/) : null;
       record("backend_reload_failed", {
@@ -535,7 +574,41 @@ export async function startReloadableMcpTunnelOwner(
       throw error;
     } finally {
       reloading = false;
+      if (configOverride) configuring = false;
     }
+  }
+  async function configure(
+    toolMode: "safe" | "dangerous",
+    toolExposure: "gateway" | "full",
+    expectedBackendPid: number,
+    expectedPublicUrl: string,
+  ) {
+    if (toolMode !== "safe" && toolMode !== "dangerous") throw new Error("MCP_CONFIG_TOOL_MODE_INVALID");
+    if (toolExposure !== "gateway" && toolExposure !== "full") throw new Error("MCP_CONFIG_TOOL_EXPOSURE_INVALID");
+    if (!Number.isSafeInteger(expectedBackendPid) || expectedBackendPid <= 0 ||
+        expectedPublicUrl !== baseUrl + "/mcp" || current?.pid !== expectedBackendPid) {
+      throw new Error("MCP_CONFIG_OWNER_IDENTITY_CHANGED");
+    }
+    if (configuring || reloading || closing || draining || rotatingBootstrap) {
+      throw new Error("MCP_CONFIG_OWNER_BUSY_OR_DRAINING");
+    }
+    const before = status();
+    if (before.backendHealthy !== true || (opts.authMode === "oauth" && !oauthPersistent)) {
+      throw new Error("MCP_CONFIG_BACKEND_NOT_READY_OR_OAUTH_NOT_PERSISTENT");
+    }
+    const result = await reload(undefined, expectedBackendPid, {
+      allowDangerous: toolMode === "dangerous", toolExposure,
+    });
+    return {
+      success: true,
+      pid: process.pid,
+      backendPid: result.pid,
+      previousBackendPid: result.previousPid,
+      url: result.url,
+      toolMode,
+      toolExposure,
+      sessionsClosed: result.sessionsClosed ?? 0,
+    };
   }
   function activeSessionCount(): number {
     return sessions.size;
@@ -572,8 +645,11 @@ export async function startReloadableMcpTunnelOwner(
       activeSessions: activeSessionCount(), inFlightRequests: requestCount(),
       activeSseStreams, nonStreamInFlightRequests: Math.max(0, requestCount() - activeSseStreams),
       inFlightToolCalls: currentHealth?.inFlightToolCalls ?? 0,
-      draining, inflightToolEffects: "unknown",
-      safeToolsOnly: !opts.allowDangerous, oauthEnabled: opts.authMode === "oauth",
+      draining, configuring, inflightToolEffects: "unknown",
+      safeToolsOnly: !activeAllowDangerous,
+      toolMode: activeAllowDangerous ? "dangerous" : "safe",
+      toolExposure: activeToolExposure,
+      oauthEnabled: opts.authMode === "oauth",
       publicTunnelStarted: publicTunnelOwned || Boolean(opts.externalPublicBaseUrl),
       ingressMode: opts.externalPublicBaseUrl ? "external-anchor" : "owner-quick-tunnel",
       oauthStatePersistent: oauthPersistent,
@@ -688,6 +764,40 @@ export async function startReloadableMcpTunnelOwner(
           }));
         }); return;
       }
+      if (pathname === "/_internal/owner/configure" && req.method === "POST") {
+        void (async () => {
+          try {
+            const chunks: Buffer[] = [];
+            let total = 0;
+            for await (const chunk of req) {
+              const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+              total += bytes.length;
+              if (total > 2048) throw new Error("MCP_CONFIG_BODY_TOO_LARGE");
+              chunks.push(bytes);
+            }
+            const raw = Buffer.concat(chunks).toString("utf8");
+            const value = JSON.parse(raw) as Record<string, unknown>;
+            const allowed = new Set(["toolMode", "toolExposure", "expectedBackendPid", "expectedPublicUrl"]);
+            if (!value || typeof value !== "object" || Array.isArray(value) ||
+                Object.keys(value).length !== allowed.size ||
+                Object.keys(value).some(key => !allowed.has(key)) ||
+                (value.toolMode !== "safe" && value.toolMode !== "dangerous") ||
+                (value.toolExposure !== "gateway" && value.toolExposure !== "full") ||
+                !Number.isSafeInteger(value.expectedBackendPid) || typeof value.expectedPublicUrl !== "string") {
+              throw new Error("MCP_CONFIG_REQUEST_INVALID");
+            }
+            const result = await configure(
+              value.toolMode, value.toolExposure, Number(value.expectedBackendPid), value.expectedPublicUrl,
+            );
+            res.writeHead(200, {"Content-Type":"application/json", "Cache-Control":"no-store"});
+            res.end(JSON.stringify(result));
+          } catch (error) {
+            res.writeHead(409, {"Content-Type":"application/json", "Cache-Control":"no-store"});
+            res.end(JSON.stringify({error:error instanceof Error ? error.message : "MCP_CONFIG_FAILED"}));
+          }
+        })();
+        return;
+      }
       if (pathname === "/_internal/owner/reload" && req.method === "POST") {
         void reload().then(out => {
           res.writeHead(200, {"Content-Type":"application/json", "Cache-Control":"no-store"});
@@ -758,9 +868,9 @@ export async function startReloadableMcpTunnelOwner(
       }
       res.writeHead(404); res.end(); return;
     }
-    if (draining || closing) {
+    if (draining || closing || configuring) {
       res.writeHead(503, {"Cache-Control":"no-store"});
-      res.end(JSON.stringify({error:"MCP owner draining"})); return;
+      res.end(JSON.stringify({error:configuring ? "MCP owner reconfiguring; reconnect after the configuration change" : "MCP owner draining"})); return;
     }
     if (!isPermittedMcpIngressPath(req.method || "", url)) {
       res.writeHead(404, {"Cache-Control":"no-store"});
@@ -900,14 +1010,14 @@ export async function startReloadableMcpTunnelOwner(
     const startedAt = opts.createdAt;
     fs.writeFileSync(getMcpStateFile(opts.port), JSON.stringify({
       port: opts.port, pid: process.pid,
-      publicUrl: baseUrl + "/mcp", localUrl: "http://127.0.0.1:" + opts.port + "/mcp",
+      publicUrl: baseUrl + "/mcp",
+      localUrl: "http://127.0.0.1:" + opts.port + "/mcp",
       startedAt, workspace: process.cwd(),
-      toolMode: opts.allowDangerous ? "dangerous" : "safe",
-      toolExposure: selectedToolExposure,
+      toolMode: activeAllowDangerous ? "dangerous" : "safe",
+      toolExposure: activeToolExposure,
       authMode: opts.authMode, tunnelProvider: "cloudflare",
       oauthStatePersistent: oauthPersistent,
     }, null, 2) + "\n", { mode: 0o600 });
-
     updateOwnerState();
     record("owner_started", {backendPid:current.pid});
 
@@ -915,8 +1025,8 @@ export async function startReloadableMcpTunnelOwner(
       publicUrl: baseUrl + "/mcp",
       localUrl: "http://127.0.0.1:" + opts.port + "/mcp",
       bearerToken: opts.authMode === "oauth" ? "" : bearerToken,
-      dangerous: opts.allowDangerous,
-      toolCount: opts.allowDangerous
+      dangerous: activeAllowDangerous,
+      toolCount: activeAllowDangerous
         ? MCP_TOOL_DEFINITIONS.filter(t=>!DISABLED_MCP_TOOLS.has(t.name)).length
         : getDefaultSafeTools().length,
       authMode: opts.authMode,

@@ -10,6 +10,7 @@ const js = fs.readFileSync(
 function mountRuntime(snapshot: unknown, extra: {
   gateway?: Record<string, unknown>;
   named?: Record<string, unknown>;
+  configureMcpResult?: Record<string, unknown>;
   mcpRequests?: any[];
   mcpIdentities?: any[];
   mcpClients?: any[];
@@ -48,6 +49,7 @@ function mountRuntime(snapshot: unknown, extra: {
       __TAURI__: { core: { invoke: async (action: string, args: unknown) => {
         requested.push({ action, args });
         if (action === "detect_runtime") return snapshot;
+        if (action === "configure_mcp") return extra.configureMcpResult ?? {success:false,error:"fixture missing"};
         if (action === "desktop_live_action") return extra.gateway ?? { active: false };
         if (action === "get_named_tunnel_health") return extra.named ?? null;
         if (action === "mcp_project_access_action") {
@@ -218,6 +220,55 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.byId("runtime-tray-gateway").hidden).toBe(true);
     vm.runInContext('runtimeSelectTab("cloudflare")',ui.context);
     expect(ui.byId("runtime-tray-gateway").hidden).toBe(false);
+  });
+
+  it("edits a verified MCP owner configuration and tells connected clients to reconnect", async () => {
+    const service = {
+      kind:"mcp",source:"registry",state:"observed",port:9227,pid:25384,
+      publicUrl:"https://mcp.example.org/mcp",toolMode:"dangerous",toolExposure:"full",
+      canConfigureMcp:true,canStop:true,canRestart:true,
+    };
+    const snapshot = {
+      scannedAt:Date.now(),healthyCoreCount:1,selectedCorePort:7888,
+      cores:[{port:7888,pid:100,state:"online",pidVerified:true,selected:true}],
+      processes:[],independentHosts:[],remoteServices:[service],
+    };
+    const ui=mountRuntime(snapshot,{configureMcpResult:{
+      success:true,port:9227,publicUrl:service.publicUrl,backendPid:26000,
+      previousBackendPid:25384,toolMode:"safe",toolExposure:"gateway",sessionsClosed:1,
+    }});
+    await new Promise(resolve=>setImmediate(resolve));
+    vm.runInContext('runtimeSelectTab("mcp")',ui.context);
+    expect(ui.byId("runtime-remote").innerHTML).toContain("Edit Configuration");
+    ui.context.__editButton={disabled:false,dataset:{runtimePort:"9227",runtimePid:"25384"}};
+    vm.runInContext('runtimeOpenMcpConfig({target:{closest:()=>__editButton}})',ui.context);
+    expect(ui.byId("runtime-mcp-config-dialog").hidden).toBe(false);
+    expect(ui.byId("runtime-mcp-config-owner").textContent).toContain(":9227");
+    expect(ui.byId("runtime-mcp-config-mode").value).toBe("dangerous");
+    expect(ui.byId("runtime-mcp-config-exposure").value).toBe("full");
+    ui.byId("runtime-mcp-config-mode").value="safe";
+    ui.byId("runtime-mcp-config-exposure").value="gateway";
+    await vm.runInContext('runtimeSaveMcpConfig({preventDefault(){}})',ui.context);
+    expect(ui.requested).toContainEqual({
+      action:"configure_mcp",
+      args:{port:9227,pid:25384,toolMode:"safe",toolExposure:"gateway"},
+    });
+    expect(ui.confirm.mock.calls[0][0]).toContain("Existing MCP sessions will be closed");
+    expect(ui.byId("runtime-mcp-config-dialog").hidden).toBe(true);
+    expect(ui.byId("runtime-action-feedback").textContent).toContain("reconnect MCP clients");
+  });
+
+  it("keeps Edit Configuration disabled for unverified or non-reloadable MCP owners", async () => {
+    const ui=mountRuntime({
+      scannedAt:Date.now(),cores:[],processes:[],independentHosts:[],
+      remoteServices:[{kind:"mcp",source:"registry",state:"observed",port:9227,pid:100,
+        toolMode:"safe",toolExposure:"gateway",canConfigureMcp:false}],
+    });
+    await new Promise(resolve=>setImmediate(resolve));
+    vm.runInContext('runtimeSelectTab("mcp")',ui.context);
+    expect(ui.byId("runtime-remote").innerHTML).toContain("Edit Configuration");
+    expect(ui.byId("runtime-remote").innerHTML).toContain("disabled");
+    expect(ui.requested.some(entry=>entry.action==="configure_mcp")).toBe(false);
   });
 
   it("displays the password-protected Tray Quick URL separately and copies only allowlisted URLs", async () => {

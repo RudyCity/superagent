@@ -335,6 +335,29 @@ async fn muse_status(lease: &MuseLease) -> Result<Value, String> {
     Ok(value)
 }
 
+/// Credential-free capability for a verified reloadable MCP owner. A policy
+/// change is exposed only while no request/tool effect is running; applying it
+/// closes old MCP sessions so clients must reconnect under the new policy.
+pub async fn can_configure_mcp(dir: &Path, port: u16, pid: u32) -> bool {
+    let Ok(lease) = read_lease(dir, port, pid) else { return false; };
+    let Ok(status) = mcp_status(&lease).await else { return false; };
+    let Ok(state) = read_private(&dir.join(format!("mcp-{}.json", port)), 8192) else {
+        return false;
+    };
+    status["reloadable"] == true
+        && status["draining"] == false
+        && status["configuring"] != true
+        && status["backendHealthy"] == true
+        && status["nonStreamInFlightRequests"].as_u64() == Some(0)
+        && status["inFlightToolCalls"].as_u64() == Some(0)
+        && matches!(status["toolMode"].as_str(), Some("safe" | "dangerous"))
+        && matches!(status["toolExposure"].as_str(), Some("gateway" | "full"))
+        && state["pid"] == pid
+        && state["port"] == port
+        && state["authMode"].as_str().is_some()
+        && state["tunnelProvider"] == "cloudflare"
+}
+
 /// Credential-free capability for a *verified* owner. No token or code ever
 /// enters the inventory response; the UI only learns whether rotation is safe.
 pub async fn can_regenerate_token(dir: &Path, kind: &str, port: u16, pid: u32) -> bool {

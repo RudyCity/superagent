@@ -100,6 +100,25 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     }},a.root,opts)).toBeNull();
     expect(registeredFileToolGate({name:"unknown_file_reader"},a.root,opts)).toMatch(/not certified/);
   });
+  it("requires exact native read permission for explicit secure Delegate upload sources",()=>{
+    const a=setup();
+    const source=path.join(a.root,"upload.jpg");
+    fs.writeFileSync(source,Buffer.from([0xff,0xd8,0xff,0x00]));
+    const args={command:"upload_file",transport:"delegate",delegateClientId:"client_1234",
+      targetId:"delegate:client_1234:7",sessionToken:"valid_session_token_12345678",
+      expectedRevision:2,confirmUpload:true,filePath:source};
+    const call={name:"superagent_chrome_cdp",args};
+    expect(registeredFileToolGate(call,a.root,{registry:()=>a.p(),identity:a.identity}))
+      .toMatch(/denies read/);
+    const allowed=a.rule("upload-source","allow",source,["read"]);
+    expect(registeredFileToolGate(call,a.root,{registry:()=>a.p(allowed),identity:a.identity})).toBeNull();
+    const denied=a.rule("deny-upload-source","deny",source,["read"]);
+    expect(registeredFileToolGate(call,a.root,{registry:()=>a.p(allowed,denied),identity:a.identity}))
+      .toMatch(/denies read/);
+    expect(registeredFileToolGate({name:call.name,args:{...args,allowOutsideWorkspace:true}},a.root,
+      {registry:()=>a.p(allowed),identity:a.identity})).toMatch(/not certified|explicit certified/);
+  });
+
   it("certifies only safe browser inventory under active permanent file policy",()=>{
     const a=setup(), opts={registry:()=>a.p(),identity:a.identity};
     const gate=(name:string,args:Record<string,unknown>)=>

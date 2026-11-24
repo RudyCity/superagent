@@ -242,9 +242,9 @@ const MULTI_ACTION_CAPABILITY_REGISTRY: Record<string, Record<string, Partial<Ac
       targetSessionRequirement: "target_lease",
       pathFileScope: "ingress_staged",
       readiness: "approval_required",
-      testStatus: "end_to_end_verified",
-      runtimeEvidence: "Validated via isolated staging, SHA-256 hash match and CDP setFileInputFiles",
-      remediation: "Stage file via superagent_secure_upload_ingress or verify host file policy allows the input path.",
+      testStatus: "policy_classified",
+      runtimeEvidence: "Core stages the source only after native host read authorization, verifies MIME and SHA-256, binds a short-lived receipt to the authenticated principal and exact Delegate lease, then uses CDP setFileInputFiles.",
+      remediation: "Call upload_file on an exact claimed Delegate target with confirmUpload:true, filePath, sessionToken and expectedRevision. Grant native host read access to the exact source file first; project grants and chat approval do not replace this file permission.",
     },
     handle_file_chooser: {
       description: "Handle native file chooser using verified staged ingress file.",

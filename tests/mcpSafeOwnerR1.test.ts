@@ -5,6 +5,7 @@ import { startMcpHttpServer, generateMcpBearerToken } from "../src/core/mcp/mcpH
 import { canUnlockMcpDangerousTools, isR1OwnerToolCallAllowed,
   R1_OWNER_TOOLS } from "../src/core/mcp/mcpSafeOwnerPolicy.js";
 import fs from "node:fs";
+import { ACTIVE_RULE_REQUESTS_FILENAME } from "../src/core/desktopUi/activeFileAccessRequestStore.js";
 import os from "node:os";
 import path from "node:path";
 import { stagingMcpOwnerHost } from "../src/core/runtime/mcpOwnerLifecycle.js";
@@ -38,6 +39,90 @@ describe("R1 immutable MCP permission ceiling",()=>{
     }finally{
       fs.rmSync(root,{recursive:true,force:true});
       fs.rmSync(outside,{recursive:true,force:true});
+    }
+  });
+  it("allows only a single exact read request outside project scope in SAFE owner mode",()=>{
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),"r1-request-root-"));
+    try {
+      const filePath=path.join(os.tmpdir(),"r1-selected-upload.jpg");
+      const input={filePath,operations:["read"],reason:"Read this exact image for a browser upload."};
+      expect(R1_OWNER_TOOLS).toContain("superagent_request_file_access");
+      expect(isR1OwnerToolCallAllowed("superagent_request_file_access",input,root)).toBe(true);
+      expect(isR1OwnerToolCallAllowed("superagent_request_file_access",{
+        ...input,operations:["write"],
+      },root)).toBe(false);
+      expect(isR1OwnerToolCallAllowed("superagent_request_file_access",{
+        ...input,recursive:true,
+      },root)).toBe(false);
+      expect(isR1OwnerToolCallAllowed("superagent_request_file_access",{
+        ...input,effect:"allow",
+      },root)).toBe(false);
+      expect(isR1OwnerToolCallAllowed("superagent_request_file_access",{
+        ...input,filePath:"relative.jpg",
+      },root)).toBe(false);
+    }finally{
+      fs.rmSync(root,{recursive:true,force:true});
+    }
+  });
+  it("discovers and executes the active-file request through a locked SAFE MCP gateway",async()=>{
+    const configDir=fs.mkdtempSync(path.join(os.tmpdir(),"r1-active-file-queue-"));
+    const previousConfigDir=process.env.SUPERAGENT_CONFIG_DIR;
+    process.env.SUPERAGENT_CONFIG_DIR=configDir;
+    const bearer=generateMcpBearerToken();
+    const server=await startMcpHttpServer({
+      port:0,bearerToken:bearer,allowDangerous:false,
+      lockSafeTools:true,toolExposure:"gateway",
+    });
+    const client=new Client({name:"r1-active-file-request-test",version:"1.0.0"},{capabilities:{}});
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(server.url),{
+        requestInit:{headers:{Authorization:"Bearer "+bearer}},
+      }));
+      const search=await client.callTool({
+        name:"superagent_tool_search",
+        arguments:{query:"superagent_request_file_access",limit:5},
+      });
+      expect(JSON.stringify(search)).toContain("superagent_request_file_access");
+
+      const filePath=path.join(os.tmpdir(),"r1-active-file-upload.jpg");
+      const result=await client.callTool({
+        name:"superagent_tool_execute",
+        arguments:{
+          name:"superagent_request_file_access",
+          arguments:{
+            filePath,operations:["read"],
+            reason:"Read this exact selected image for a browser upload.",
+          },
+        },
+      });
+      expect(result.isError).not.toBe(true);
+      const payload=JSON.parse(result.content[0].text);
+      expect(payload).toMatchObject({
+        status:"pending",kind:"file",effect:"allow",
+        filePath,operations:["read"],grantCreated:false,
+      });
+      const queue=JSON.parse(fs.readFileSync(path.join(configDir,ACTIVE_RULE_REQUESTS_FILENAME),"utf8"));
+      expect(queue).toHaveLength(1);
+      expect(queue[0].status).toBe("pending");
+
+      const writeDenied=await client.callTool({
+        name:"superagent_tool_execute",
+        arguments:{
+          name:"superagent_request_file_access",
+          arguments:{
+            filePath,operations:["write"],
+            reason:"Request an out-of-scope write permission.",
+          },
+        },
+      }).catch(error=>({isError:true,error:String(error)}));
+      expect(writeDenied.isError).toBe(true);
+      expect(JSON.parse(fs.readFileSync(path.join(configDir,ACTIVE_RULE_REQUESTS_FILENAME),"utf8"))).toHaveLength(1);
+    }finally{
+      await client.close().catch(()=>{});
+      await server.close();
+      if(previousConfigDir===undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+      else process.env.SUPERAGENT_CONFIG_DIR=previousConfigDir;
+      fs.rmSync(configDir,{recursive:true,force:true});
     }
   });
   it("keeps safe-only owners locked while normal MCP discovery remains separate from chat YOLO",()=>{

@@ -142,8 +142,9 @@ fn send_os_fallback_notification(title: &str, body: &str) -> bool {
                 "-Command",
                 &ps_script,
             ])
-            .spawn()
-            .is_ok();
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]

@@ -7,6 +7,7 @@ export const PROJECT_REGISTRY_TOOL_NAMES = new Set([
   "superagent_import_discovered_project", "superagent_sync_projects", "superagent_register_project",
   "superagent_update_project", "superagent_remove_project",
   "superagent_list_project_access", "superagent_request_project_access",
+  "superagent_request_file_access", "superagent_request_application_access",
   "superagent_grant_project_access", "superagent_revoke_project_access",
 ]);
 

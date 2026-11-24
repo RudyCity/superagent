@@ -242,17 +242,17 @@ fn record_operational_incident(
         if tray_notification_center::should_notify_os(&dir, source, severity)? &&
             os_alert_budget_available() {
             let ticket = tray_os_action::issue(&dir, id).ok();
-            let result = if source == "security" {
-                notifications::dispatch_os_notification(app, title, body, ticket)
+            // Keep non-security OS banners privacy-safe, but route every
+            // incident through the same native dispatcher and fallback path.
+            let (os_title, os_body) = if source == "security" {
+                (title, body)
             } else {
-                let mut builder = app.notification().builder()
-                    .title("SuperAgent needs attention")
-                    .body("A system event requires review. Open the Tray Notification Center.");
-                if let Some(id) = ticket {
-                    builder = builder.id(id);
-                }
-                builder.show().map_err(|e| e.to_string())
+                ("SuperAgent needs attention",
+                    "A system event requires review. Open the Tray Notification Center.")
             };
+            let result = notifications::dispatch_os_notification(
+                app, os_title, os_body, ticket,
+            );
             if let Err(error) = result {
                 if let Some(id) = ticket {
                     tray_os_action::cancel(id);
@@ -279,11 +279,12 @@ fn record_verified_device_incident(
         if tray_notification_center::should_notify_os(&dir, "lan-devices", "warning")? &&
             os_alert_budget_available() {
             let ticket = tray_os_action::issue(&dir, id).ok();
-            let mut builder = app.notification().builder()
-                .title("SuperAgent LAN device needs attention")
-                .body("A previously paired LAN device disconnected. Review LAN Devices.");
-            if let Some(ticket_id) = ticket { builder = builder.id(ticket_id); }
-            if let Err(error) = builder.show() {
+            if let Err(error) = notifications::dispatch_os_notification(
+                app,
+                "SuperAgent LAN device needs attention",
+                "A previously paired LAN device disconnected. Review LAN Devices.",
+                ticket,
+            ) {
                 if let Some(ticket_id) = ticket {
                     tray_os_action::cancel(ticket_id);
                 }
@@ -857,6 +858,30 @@ async fn regenerate_token(kind: String, port: u16, pid: u32) -> Result<Value, St
         }
         _ => Err("No supported token-rotation contract for this service".into()),
     }
+}
+
+#[tauri::command]
+async fn configure_mcp(
+    port: u16,
+    pid: u32,
+    tool_mode: String,
+    tool_exposure: String,
+) -> Result<Value, String> {
+    if port < 1024 || pid == 0 ||
+        !matches!(tool_mode.as_str(), "safe" | "dangerous") ||
+        !matches!(tool_exposure.as_str(), "gateway" | "full") {
+        return Err("Invalid MCP configuration target or modes".into());
+    }
+    core_request(
+        Method::POST,
+        "/api/desktop/configure-mcp",
+        Some(json!({
+            "port": port,
+            "pid": pid,
+            "toolMode": tool_mode,
+            "toolExposure": tool_exposure,
+        })),
+    ).await
 }
 
 fn connection_body(input: Value, core_port: u16) -> Result<Value, String> {
@@ -4046,11 +4071,9 @@ async fn poll_reminders(
         // Failed OS delivery keeps the run eligible for retry.
         if notifications_enabled {
             let ticket=tray_os_action::issue(&config_dir()?,&incident_id).ok();
-            let mut builder=app.notification().builder().title(name).body(message);
-            if let Some(id)=ticket{builder=builder.id(id);}
-            if let Err(e)=builder.show(){
+            if let Err(error) = notifications::dispatch_os_notification(app, name, message, ticket) {
                 if let Some(id)=ticket{tray_os_action::cancel(id);}
-                return Err(format!("OS notification delivery failed: {e}"));
+                return Err(format!("OS notification delivery failed: {error}"));
             }
             delivered += 1;
         }
@@ -4713,9 +4736,9 @@ fn main() {
                                     let body = format!(
                                         "{actions} action-required and {information} informational events in the last 24 hours. Open SuperAgent Tray for details."
                                     );
-                                    if let Err(error) = handle.notification().builder()
-                                        .title("SuperAgent daily digest")
-                                        .body(&body).show() {
+                                    if let Err(error) = notifications::dispatch_os_notification(
+                                        &handle, "SuperAgent daily digest", &body, None,
+                                    ) {
                                         eprintln!("[tray] Daily digest OS delivery failed: {error}");
                                     }
                                     let _ = handle.emit("tray-notifications-changed", ());
@@ -4770,6 +4793,7 @@ fn main() {
             shutdown_manager::shutdown_manager_action,
             create_connection,
             regenerate_token,
+            configure_mcp,
             get_tray_settings,
             tray_notification_center_action,
             tray_notification_center_begin_navigation,

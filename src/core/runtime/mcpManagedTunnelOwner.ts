@@ -46,10 +46,14 @@ export interface ManagedMcpTunnelOwnerStatus {
   mode: typeof OWNER_MODE;
   activeSessions: number;
   inFlightRequests: number;
+  nonStreamInFlightRequests?: number;
   inFlightToolCalls?: number;
   draining: boolean;
   inflightToolEffects: "unknown";
   safeToolsOnly: boolean;
+  toolMode?: "safe" | "dangerous";
+  toolExposure?: "gateway" | "full";
+  configuring?: boolean;
   oauthEnabled: boolean;
   publicTunnelStarted: true;
   reloadable?: boolean;
@@ -219,7 +223,8 @@ export function cleanManagedMcpTunnelLease(lease: ManagedMcpTunnelLease): void {
 
 function requestOwner(
   lease: ManagedMcpTunnelLease,
-  operation: "status" | "drain" | "stop" | "stop?force=1" | "reload" | "bootstrap/rotate",
+  operation: "status" | "drain" | "stop" | "stop?force=1" | "reload" | "bootstrap/rotate" | "configure",
+  body?: Record<string, unknown>,
 ): Promise<{ statusCode: number; body: Record<string, unknown> | null }> {
   return new Promise((resolve) => {
     let settled = false;
@@ -233,11 +238,15 @@ function requestOwner(
       port: lease.port,
       path: `/_internal/owner/${operation}`,
       method: operation === "status" ? "GET" : "POST",
-      timeout: operation === "reload" ? 60_000 : operation === "bootstrap/rotate" ? 7_000 : 1800,
+      timeout: operation === "reload" || operation === "configure" ? 60_000 : operation === "bootstrap/rotate" ? 7_000 : 1800,
       headers: {
         Authorization: "Bearer " + lease.nonce,
         Accept: "application/json",
         Host: `127.0.0.1:${lease.port}`,
+        ...(body ? {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(JSON.stringify(body)),
+        } : {}),
       },
     }, (res) => {
       let text = "";
@@ -256,6 +265,7 @@ function requestOwner(
     });
     req.once("timeout", () => req.destroy());
     req.once("error", () => finish(0, null));
+    if (body) req.write(JSON.stringify(body));
     req.end();
   });
 }
@@ -689,6 +699,68 @@ export async function regenerateManagedMcpBootstrapCode(port: number): Promise<{
     throw new Error("MCP_BOOTSTRAP_URL_OR_OWNER_CHANGED");
   }
   return {publicUrl:state.publicUrl, code:result.code, backendPid:Number(result.backendPid)};
+}
+
+export async function configureManagedMcpTunnel(
+  port: number,
+  pid: number,
+  config: {toolMode: "safe" | "dangerous"; toolExposure: "gateway" | "full"},
+): Promise<{
+  success: true; port: number; publicUrl: string; backendPid: number;
+  previousBackendPid: number | null; toolMode: "safe" | "dangerous";
+  toolExposure: "gateway" | "full"; sessionsClosed: number;
+}> {
+  assertPort(port);
+  if (!Number.isSafeInteger(pid) || pid <= 0 ||
+      !config || !["safe", "dangerous"].includes(config.toolMode) ||
+      !["gateway", "full"].includes(config.toolExposure)) {
+    throw new Error("MCP_CONFIG_REQUEST_INVALID");
+  }
+  const lease = readManagedMcpTunnelLease(port);
+  if (!lease) throw new Error("MCP_CONFIG_NO_MANAGED_OWNER");
+  await verifyManagedOwnerIdentity(lease, {timeoutMs: 3000});
+  const before = await probeManagedMcpTunnelOwner(lease);
+  const state = readMcpStateFile(getMcpStateFile(port));
+  if (!before || before.pid !== pid || !state?.publicUrl || state.pid !== pid ||
+      state.reloadable !== true || state.tunnelProvider !== "cloudflare" ||
+      (before.toolMode !== "safe" && before.toolMode !== "dangerous") ||
+      (before.toolExposure !== "gateway" && before.toolExposure !== "full")) {
+    throw new Error("MCP_CONFIG_UNSUPPORTED_OWNER: only verified reloadable Cloudflare MCP owners can be edited");
+  }
+  if (before.draining || before.configuring) throw new Error("MCP_CONFIG_OWNER_BUSY_OR_DRAINING");
+  if ((before.nonStreamInFlightRequests ?? before.inFlightRequests) !== 0 ||
+      (before.inFlightToolCalls ?? 0) !== 0) {
+    throw new Error("MCP_CONFIG_BUSY_IN_FLIGHT: wait until active MCP requests and tool calls finish");
+  }
+  const response = await requestOwner(lease, "configure", {
+    toolMode: config.toolMode,
+    toolExposure: config.toolExposure,
+    expectedBackendPid: before.backendPid,
+    expectedPublicUrl: state.publicUrl,
+  });
+  const applied = response.body;
+  if (response.statusCode !== 200 || applied?.success !== true ||
+      applied.url !== state.publicUrl || applied.toolMode !== config.toolMode ||
+      applied.toolExposure !== config.toolExposure ||
+      !Number.isSafeInteger(applied.backendPid) || Number(applied.backendPid) <= 0 ||
+      !Number.isSafeInteger(applied.sessionsClosed)) {
+    throw new Error(typeof applied?.error === "string" ? applied.error : "MCP_CONFIG_APPLY_NOT_CONFIRMED");
+  }
+  const after = await probeManagedMcpTunnelOwner(lease);
+  const sameState = readMcpStateFile(getMcpStateFile(port));
+  if (!after || after.pid !== pid || after.startedAt !== before.startedAt ||
+      after.backendPid !== applied.backendPid || after.toolMode !== config.toolMode ||
+      after.toolExposure !== config.toolExposure || sameState?.publicUrl !== state.publicUrl ||
+      sameState?.toolMode !== config.toolMode || sameState?.toolExposure !== config.toolExposure) {
+    throw new Error("MCP_CONFIG_POST_APPLY_VERIFICATION_FAILED");
+  }
+  return {
+    success: true, port, publicUrl: state.publicUrl, backendPid: Number(applied.backendPid),
+    previousBackendPid: Number.isSafeInteger(applied.previousBackendPid)
+      ? Number(applied.previousBackendPid) : before.backendPid ?? null,
+    toolMode: config.toolMode, toolExposure: config.toolExposure,
+    sessionsClosed: Number(applied.sessionsClosed),
+  };
 }
 
 export async function reloadManagedMcpTunnelBackend(port: number): Promise<{

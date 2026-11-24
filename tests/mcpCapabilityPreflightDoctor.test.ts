@@ -197,6 +197,63 @@ describe("Unified Tool Capability Matrix & Preflight Engine", () => {
     expect(listCap?.hostFilePolicy).toBe("certified_read");
   });
 
+  it("accepts exact secure Delegate uploads without requiring a caller-supplied ingress receipt", async () => {
+    const args = {
+      command: "upload_file",
+      transport: "delegate",
+      delegateClientId: "client_1234",
+      targetId: "delegate:client_1234:42",
+      sessionToken: "valid_session_token_12345678",
+      expectedRevision: 0,
+      confirmUpload: true,
+      filePath: process.platform === "win32"
+        ? "C:\\Users\\USER\\Downloads\\selected.jpg"
+        : "/tmp/selected.jpg",
+    };
+    const res = await runToolPreflight({
+      name: "superagent_chrome_cdp",
+      action: "upload_file",
+      arguments: args,
+      scopes: ["mcp:tools", "mcp:tools:write"],
+      hostPolicyActive: true,
+      projectPath: process.platform === "win32" ? "D:\\test_project" : "/tmp/superagent-test-project",
+      serviceAvailable: true,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.checks.host_file_policy.pass).toBe(true);
+    expect(res.checks.path_boundary).toBeUndefined();
+    expect(res.readiness).toBe("approval_required");
+  });
+
+  it("rejects secure Delegate upload preflight without explicit upload consent", async () => {
+    const res = await runToolPreflight({
+      name: "superagent_chrome_cdp",
+      action: "upload_file",
+      arguments: {
+        command: "upload_file",
+        transport: "delegate",
+        delegateClientId: "client_1234",
+        targetId: "delegate:client_1234:42",
+        sessionToken: "valid_session_token_12345678",
+        expectedRevision: 0,
+        confirmUpload: false,
+        filePath: process.platform === "win32"
+          ? "C:\\Users\\USER\\Downloads\\selected.jpg"
+          : "/tmp/selected.jpg",
+      },
+      scopes: ["mcp:tools", "mcp:tools:write"],
+      hostPolicyActive: true,
+      projectPath: process.platform === "win32" ? "D:\\test_project" : "/tmp/superagent-test-project",
+      serviceAvailable: true,
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.reasonCode).toBe("host_policy_blocked");
+    expect(res.checks.host_file_policy.pass).toBe(false);
+  });
+
+
   // Scenario 15: Compatibility dynamic gateway and aliases
   it("Scenario 15: preserves dynamic gateway discovery, resolves tool aliases, and identifies deprecated endpoints", () => {
     // Aliases

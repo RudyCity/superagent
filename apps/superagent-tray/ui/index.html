@@ -261,10 +261,10 @@
           <span>Tray Settings</span>
         </a>
 
-      <!-- Connection Status Card -->
-      <div class="side-bottom">
+      <!-- Compact Core Status -->
+      <div class="side-bottom core-status-panel">
         <div class="card-status-header">
-          <span class="card-status-label">CORE STATUS</span>
+          <span class="card-status-label">CORE</span>
           <span id="core-version-tag" class="core-version-tag" hidden>v-</span>
         </div>
         <div class="connection-status">
@@ -273,43 +273,45 @@
         </div>
         <p id="connection-detail" class="connection-sub">Connecting to verified loopback...</p>
         <button type="button" id="btn-start-core" class="button primary connection-start-btn" hidden>
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
             <polygon points="4,2 14,8 4,14" />
           </svg>
           <span>Start Core</span>
         </button>
         <div class="connection-running-btns" id="connection-running-btns" hidden>
           <button type="button" id="btn-restart-core" class="connection-btn restart" title="Restart SuperAgent Core (:7888)">
-            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9L14 6" />
               <polyline points="14 2 14 6 10 6" />
             </svg>
             <span>Restart</span>
           </button>
           <button type="button" id="btn-stop-core" class="connection-btn stop" title="Stop SuperAgent Core">
-            <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
+            <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor" aria-hidden="true">
               <rect x="3" y="3" width="10" height="10" rx="1" />
             </svg>
             <span>Stop</span>
           </button>
         </div>
-        <div class="connection-badge">
-          <svg class="badge-lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-          </svg>
-          <span>Authenticated Loopback</span>
+        <div class="connection-meta-row">
+          <div class="connection-badge">
+            <svg class="badge-lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <span>Authenticated Loopback</span>
+          </div>
+          <a class="support-link" id="tray-support-link" href="https://ko-fi.com/rudycity" target="_blank" rel="noopener noreferrer"
+             aria-label="Support SuperAgent development on Ko-fi (opens an external page)" title="Optional support for open-source development">
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <path d="M20.8 4H3.2v12.5a4 4 0 0 0 4 4h9.3a4 4 0 0 0 4-4V4Z"></path>
+              <path d="M20.8 6.5h.5a2.5 2.5 0 0 1 0 5h-.5"></path>
+              <path d="M8.2 10.1c1.2-1.8 3.3-.4 3.7.1.5-.5 2.6-1.9 3.7-.1 1.1 1.7-1.2 3.6-3.7 5.2-2.5-1.6-4.8-3.5-3.7-5.2Z"></path>
+            </svg>
+            <span>Ko-fi</span>
+            <span aria-hidden="true">↗</span>
+          </a>
         </div>
-        <a class="support-link" id="tray-support-link" href="https://ko-fi.com/rudycity" target="_blank" rel="noopener noreferrer"
-           aria-label="Support SuperAgent development on Ko-fi (opens an external page)" title="Optional support for open-source development">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-            <path d="M20.8 4H3.2v12.5a4 4 0 0 0 4 4h9.3a4 4 0 0 0 4-4V4Z"></path>
-            <path d="M20.8 6.5h.5a2.5 2.5 0 0 1 0 5h-.5"></path>
-            <path d="M8.2 10.1c1.2-1.8 3.3-.4 3.7.1.5-.5 2.6-1.9 3.7-.1 1.1 1.7-1.2 3.6-3.7 5.2-2.5-1.6-4.8-3.5-3.7-5.2Z"></path>
-          </svg>
-          <span>Support on Ko-fi</span>
-          <span aria-hidden="true">↗</span>
-        </a>
       </div>
     </aside>
 
@@ -1544,6 +1546,58 @@
                 <span>Do not share your OAuth approval code or bearer token.</span>
                 <button type="button" id="runtime-result-done" class="button primary">Done</button>
               </footer>
+            </section>
+          </div>
+          <div id="runtime-mcp-config-dialog" class="overlay runtime-result-overlay" role="presentation" hidden>
+            <section class="modal-dialog runtime-result-dialog" role="dialog" aria-modal="true"
+                     aria-labelledby="runtime-mcp-config-title" aria-describedby="runtime-mcp-config-description" tabindex="-1">
+              <header class="modal-header runtime-result-header">
+                <div>
+                  <span class="runtime-result-success-label">MCP owner settings</span>
+                  <h2 id="runtime-mcp-config-title">Edit MCP Configuration</h2>
+                  <p id="runtime-mcp-config-description">Change the tool catalog and security mode for this running MCP owner.</p>
+                </div>
+                <button type="button" id="runtime-mcp-config-close" class="icon-button" aria-label="Close MCP configuration" title="Close">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20" aria-hidden="true">
+                    <path d="M18 6 6 18M6 6l12 12"></path>
+                  </svg>
+                </button>
+              </header>
+              <form id="runtime-mcp-config-form">
+                <div class="modal-body runtime-result-body">
+                  <p id="runtime-mcp-config-owner" class="runtime-evidence"></p>
+                  <div class="runtime-create-fields">
+                    <div class="runtime-create-field">
+                      <label for="runtime-mcp-config-exposure">Tool catalog exposure</label>
+                      <div class="select-wrapper">
+                        <select id="runtime-mcp-config-exposure" required>
+                          <option value="gateway">Gateway · compact discovery</option>
+                          <option value="full">Full · advertise all authorized tools</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="runtime-create-field">
+                      <label for="runtime-mcp-config-mode">Tool security mode</label>
+                      <div class="select-wrapper">
+                        <select id="runtime-mcp-config-mode" required>
+                          <option value="safe">Safe · read / low-risk tools</option>
+                          <option value="dangerous">Dangerous · include write / execute tools</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                  <p class="runtime-create-guidance">
+                    Applying settings starts a new backend generation while preserving the public URL and OAuth issuer.
+                    Existing MCP sessions are closed so the old tool policy cannot remain usable. Connected MCP clients
+                    must reconnect. Apply is blocked while requests or tool calls are running.
+                  </p>
+                  <p id="runtime-mcp-config-feedback" role="status" aria-live="polite"></p>
+                </div>
+                <footer class="modal-footer runtime-result-footer">
+                  <button type="button" id="runtime-mcp-config-cancel" class="button ghost">Cancel</button>
+                  <button type="submit" id="runtime-mcp-config-apply" class="button primary">Apply &amp; Reconnect</button>
+                </footer>
+              </form>
             </section>
           </div>
           <p id="runtime-action-feedback" class="runtime-action-feedback" role="status" aria-live="polite" hidden></p>

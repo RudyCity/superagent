@@ -18,6 +18,7 @@ pub struct RemoteService {
     pub can_stop: bool,
     pub can_restart: bool,
     pub can_regenerate_token: bool,
+    pub can_configure_mcp: bool,
     pub control_reason: Option<String>,
     pub port: Option<u16>,
     pub pid: Option<u32>,
@@ -286,6 +287,7 @@ async fn evaluate(candidate: Candidate, system: &System, now: u64, dir: &Path) -
         can_stop: false,
         can_restart: false,
         can_regenerate_token: false,
+        can_configure_mcp: false,
         control_reason: None,
         port: candidate.port,
         pid,
@@ -354,6 +356,8 @@ async fn evaluate(candidate: Candidate, system: &System, now: u64, dir: &Path) -
                             runtime_control::capabilities(dir, "mcp", port, pid).await;
                         service.can_regenerate_token =
                             runtime_control::can_regenerate_token(dir, "mcp", port, pid).await;
+                        service.can_configure_mcp =
+                            runtime_control::can_configure_mcp(dir, port, pid).await;
                         if !service.can_stop || !service.can_restart {
                             service.control_reason =
                                 runtime_control::unavailable_reason(dir, "mcp", port, pid).await;
@@ -488,6 +492,7 @@ pub async fn scan(dir: &Path) -> Vec<RemoteService> {
             can_stop: false,
             can_restart: false,
             can_regenerate_token: false,
+            can_configure_mcp: false,
             control_reason: Some("External OS process: read-only, not adopted or controlled by SuperAgent".into()),
             port,
             pid: Some(os_pid),

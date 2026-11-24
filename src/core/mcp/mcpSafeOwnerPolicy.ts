@@ -5,6 +5,10 @@
  */
 import path from "node:path";
 import { assertPathWithinProject } from "../project/projectRouter.js";
+import {
+  isValidActiveFileAccessRequestInput,
+  isValidActiveApplicationAccessRequestInput,
+} from "../desktopUi/activeFileAccessRequestStore.js";
 
 export const R1_OWNER_TOOLS: readonly string[] = Object.freeze([
   "superagent_tool_search",
@@ -19,6 +23,8 @@ export const R1_OWNER_TOOLS: readonly string[] = Object.freeze([
   "superagent_find_files",
   "superagent_get_workspace",
   "superagent_server_health",
+  "superagent_request_file_access",
+  "superagent_request_application_access",
 ]);
 
 export function canUnlockMcpDangerousTools(input: {
@@ -37,6 +43,22 @@ export function isR1OwnerToolCallAllowed(
 ): boolean {
   if(!R1_OWNER_TOOLS.includes(toolName)) return false;
   if(typeof args.projectId === "string" && args.projectId.length > 0) return false;
+  if(toolName === "superagent_request_file_access") {
+    if(!isValidActiveFileAccessRequestInput(args)) return false;
+    const request = args as unknown as { operations: string[]; recursive?: boolean };
+    // The SAFE-only owner may request one exact read grant, never write/delete
+    // or recursive directory authority. Approval remains a separate human act.
+    return request.operations.length === 1 && request.operations[0] === "read" &&
+      request.recursive !== true;
+  }
+  if(toolName === "superagent_request_application_access") {
+    if(!isValidActiveApplicationAccessRequestInput(args)) return false;
+    const request = args as unknown as { operations: string[] };
+    // SAFE-only owners may request viewing, not interactive application input.
+    // Tray native approval remains mandatory for both types of access.
+    return request.operations.length === 1 && request.operations[0] === "view";
+  }
+
   const pathKeys = ["cwd","workspace","worktreePath","path","dirPath","filePath","file"];
   const candidates: string[] = [];
   for(const key of pathKeys) {

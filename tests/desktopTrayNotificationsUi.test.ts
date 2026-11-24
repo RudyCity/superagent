@@ -7,6 +7,7 @@ const base = "apps/superagent-tray";
 const html = fs.readFileSync(path.join(base, "ui/index.html"), "utf8");
 const js = fs.readFileSync(path.join(base, "ui/notifications.js"), "utf8");
 const rust = fs.readFileSync(path.join(base, "src-tauri/src/main.rs"), "utf8");
+const nativeNotifications = fs.readFileSync(path.join(base, "src-tauri/src/notifications.rs"), "utf8");
 const store = fs.readFileSync(path.join(base, "src-tauri/src/tray_notification_center.rs"), "utf8");
 
 function routeForFixture(id: string, items: Record<string, unknown>[]) {
@@ -430,8 +431,11 @@ describe("Tray Notification Manager", () => {
     const start = rust.indexOf("    let mut delivered = 0;");
     const end = rust.indexOf("    Ok(delivered)", start);
     const reminder = rust.slice(start, end);
-    expect(reminder.indexOf('app, "reminder", "info"')).toBeLessThan(reminder.indexOf('.show()'));
-    expect(reminder.indexOf('app, "reminder", "info"')).toBeLessThan(reminder.indexOf("write_seen(&file"));
+    const incident = reminder.indexOf('app, "reminder", "info"');
+    const dispatch = reminder.indexOf("notifications::dispatch_os_notification");
+    expect(incident).toBeGreaterThanOrEqual(0);
+    expect(dispatch).toBeGreaterThan(incident);
+    expect(dispatch).toBeLessThan(reminder.indexOf("write_seen(&file"));
   });
   it("opening the bell requests fresh authenticated security inventory without granting access", async () => {
     const mounted = mount([{
@@ -725,7 +729,12 @@ describe("Tray Notification Manager", () => {
     expect(rust).toContain('static OS_ALERT_BUDGET:');
     expect(rust).toContain('os_alert_budget_available()');
     expect(rust).toContain('tray_notification_center::should_notify_os(&dir, source, severity)?');
-    expect(rust).toContain('.title("SuperAgent needs attention")');
+    expect(rust).toContain('"SuperAgent needs attention"');
+    expect(rust).toContain('"A system event requires review. Open the Tray Notification Center."');
+    expect(rust).toContain("notifications::dispatch_os_notification(");
+    expect(nativeNotifications).toContain("pub fn dispatch_os_notification(");
+    expect(nativeNotifications).toContain("match builder.show()");
+    expect(nativeNotifications).toContain("send_os_fallback_notification(title, body)");
     expect(rust).not.toContain('.body(format!("Failed to start Core: {}", e))');
     expect(rust).not.toContain('.body(format!("Failed to restart Core: {}", e))');
     expect(rust).not.toContain('.body(format!("Failed to stop Core: {}", e))');

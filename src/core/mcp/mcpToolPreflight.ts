@@ -28,6 +28,8 @@ import {
 } from "./mcpCapabilityMatrix.js";
 import { checkDependencies } from "./mcpDependencyManager.js";
 import { fileRulesRegistered } from "../tools/registeredFileToolGate.js";
+import { certifiedBrowserUpload } from "../tools/browserFilePolicyCertification.js";
+
 import { getProject } from "../project/projectRegistry.js";
 import { hasProjectAccess, type ProjectAccessCapability } from "../project/projectAccessPolicy.js";
 import { getMcpIdentityByHandle } from "./mcpIdentityPresence.js";
@@ -135,6 +137,9 @@ export async function runToolPreflight(req: PreflightRequest): Promise<ToolPrefl
   }
 
   const capability = getBaseToolCapability(toolName, action);
+  const certifiedBrowserUploadRequest = toolName === "superagent_chrome_cdp" &&
+    certifiedBrowserUpload({ name: toolName, args });
+
 
   // 3. OAuth checkpoint
   if (req.scopes && Array.isArray(req.scopes)) {
@@ -212,13 +217,15 @@ export async function runToolPreflight(req: PreflightRequest): Promise<ToolPrefl
         remediation: capability.remediation || "Use certified alternative actions that do not access unmediated files.",
       };
     } else if (capability.hostFilePolicy === "certified_upload_ingress") {
-      const hasReceipt = Boolean(args.ingressReceiptId || (args.__ingressReceipt && typeof args.__ingressReceipt === "object"));
-      if (!hasReceipt && action === "upload_file") {
+      // Reuse the exact upload/chooser certification used at execution. Never
+      // trust caller-supplied receipt IDs or receipt-shaped objects as proof.
+      if (!certifiedBrowserUploadRequest ||
+          (action !== "upload_file" && action !== "handle_file_chooser")) {
         checks.host_file_policy = {
           pass: false,
           code: "host_policy_blocked",
-          message: "CDP upload_file is blocked under permanent host file policy without certified secure ingress staging.",
-          remediation: "Stage the file using the secure upload ingress pipeline before calling upload_file.",
+          message: "CDP upload requires an exact, leased Delegate request with explicit upload consent and a host-certified source.",
+          remediation: "For upload_file, use transport=delegate with an exact claimed target, sessionToken, expectedRevision, confirmUpload:true and one absolute filePath. If the native read rule is missing, call superagent_request_file_access with that exact filePath and operations:[read], wait for human approval in Tray > Access Manager > Requests > Active Rules, then retry. Project access alone is not sufficient.",
         };
       } else {
         checks.host_file_policy = { pass: true };
@@ -231,7 +238,12 @@ export async function runToolPreflight(req: PreflightRequest): Promise<ToolPrefl
   }
 
   // Workspace / File Path boundary check
-  const candidatePath = args.filePath || args.inputPath || args.path || args.outputPath;
+  // Delegate upload sources are user-selected host files. Their access is
+  // independently checked by the native file registry and secure ingress,
+  // so they are not constrained to the MCP project root.
+  const candidatePath = certifiedBrowserUploadRequest && action === "upload_file"
+    ? undefined
+    : args.filePath || args.inputPath || args.path || args.outputPath;
   if (typeof candidatePath === "string" && candidatePath.trim()) {
     const proj = req.projectId ? getProject(req.projectId) : null;
     const projRootPath = req.projectPath || proj?.root;

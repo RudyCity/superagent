@@ -2,6 +2,8 @@ import {describe,expect,it,vi} from "vitest";
 import vm from "node:vm";
 import fs from "node:fs";
 const code=fs.readFileSync("apps/superagent-tray/ui/access-manager.js","utf8");
+const trayStyles=fs.readFileSync("apps/superagent-tray/ui/styles.css","utf8");
+const accessManagerStyles=fs.readFileSync("apps/superagent-tray/ui/access-manager.css","utf8");
 class Element {
   tagName:string;id="";className="";placeholder="";type="";#textContent="";title="";hidden=false;disabled=false;checked=false;
   tabIndex=0;
@@ -411,28 +413,37 @@ describe("installed applications enrollment and discovery", () => {
 });
 
 describe("Security Approval Manager tab navigation and grouping", () => {
-  it("renders the 3 main section tabs with accurate initial badges and active pane", async () => {
+  it("opens on Request Center with accurate initial badges and active pane", async () => {
     const ui = boot();
     await flush();
 
+    const tabRequests = ui.document.getElementById("access-nav-tab-requests");
     const tabReg = ui.document.getElementById("access-nav-tab-register");
     const tabRules = ui.document.getElementById("access-nav-tab-rules");
     const tabAudit = ui.document.getElementById("access-nav-tab-audit");
+    expect(tabRequests).not.toBeNull();
     expect(tabReg).not.toBeNull();
     expect(tabRules).not.toBeNull();
     expect(tabAudit).not.toBeNull();
 
-    expect(tabReg?.className).toContain("active");
+    expect(tabRequests?.className).toContain("active");
+    expect(tabRequests?.attributes.get("aria-selected")).toBe("true");
+    expect(tabRequests?.tabIndex).toBe(0);
+    expect(tabReg?.className).not.toContain("active");
+    expect(tabReg?.attributes.get("aria-selected")).toBe("false");
+    expect(tabReg?.tabIndex).toBe(-1);
     expect(tabRules?.className).not.toContain("active");
     expect(tabAudit?.className).not.toContain("active");
 
     const badgeRules = ui.document.getElementById("access-tab-badge-rules");
     expect(badgeRules?.textContent).toBe("0");
 
+    const paneRequests = ui.document.getElementById("access-pane-requests");
     const paneReg = ui.document.getElementById("access-pane-register");
     const paneRules = ui.document.getElementById("access-pane-rules");
     const paneAudit = ui.document.getElementById("access-pane-audit");
-    expect(paneReg?.hidden).toBe(false);
+    expect(paneRequests?.hidden).toBe(false);
+    expect(paneReg?.hidden).toBe(true);
     expect(paneRules?.hidden).toBe(true);
     expect(paneAudit?.hidden).toBe(true);
   });
@@ -1539,5 +1550,99 @@ describe("Desktop Live session requests in Request Center", () => {
       .not.toContain("Workspace Editor");
     expect(ui.document.getElementById("access-req-subtab-desktop")!.textContent).toBe("Desktop Live (!)");
     expect(ui.document.getElementById("access-tab-badge-requests")!.textContent).toBe("!");
+  });
+});
+
+describe("Access history placement and responsive layout", () => {
+  it("keeps each history inside its matching Request Center subtab", async () => {
+    const now = Date.now();
+    const ui = boot(true, {
+      requests: [{
+        requestId: "req_project_history_moved",
+        projectId: "superagent",
+        projectName: "SuperAgent",
+        status: "approved",
+        subject: "Gemini MCP",
+        mode: "oauth",
+        capabilities: ["read", "write"],
+        reason: "Workspace access review",
+        createdAt: now - 60_000,
+        decidedAt: now,
+      }],
+      pendingRuleRequests: [{
+        id: "req_rule_history_moved",
+        status: "approved",
+        kind: "file",
+        effect: "allow",
+        sourceName: "Gemini MCP",
+        targetPath: "G:/project/superagent",
+        operations: ["read", "write"],
+        reason: "Workspace host access review",
+        createdAt: now - 60_000,
+        decidedAt: now,
+      }],
+    });
+    await flush();
+
+    const projectHistory = ui.document.getElementById("access-mcp-history-list")!;
+    const ruleHistory = ui.document.getElementById("access-req-center-rules-history")!;
+    const desktopHistory = ui.document.getElementById("access-req-center-desktop-history")!;
+    const requestPane = ui.document.getElementById("access-pane-requests")!;
+    const incomingCard = ui.document.getElementById("access-req-center-incoming-card")!;
+    const rulesCard = ui.document.getElementById("access-req-center-rules-card")!;
+    const desktopCard = ui.document.getElementById("access-req-center-desktop-card")!;
+    const desktopHistoryCard = ui.document.getElementById("access-req-center-desktop-history-card")!;
+    const projectPane = ui.document.getElementById("access-pane-mcp")!;
+    const rulesPane = ui.document.getElementById("access-pane-rules")!;
+
+    expect(projectHistory.parentNode?.parentNode).toBe(incomingCard);
+    expect(ruleHistory.parentNode?.parentNode).toBe(rulesCard);
+    expect(desktopHistory.parentNode?.parentNode).toBe(desktopCard);
+    expect(projectHistory.textContent).toContain("Gemini MCP");
+    expect(projectHistory.textContent).toContain("Disetujui");
+    expect(ruleHistory.textContent).toContain("G:/project/superagent");
+    expect(ruleHistory.textContent).toContain("Disetujui");
+    expect(desktopHistoryCard.hidden).toBe(true);
+
+    ui.document.getElementById("access-nav-tab-requests")!.click();
+    ui.document.getElementById("access-req-subtab-incoming")!.click();
+    expect(incomingCard.hidden).toBe(false);
+    expect(rulesCard.hidden).toBe(true);
+    expect(desktopCard.hidden).toBe(true);
+    expect(projectHistory.parentNode?.parentNode).toBe(incomingCard);
+
+    ui.document.getElementById("access-req-subtab-rules")!.click();
+    expect(incomingCard.hidden).toBe(true);
+    expect(rulesCard.hidden).toBe(false);
+    expect(desktopCard.hidden).toBe(true);
+    expect(ruleHistory.parentNode?.parentNode).toBe(rulesCard);
+
+    ui.document.getElementById("access-req-subtab-desktop")!.click();
+    expect(incomingCard.hidden).toBe(true);
+    expect(rulesCard.hidden).toBe(true);
+    expect(desktopCard.hidden).toBe(false);
+    expect(desktopHistoryCard.hidden).toBe(false);
+    expect(desktopHistory.parentNode?.parentNode).toBe(desktopCard);
+
+    ui.document.getElementById("access-nav-tab-rules")!.click();
+    await flush();
+    expect(rulesPane.hidden).toBe(false);
+    expect(requestPane.hidden).toBe(true);
+    expect(rulesPane.children.some(child => child === ruleHistory.parentNode)).toBe(false);
+
+    ui.document.getElementById("access-nav-tab-mcp")!.click();
+    await flush();
+    expect(projectPane.hidden).toBe(false);
+    expect(projectPane.children.some(child => child === projectHistory.parentNode)).toBe(false);
+    expect(requestPane.hidden).toBe(true);
+    expect(ui.document.getElementById("access-nav-tab-audit")?.textContent).toContain("Audit Host");
+  });
+
+  it("keeps Core Status visible at short heights and Request Center filters scrollable on mobile", () => {
+    expect(trayStyles).toMatch(/\.side-bottom\s*\{[^}]*flex:\s*0 0 auto/s);
+    expect(trayStyles).toContain("@media (max-height: 680px)");
+    expect(trayStyles).toContain("white-space: normal");
+    expect(accessManagerStyles).toContain(".access-req-center-subtabs .access-filter-tabs");
+    expect(accessManagerStyles).toContain("overflow-x:auto");
   });
 });

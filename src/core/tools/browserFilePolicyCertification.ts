@@ -1,6 +1,7 @@
-import { isCertifiedIngressStagedFile } from "../mcp/mcpUploadIngress.js";
+import { isCertifiedIngressStagedFile, getIngressReceiptByStagedPath } from "../mcp/mcpUploadIngress.js";
+import path from "node:path";
 
-/** File-safe MCP Chrome metadata certification; all other browser operations remain denied. */
+/** File-safe MCP Chrome metadata and narrowly scoped leased Delegate upload certification. */
 type BrowserCall = {name:string; args?:Record<string,unknown>};
 const exact=(o:Record<string,unknown>,keys:string[])=>Object.keys(o).every(k=>keys.includes(k));
 export function certifiedBrowserObservation(call:BrowserCall):boolean{
@@ -121,17 +122,100 @@ export function certifiedDelegateWebAction(call:BrowserCall):boolean{
 }
 
 /**
- * Validates that browser file upload operations only target certified ingress
- * files staged and verified by the host file policy pipeline.
+ * Returns the one explicitly selected local source path for a secure Delegate upload.
+ * Shape certification does not grant file access: the permanent host registry and
+ * stageUploadArtifact independently re-check read permission before opening it.
+ */
+export function getCertifiedBrowserUploadSourcePath(call: BrowserCall): string | null {
+  if (call.name !== "superagent_chrome_cdp" && call.name !== "superagent_control_chrome_cdp") return null;
+  const a = call.args;
+  if (!a || typeof a !== "object" || Array.isArray(a) || a.command !== "upload_file") return null;
+  const allowed = ["command", "transport", "delegateClientId", "targetId", "sessionToken",
+    "expectedRevision", "confirmUpload", "filePath", "selector", "inputIndex", "expectedMime", "expectedSha256"];
+  if (!exact(a, allowed) || a.transport !== "delegate" || a.confirmUpload !== true) return null;
+  if (typeof a.delegateClientId !== "string" || !/^[A-Za-z0-9_-]{8,80}$/.test(a.delegateClientId)) return null;
+  const target = typeof a.targetId === "string"
+    ? /^delegate:([A-Za-z0-9_-]{8,80}):([1-9][0-9]{0,9})$/.exec(a.targetId) : null;
+  if (!target || target[1] !== a.delegateClientId || !Number.isSafeInteger(Number(target[2]))) return null;
+  if (typeof a.sessionToken !== "string" || a.sessionToken.length < 16 ||
+      a.sessionToken.length > 256 || /[\r\n\0]/.test(a.sessionToken)) return null;
+  if (!Number.isSafeInteger(a.expectedRevision) || Number(a.expectedRevision) < 0) return null;
+  if (typeof a.filePath !== "string" || !a.filePath.trim() || a.filePath.length > 4096 ||
+      !(path.isAbsolute(a.filePath) || path.win32.isAbsolute(a.filePath)) || /[\0\r\n]/.test(a.filePath)) return null;
+  if (a.selector !== undefined && (typeof a.selector !== "string" || !a.selector.length ||
+      a.selector.length > 512 || /[\0\r\n]/.test(a.selector))) return null;
+  if (a.inputIndex !== undefined && (!Number.isSafeInteger(a.inputIndex) ||
+      Number(a.inputIndex) < 0 || Number(a.inputIndex) > 249)) return null;
+  if (a.selector !== undefined && a.inputIndex !== undefined) return null;
+  if (a.expectedMime !== undefined && (typeof a.expectedMime !== "string" || a.expectedMime.length > 127 ||
+      !/^[A-Za-z0-9.+-]+\/[A-Za-z0-9.+-]+$/.test(a.expectedMime))) return null;
+  if (a.expectedSha256 !== undefined && (typeof a.expectedSha256 !== "string" ||
+      !/^[a-f0-9]{64}$/i.test(a.expectedSha256))) return null;
+  return a.filePath;
+}
+
+function hasDelegateUploadLease(a: Record<string, unknown>, requireRevision: boolean): boolean {
+  if (a.transport !== "delegate" || typeof a.delegateClientId !== "string" ||
+      !/^[A-Za-z0-9_-]{8,80}$/.test(a.delegateClientId)) return false;
+  const target = typeof a.targetId === "string"
+    ? /^delegate:([A-Za-z0-9_-]{8,80}):([1-9][0-9]{0,9})$/.exec(a.targetId) : null;
+  if (!target || target[1] !== a.delegateClientId || !Number.isSafeInteger(Number(target[2]))) return false;
+  if (typeof a.sessionToken !== "string" || a.sessionToken.length < 16 ||
+      a.sessionToken.length > 256 || /[\r\n\0]/.test(a.sessionToken)) return false;
+  return !requireRevision || (Number.isSafeInteger(a.expectedRevision) && Number(a.expectedRevision) >= 0);
+}
+
+/**
+ * Certifies only exact, leased Delegate upload/verification requests.
+ * Raw sources are checked against the permanent native file registry before
+ * staging; staged files must have a live host-owned ingress receipt.
  */
 export function certifiedBrowserUpload(call: BrowserCall): boolean {
   if (call.name !== "superagent_chrome_cdp" && call.name !== "superagent_control_chrome_cdp") return false;
   const a = call.args;
   if (!a || typeof a !== "object" || Array.isArray(a)) return false;
   const cmd = a.command || a.cmd;
+
+  if (cmd === "upload_file" && getCertifiedBrowserUploadSourcePath(call)) return true;
+
+  if (cmd === "verify_upload") {
+    const allowed = ["command", "transport", "delegateClientId", "targetId", "sessionToken",
+      "selector", "inputIndex", "successSelector", "expectedNames", "fileNames"];
+    if (!exact(a, allowed) || !hasDelegateUploadLease(a, false)) return false;
+    if (a.selector !== undefined && (typeof a.selector !== "string" || !a.selector.length ||
+        a.selector.length > 512 || /[\0\r\n]/.test(a.selector))) return false;
+    if (a.inputIndex !== undefined && (!Number.isSafeInteger(a.inputIndex) ||
+        Number(a.inputIndex) < 0 || Number(a.inputIndex) > 249)) return false;
+    if (a.successSelector !== undefined && (typeof a.successSelector !== "string" ||
+        !a.successSelector.length || a.successSelector.length > 512 || /[\0\r\n]/.test(a.successSelector))) return false;
+    const names = a.expectedNames ?? a.fileNames;
+    return names === undefined || (Array.isArray(names) && names.length <= 10 &&
+      names.every(name => typeof name === "string" && name.length <= 255));
+  }
+
   if (cmd !== "upload_file" && cmd !== "handle_file_chooser") return false;
+  const allowed = ["command", "transport", "delegateClientId", "targetId", "sessionToken",
+    "expectedRevision", "confirmUpload", "files", "filePaths", "paths", "filePath", "path",
+    "selector", "inputIndex", "arm", "triggerSelector", "nativeDialog", "confirmNativeDialog", "windowTitle"];
+  if (!exact(a, allowed) || !hasDelegateUploadLease(a, true) || a.confirmUpload !== true) return false;
+  if (a.selector !== undefined && (typeof a.selector !== "string" || !a.selector.length ||
+      a.selector.length > 512 || /[\0\r\n]/.test(a.selector))) return false;
+  if (a.inputIndex !== undefined && (!Number.isSafeInteger(a.inputIndex) ||
+      Number(a.inputIndex) < 0 || Number(a.inputIndex) > 249)) return false;
+  if (a.selector !== undefined && a.inputIndex !== undefined) return false;
+  if (a.triggerSelector !== undefined && (typeof a.triggerSelector !== "string" ||
+      !a.triggerSelector.length || a.triggerSelector.length > 512 || /[\0\r\n]/.test(a.triggerSelector))) return false;
+  if (a.arm !== undefined && typeof a.arm !== "boolean") return false;
+  if (a.arm === true && (cmd !== "handle_file_chooser" || typeof a.triggerSelector !== "string")) return false;
+  if (a.nativeDialog === true && (cmd !== "handle_file_chooser" || a.confirmNativeDialog !== true)) return false;
+  if (a.confirmNativeDialog !== undefined && typeof a.confirmNativeDialog !== "boolean") return false;
+  if (a.windowTitle !== undefined && (typeof a.windowTitle !== "string" || a.windowTitle.length > 256)) return false;
   const raw = a.files ?? a.filePaths ?? a.paths ?? a.filePath ?? a.path;
   const inputs = typeof raw === "string" ? [raw] : Array.isArray(raw) ? raw : [];
   if (inputs.length < 1 || inputs.length > 10) return false;
-  return inputs.every((p) => typeof p === "string" && isCertifiedIngressStagedFile(p));
+  return inputs.every(p => {
+    if (typeof p !== "string" || !isCertifiedIngressStagedFile(p)) return false;
+    const receipt = getIngressReceiptByStagedPath(p);
+    return Boolean(receipt && receipt.targetId === a.targetId && receipt.sessionToken === a.sessionToken);
+  });
 }

@@ -1639,6 +1639,38 @@ export async function handleServerRoute(
     return true;
   }
 
+  if (pathname === "/api/desktop/configure-mcp" && req.method === "POST") {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const raw = await readBody(req);
+      if (raw.length > 2048) throw new Error("MCP_CONFIG_BODY_TOO_LARGE");
+      const body = JSON.parse(raw) as Record<string, unknown>;
+      const allowed = new Set(["port", "pid", "toolMode", "toolExposure"]);
+      if (!body || typeof body !== "object" || Array.isArray(body) ||
+          Object.keys(body).length !== allowed.size ||
+          Object.keys(body).some(key => !allowed.has(key)) ||
+          !Number.isSafeInteger(body.port) || Number(body.port) < 1024 || Number(body.port) > 65535 ||
+          !Number.isSafeInteger(body.pid) || Number(body.pid) <= 0 ||
+          (body.toolMode !== "safe" && body.toolMode !== "dangerous") ||
+          (body.toolExposure !== "gateway" && body.toolExposure !== "full")) {
+        sendJSON(res, 400, {success:false, error:"MCP_CONFIG_REQUEST_INVALID"});
+        return true;
+      }
+      const { configureManagedMcpTunnel } = await import("./core/runtime/mcpManagedTunnelOwner.js");
+      const result = await configureManagedMcpTunnel(Number(body.port), Number(body.pid), {
+        toolMode: body.toolMode,
+        toolExposure: body.toolExposure,
+      });
+      sendJSON(res, 200, result);
+    } catch (error) {
+      sendJSON(res, 409, {
+        success:false,
+        error:error instanceof Error ? error.message : "MCP_CONFIG_FAILED",
+      });
+    }
+    return true;
+  }
+
   if (pathname === "/api/desktop/runtime-services") {
     if (req.method !== "GET") { sendJSON(res, 405, { success: false, error: "Read-only endpoint." }); return true; }
     try {

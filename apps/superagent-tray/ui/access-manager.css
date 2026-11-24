@@ -334,3 +334,25 @@
 .access-req-rule-ops{display:flex;flex-wrap:wrap;gap:8px}
 @media(max-width:920px){.access-req-center-grid{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:640px){.access-req-rule-form{grid-template-columns:minmax(0,1fr)}}
+
+.access-req-center-subtabs{min-width:0}
+@media(max-width:640px){
+  .access-req-center-subtabs{align-items:stretch}
+  .access-req-center-subtabs .access-filter-tabs{
+    width:100%;
+    max-width:100%;
+    min-width:0;
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    overflow-y:hidden;
+    overscroll-behavior-x:contain;
+    scrollbar-width:thin;
+    -webkit-overflow-scrolling:touch;
+  }
+  .access-req-center-subtabs .access-filter-btn{flex:0 0 auto;min-height:40px}
+  .access-mcp-intro-head{align-items:stretch}
+  .access-mcp-pending-controls{width:100%}
+  .access-mcp-pending-controls>*{flex:1 1 auto;min-width:0}
+  .access-stored-head{align-items:flex-start;flex-wrap:wrap}
+  .access-req-center-grid{gap:12px}
+}

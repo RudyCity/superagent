@@ -3,7 +3,7 @@
   // Native Tray Access Manager: no WebView-side policy writes or localStorage.
   // All grants are performed by the native host after OS verification + dialog.
   const $ = (id) => document.getElementById(id);
-  const state = { registry: null, windows: [], installedApps: [], appSource: "active", selected: "", busy: false, view: "desktop", ruleFilter: "all", ruleSearch: "", auditLogs: [], activeTab: "register", selectedRuleIds: new Set(), pendingRuleRequests: [], pendingDesktopUiRequests: null, requestSubTab: "all" };
+  const state = { registry: null, windows: [], installedApps: [], appSource: "active", selected: "", busy: false, view: "desktop", ruleFilter: "all", ruleSearch: "", auditLogs: [], activeTab: "requests", selectedRuleIds: new Set(), pendingRuleRequests: [], pendingDesktopUiRequests: null, requestSubTab: "all" };
   const invoke = (name, args) => {
     const native = window.__TAURI__?.core?.invoke;
     if (typeof native !== "function") throw Error("Installed native Tray required");
@@ -601,7 +601,11 @@
     list.replaceChildren();
     if (count) count.textContent = state.auditLogs.length + " rekaman";
     const auditBadge = $("access-tab-badge-audit");
-    if (auditBadge) auditBadge.textContent = String(state.auditLogs.length);
+    if (auditBadge) {
+      auditBadge.textContent = String(state.auditLogs.length);
+      auditBadge.title = state.auditLogs.length + " rekaman audit akses host";
+      auditBadge.setAttribute("aria-label", auditBadge.title);
+    }
     if (!state.auditLogs.length) {
       list.append(make("p", "access-empty", "Belum ada rekaman audit aktivitas akses."));
       return;
@@ -694,9 +698,11 @@
     const incomingCard = $("access-req-center-incoming-card");
     const rulesCard = $("access-req-center-rules-card");
     const desktopCard = $("access-req-center-desktop-card");
+    const desktopHistoryCard = $("access-req-center-desktop-history-card");
     if (incomingCard) incomingCard.hidden = state.requestSubTab === "rules" || state.requestSubTab === "desktop";
     if (rulesCard) rulesCard.hidden = state.requestSubTab === "incoming" || state.requestSubTab === "desktop";
     if (desktopCard) desktopCard.hidden = state.requestSubTab === "incoming" || state.requestSubTab === "rules";
+    if (desktopHistoryCard) desktopHistoryCard.hidden = state.requestSubTab !== "desktop";
     if (grid) {
       grid.className = "access-req-center-grid" + (state.requestSubTab !== "all" ? " is-single" : "");
     }
@@ -1223,15 +1229,7 @@
     legacyList.id = "access-mcp-legacy-list";
     legacySection.append(legacyList);
 
-    // Section 3: History & Active Grants
-    const histSection = make("section", "access-stored access-mcp-card");
-    const histHead = make("div", "access-stored-head");
-    histHead.append(make("h3", "", "Riwayat Keputusan Proyek"));
-    const histList = make("div", "access-mcp-list access-mcp-scroll-list");
-    histList.id = "access-mcp-history-list";
-    histSection.append(histHead, histList);
-
-    pane.append(banner, loadError, workspaceGrid, projectSection, toolsSection, legacySection, histSection);
+    pane.append(banner, loadError, workspaceGrid, projectSection, toolsSection, legacySection);
     return pane;
   }
 
@@ -2003,7 +2001,7 @@
     pane.id = "access-pane-requests";
     pane.setAttribute("role", "tabpanel");
     pane.setAttribute("aria-labelledby", "access-nav-tab-requests");
-    pane.hidden = true;
+    pane.hidden = false;
 
     const intro = make("div", "access-editor access-mcp-intro");
     const introHead = make("div", "access-mcp-intro-head");
@@ -2011,7 +2009,7 @@
     introCopy.append(
       make("h3", "", "Pusat Permintaan"),
       make("p", "access-mcp-description",
-        "Kelola Permintaan Akses Masuk (izin proyek & capability agen MCP), Permintaan Aturan Aktif (izin host permanen), serta permintaan sesi Desktop Live satu kali dalam satu tempat dengan tinjauan native.")
+        "Kelola permintaan akses proyek, aturan host, dan sesi Desktop Live, sekaligus meninjau riwayat keputusan akses proyek dalam satu tempat.")
     );
     const introActions = make("div", "access-mcp-pending-controls");
     const toggleNewRuleReq = action("+ Ajukan Permintaan Aturan Aktif", "access-submit", () => {
@@ -2237,16 +2235,34 @@
     ruleHistList.id = "access-req-center-rules-history";
     ruleHistList.append(make("p", "access-empty", "Belum ada riwayat keputusan aturan aktif."));
     ruleHistCard.append(ruleHistHead, ruleHistList);
+    rulesCard.append(ruleHistCard);
+
+    const projectHistCard = make("section", "access-stored access-mcp-card access-req-center-project-history");
+    projectHistCard.id = "access-req-center-project-history-card";
+    const projectHistHead = make("div", "access-stored-head");
+    projectHistHead.append(make("h3", "", "Riwayat Akses Proyek"));
+    const projectHistList = make("div", "access-mcp-list access-mcp-scroll-list");
+    projectHistList.id = "access-mcp-history-list";
+    projectHistList.append(make("p", "access-empty", "Belum ada izin atau keputusan yang tercatat."));
+    projectHistCard.append(
+      projectHistHead,
+      make("p", "access-hint", "Keputusan permintaan grant dan pencabutan akses proyek agen MCP."),
+      projectHistList
+    );
+    incomingCard.append(projectHistCard);
 
     const desktopHistCard = make("section", "access-stored access-mcp-card");
+    desktopHistCard.id = "access-req-center-desktop-history-card";
+    desktopHistCard.hidden = state.requestSubTab !== "desktop";
     const desktopHistHead = make("div", "access-stored-head");
     desktopHistHead.append(make("h3", "", "Riwayat Keputusan Desktop Live"));
     const desktopHistList = make("div", "access-mcp-list access-mcp-scroll-list");
     desktopHistList.id = "access-req-center-desktop-history";
     desktopHistList.append(make("p", "access-empty", "Belum ada riwayat keputusan Desktop UI."));
     desktopHistCard.append(desktopHistHead, desktopHistList);
+    desktopCard.append(desktopHistCard);
 
-    pane.append(intro, requestLoadError, grid, ruleHistCard, desktopHistCard);
+    pane.append(intro, requestLoadError, grid);
     return pane;
   }
 
@@ -2953,13 +2969,13 @@
     navTabs.setAttribute("role", "tablist");
     navTabs.setAttribute("aria-label", "Kelompok Bagian Security Approval Manager");
 
-    const tabRequests = make("button", "access-nav-tab");
+    const tabRequests = make("button", "access-nav-tab active");
     tabRequests.id = "access-nav-tab-requests";
     tabRequests.type = "button";
     tabRequests.setAttribute("role", "tab");
-    tabRequests.setAttribute("aria-selected", "false");
+    tabRequests.setAttribute("aria-selected", "true");
     tabRequests.setAttribute("aria-controls", "access-pane-requests");
-    tabRequests.tabIndex = -1;
+    tabRequests.tabIndex = 0;
     const requestsBadge = make("span", "access-nav-tab-badge zero", "0");
     requestsBadge.id = "access-tab-badge-requests";
     tabRequests.append(
@@ -2968,13 +2984,13 @@
     );
     tabRequests.addEventListener("click", () => setActiveTab("requests"));
 
-    const tabRegister = make("button", "access-nav-tab active");
+    const tabRegister = make("button", "access-nav-tab");
     tabRegister.id = "access-nav-tab-register";
     tabRegister.type = "button";
     tabRegister.setAttribute("role", "tab");
-    tabRegister.setAttribute("aria-selected", "true");
+    tabRegister.setAttribute("aria-selected", "false");
     tabRegister.setAttribute("aria-controls", "access-pane-register");
-    tabRegister.tabIndex = 0;
+    tabRegister.tabIndex = -1;
     tabRegister.append(
       make("span", "access-nav-tab-label", "Aplikasi & File")
     );
@@ -3005,8 +3021,10 @@
     const auditPulseDot = make("span", "access-live-pulse-dot", "●");
     const auditBadge = make("span", "access-nav-tab-badge", "0");
     auditBadge.id = "access-tab-badge-audit";
+    tabAudit.setAttribute("aria-label", "Host access audit log");
+    tabAudit.title = "Audit rekaman akses aplikasi dan file host";
     tabAudit.append(
-      make("span", "access-nav-tab-label", "Aktivitas"),
+      make("span", "access-nav-tab-label", "Audit Host"),
       auditPulseDot,
       auditBadge
     );
@@ -3053,6 +3071,7 @@
     paneRegister.id = "access-pane-register";
     paneRegister.setAttribute("role", "tabpanel");
     paneRegister.setAttribute("aria-labelledby", "access-nav-tab-register");
+    paneRegister.hidden = true;
     paneRegister.append(hostOverview, onboarding, split);
 
     const rulePermitBar = make("section", "access-editor access-mcp-intro access-rule-permit-banner");
@@ -3113,6 +3132,7 @@
     const paneRequests = buildRequestCenterPane();
     const paneConnections = buildMcpConnectionsPane();
     const paneMcp = buildMcpPane();
+
     root.append(head, navTabs, paneRequests, paneRegister, paneRules, paneConnections, paneMcp, paneAudit, footer);
     parent.insertBefore(root, old);
     void refreshMcpRequests();
