@@ -46,6 +46,7 @@ import {
   type OpenAiTunnelStatus,
 } from "./openaiTunnelClient.js";
 import { getOpenAiMcpTunnelConfig } from "./openaiMcpTunnelConfig.js";
+import { getMcpToolExposure, type McpToolExposure } from "./mcpToolExposure.js";
 import { formatPythonMcpClientHints } from "./pythonMcpClientHints.js";
 import {
   createPersistentMcpOAuthStore,
@@ -119,6 +120,7 @@ export interface McpServerState {
   publicUrl: string;
   localUrl: string;
   toolMode: "safe" | "dangerous";
+  toolExposure?: McpToolExposure;
   startedAt: number;
   workspace: string;
   /** Auth mode; defaults to "static-bearer" for states written before Task 8. */
@@ -182,6 +184,7 @@ export function readMcpStateFile(filePath: string): McpServerState | null {
       publicUrl: s.publicUrl || "",
       localUrl: s.localUrl || "",
       toolMode: s.toolMode === "dangerous" ? "dangerous" : "safe",
+      toolExposure: s.toolExposure === "full" ? "full" : "gateway",
       startedAt: typeof s.startedAt === "number" ? s.startedAt : Date.now(),
       workspace: s.workspace || "",
       authMode: s.authMode === "oauth" ? "oauth" : "static-bearer",
@@ -217,6 +220,8 @@ function toActiveMcpInfo(s: McpServerState): ActiveMcpInfo {
 export interface StartMcpTunnelOptions {
   port?: number;
   allowDangerous?: boolean;
+  /** Per-owner tool catalog exposure. Defaults to the global MCP exposure setting. */
+  toolExposure?: McpToolExposure;
   auditLogPath?: string;
   authMode?: McpAuthMode;
   /** Explicit allowed Origin values (defense in depth). */
@@ -276,8 +281,9 @@ export function resolveOpenAiOAuthPublicBaseUrl(configured?: string): string {
 
 export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<McpTunnelInfo> {
   const port = opts.port ?? DEFAULT_MCP_PORT;
-  // MCP listener configuration is independent from the chat-agent YOLO mode.
+  // Tool exposure and tool safety are independent, per-owner settings.
   const dangerous = Boolean(opts.allowDangerous);
+  const toolExposure: McpToolExposure = opts.toolExposure ?? getMcpToolExposure().mode;
   const authMode: McpAuthMode = opts.authMode ?? "static-bearer";
   const requestedProvider = opts.tunnelProvider as string | undefined;
   if (requestedProvider !== undefined && requestedProvider !== "cloudflare" && requestedProvider !== "openai") {
@@ -367,6 +373,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
         port,
         bearerToken,
         allowDangerous: dangerous,
+        toolExposure,
         auditLogPath: opts.auditLogPath,
         authMode,
         oauth,
@@ -431,6 +438,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
       publicUrl,
       localUrl: active.handle.url,
       toolMode: dangerous ? "dangerous" : "safe",
+      toolExposure,
       startedAt: active.startedAt,
       workspace: process.cwd(),
       authMode,
@@ -530,6 +538,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
         port,
         bearerToken,
         allowDangerous: dangerous,
+        toolExposure,
         auditLogPath: opts.auditLogPath,
         authMode,
         oauth,
@@ -588,6 +597,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
     publicUrl,
     localUrl,
     toolMode: dangerous ? "dangerous" : "safe",
+    toolExposure,
     startedAt: active.startedAt,
     workspace: process.cwd(),
     authMode,

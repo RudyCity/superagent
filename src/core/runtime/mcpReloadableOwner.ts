@@ -13,6 +13,7 @@ import path from "node:path";
 import { fork, type ChildProcess } from "node:child_process";
 import { startQuickTunnel, stopQuickTunnel, getTunnelStatus } from "../remoteAgent/cloudflareTunnel.js";
 import { getMcpStateFile, type McpTunnelInfo } from "../mcp/mcpTunnel.js";
+import { getMcpToolExposure } from "../mcp/mcpToolExposure.js";
 import { generateMcpBearerToken, getDefaultSafeTools } from "../mcp/mcpHttpTransport.js";
 import { generateBootstrapCode } from "../mcp/mcpOAuthRoutes.js";
 import {
@@ -44,6 +45,7 @@ export interface ReloadableOwnerOptions {
   cliEntry: string;
   authMode: "oauth" | "static-bearer";
   allowDangerous: boolean;
+  toolExposure?: "gateway" | "full";
   auditLogPath?: string;
   /** Stage-3: verified, independently owned tunnel; this owner never launches/stops cloudflared. */
   externalPublicBaseUrl?: string;
@@ -439,11 +441,13 @@ export async function startReloadableMcpTunnelOwner(
     }
   }
 
+  const selectedToolExposure = opts.toolExposure ?? getMcpToolExposure().mode;
   async function launch(entry = activeBackendEntry): Promise<BackendGeneration> {
     const gen = await createReloadWorker(entry, {
       port: opts.port, publicBaseUrl: baseUrl,
       authMode: opts.authMode,
       allowDangerous: opts.allowDangerous,
+      toolExposure: selectedToolExposure,
       bearerToken,
       bootstrapCodeHash: bootCodeHash,
       auditLogPath: opts.auditLogPath,
@@ -899,6 +903,7 @@ export async function startReloadableMcpTunnelOwner(
       publicUrl: baseUrl + "/mcp", localUrl: "http://127.0.0.1:" + opts.port + "/mcp",
       startedAt, workspace: process.cwd(),
       toolMode: opts.allowDangerous ? "dangerous" : "safe",
+      toolExposure: selectedToolExposure,
       authMode: opts.authMode, tunnelProvider: "cloudflare",
       oauthStatePersistent: oauthPersistent,
     }, null, 2) + "\n", { mode: 0o600 });

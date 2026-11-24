@@ -197,7 +197,8 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
       cores: [], processes: [], independentHosts: [],
       remoteServices: [
         {kind:"mcp",source:"registry",state:"observed",port:9227,pid:100,
-          publicUrl:"https://mcp.rcity.web.id/mcp",urlEvidence:"verified local owner"},
+          publicUrl:"https://mcp.rcity.web.id/mcp",urlEvidence:"verified local owner",
+          toolExposure:"full",toolMode:"dangerous"},
         {kind:"cloudflare",source:"registry",state:"online",port:9227,pid:101,
           publicUrl:"https://example-public.trycloudflare.com",urlEvidence:"healthy heartbeat"},
         {kind:"cloudflare",source:"os",state:"observed",pid:102,
@@ -209,6 +210,7 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     await new Promise(resolve => setImmediate(resolve));
     const html=ui.byId("runtime-remote").innerHTML;
     expect(html).toContain("https://mcp.rcity.web.id/mcp");
+    expect(html).toContain("Tool catalog: full · Tool mode: dangerous");
     expect(html).toContain("https://example-public.trycloudflare.com");
     expect(html).not.toContain("external.trycloudflare.com");
     expect(html).not.toContain("token=secret");
@@ -699,10 +701,12 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     ui.byId("runtime-create-kind").value="mcp-tunnel";
     ui.byId("runtime-create-port").value="9227";
     ui.byId("runtime-create-provider").value="cloudflare";
+    ui.byId("runtime-create-tool-exposure").value="full";
+    ui.byId("runtime-create-tool-mode").value="dangerous";
     await submit();
     expect(ui.requested).toContainEqual({
       action:"create_connection",
-      args:{payload:{kind:"mcp-tunnel",port:9227,provider:"cloudflare"}},
+      args:{payload:{kind:"mcp-tunnel",port:9227,provider:"cloudflare",toolExposure:"full",toolMode:"dangerous"}},
     });
     ui.byId("runtime-create-kind").value="muse-tunnel";
     ui.byId("runtime-create-port").value="9225";

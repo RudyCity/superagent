@@ -23,6 +23,10 @@ pub struct RemoteService {
     pub pid: Option<u32>,
     pub state: &'static str,
     pub transport: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_mode: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_exposure: Option<&'static str>,
     pub public_url: Option<String>,
     pub url_evidence: Option<&'static str>,
     pub detail: String,
@@ -287,6 +291,8 @@ async fn evaluate(candidate: Candidate, system: &System, now: u64, dir: &Path) -
         pid,
         state: "stale",
         transport: None,
+        tool_mode: None,
+        tool_exposure: None,
         public_url: None,
         url_evidence: None,
         detail: String::new(),
@@ -316,6 +322,16 @@ async fn evaluate(candidate: Candidate, system: &System, now: u64, dir: &Path) -
             }
         }
         "mcp" => {
+            service.tool_mode = match candidate.record["toolMode"].as_str() {
+                Some("safe") => Some("safe"),
+                Some("dangerous") => Some("dangerous"),
+                _ => None,
+            };
+            service.tool_exposure = match candidate.record["toolExposure"].as_str() {
+                Some("gateway") => Some("gateway"),
+                Some("full") => Some("full"),
+                _ => None,
+            };
             let provider = candidate.record["tunnelProvider"]
                 .as_str()
                 .unwrap_or("unknown");
@@ -477,6 +493,8 @@ pub async fn scan(dir: &Path) -> Vec<RemoteService> {
             pid: Some(os_pid),
             state: if mode == "unknown" { "unverified" } else { "observed" },
             transport: Some(mode.into()),
+            tool_mode: None,
+            tool_exposure: None,
             public_url: None,
             url_evidence: None,
             detail: detail.into(),

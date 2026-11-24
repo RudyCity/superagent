@@ -145,6 +145,10 @@ function parseStartOptions(args: string[]): StartMcpTunnelOptions {
     tunnelProvider = providerValue;
   }
   const authRaw = option(args, "--mcp-auth", "--auth")?.toLowerCase();
+  const exposureRaw = option(args, "--tool-exposure")?.toLowerCase();
+  if (exposureRaw !== undefined && exposureRaw !== "gateway" && exposureRaw !== "full") {
+    throw new Error(`Invalid --tool-exposure value "${exposureRaw}"; use gateway or full.`);
+  }
   let authMode: "static-bearer" | "oauth" | undefined;
   if (authRaw) {
     if (authRaw !== "static-bearer" && authRaw !== "oauth") {
@@ -155,6 +159,7 @@ function parseStartOptions(args: string[]): StartMcpTunnelOptions {
   return {
     port,
     allowDangerous: args.includes("--allow-dangerous"),
+    toolExposure: exposureRaw === "full" ? "full" : exposureRaw === "gateway" ? "gateway" : undefined,
     authMode,
     tunnelProvider,
     tunnelId,
@@ -601,6 +606,7 @@ export async function runManagedMcpTunnelOwner(args: string[]): Promise<never> {
         port, nonce, createdAt, cliEntry: process.argv[1] || "",
         authMode: options.authMode || "static-bearer",
         allowDangerous: Boolean(options.allowDangerous),
+        toolExposure: options.toolExposure,
         auditLogPath: options.auditLogPath,
         externalPublicBaseUrl,
         onStop: shutdown,

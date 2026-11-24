@@ -72,8 +72,11 @@ describe("MCP tunnel startup ownership and rollback", () => {
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
-  it("rolls back only the new MCP tunnel when local HTTP server startup fails", async () => {
-    await expect(startMcpTunnel({ port: 19327 })).rejects.toThrow("EADDRINUSE");
+  it("rolls back only the new MCP tunnel when local HTTP server startup fails and forwards per-owner modes", async () => {
+    await expect(startMcpTunnel({ port: 19327, toolExposure: "full", allowDangerous: true })).rejects.toThrow("EADDRINUSE");
+    expect(mocks.startMcpHttpServer).toHaveBeenCalledWith(expect.objectContaining({
+      toolExposure: "full", allowDangerous: true,
+    }));
 
     expect(mocks.startQuickTunnel).toHaveBeenCalledWith({
       port: 19327,

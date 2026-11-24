@@ -21,7 +21,10 @@ describe("SuperAgent Tray new connection validation",()=>{
     },corePort)).toMatchObject({kind:"mcp-client",oauth:true});
     expect(parseNewTrayConnection({
       kind:"mcp-tunnel",port:9227,provider:"cloudflare",
-    },corePort)).toEqual({kind:"mcp-tunnel",port:9227,provider:"cloudflare"});
+    },corePort)).toEqual({kind:"mcp-tunnel",port:9227,provider:"cloudflare",toolExposure:"gateway",toolMode:"safe"});
+    expect(parseNewTrayConnection({
+      kind:"mcp-tunnel",port:9228,provider:"cloudflare",toolExposure:"full",toolMode:"dangerous",
+    },corePort)).toMatchObject({toolExposure:"full",toolMode:"dangerous"});
     expect(parseNewTrayConnection({
       kind:"mcp-tunnel",port:9227,provider:"openai",tunnelId:"tunnel_0123456789abcdef",
     },corePort)).toMatchObject({provider:"openai"});
@@ -44,6 +47,8 @@ describe("SuperAgent Tray new connection validation",()=>{
       {...base,name:"../danger"},
       {...base,oauth:"true"},
       {kind:"mcp-tunnel",provider:"cloudflare",port:8857,allowDangerous:true},
+      {kind:"mcp-tunnel",provider:"cloudflare",port:8857,toolExposure:"unsafe"},
+      {kind:"mcp-tunnel",provider:"cloudflare",port:8857,toolMode:"yolo"},
       {kind:"mcp-tunnel",provider:"cloudflare",port:8857,tunnelId:"tunnel_0123456789abcdef"},
       {kind:"mcp-tunnel",provider:"openai",port:8857,tunnelId:"not-valid"},
       {kind:"core-tunnel",port:9999},
@@ -68,10 +73,11 @@ describe("SuperAgent Tray new connection validation",()=>{
     expect(client).not.toHaveProperty("endpoint");
     expect(ops.registerMcpClient).toHaveBeenCalledTimes(1);
     const mcp=await createTrayConnection(parseNewTrayConnection({
-      kind:"mcp-tunnel",port:9227,provider:"cloudflare",
+      kind:"mcp-tunnel",port:9227,provider:"cloudflare",toolExposure:"full",toolMode:"dangerous",
     },corePort),ops as TrayCreationAdapter);
     expect(mcp).toMatchObject({success:true,port:9227,pid:301,
-      endpoint:"https://mcp.example.invalid/mcp"});
+      endpoint:"https://mcp.example.invalid/mcp",toolExposure:"full",toolMode:"dangerous"});
+    expect(ops.createMcpTunnel).toHaveBeenCalledWith(expect.objectContaining({toolExposure:"full",toolMode:"dangerous"}));
     expect(ops.createMcpTunnel).toHaveBeenCalledTimes(1);
     const rest=await createTrayConnection({kind:"core-tunnel",port:7888},ops as TrayCreationAdapter);
     expect(rest).toMatchObject({kind:"core-tunnel",state:"running",pid:302});
@@ -118,7 +124,7 @@ describe("SuperAgent Tray new connection validation",()=>{
     let finish!: (v:{pid:number;endpoint:string;provider:string})=>void;
     const ops=fake();
     ops.createMcpTunnel.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}));
-    const request=parseNewTrayConnection({kind:"mcp-tunnel",port:9300,provider:"cloudflare"},corePort);
+    const request=parseNewTrayConnection({kind:"mcp-tunnel",port:9300,provider:"cloudflare",toolExposure:"gateway",toolMode:"safe"},corePort);
     const first=createTrayConnection(request,ops as TrayCreationAdapter);
     await expect(createTrayConnection(request,ops as TrayCreationAdapter)).rejects.toThrow("already in progress");
     finish({pid:55,endpoint:"https://new.example.org/mcp",provider:"cloudflare"});

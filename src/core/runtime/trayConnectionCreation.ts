@@ -12,7 +12,7 @@ import { getRootConfigDir } from "../config/paths.js";
 
 export type NewTrayConnection =
   | { kind: "mcp-client"; name: string; url: string; oauth: boolean }
-  | { kind: "mcp-tunnel"; port: number; provider: "cloudflare" | "openai"; tunnelId?: string }
+  | { kind: "mcp-tunnel"; port: number; provider: "cloudflare" | "openai"; tunnelId?: string; toolExposure: "gateway" | "full"; toolMode: "safe" | "dangerous" }
   | { kind: "core-tunnel"; port: number }
   | { kind: "muse-tunnel"; port: number };
 
@@ -58,21 +58,29 @@ export function parseNewTrayConnection(raw: unknown, localCorePort: number): New
     return { kind, name, url: url.toString(), oauth: obj.oauth };
   }
   if (kind === "mcp-tunnel") {
-    exactKeys(obj, ["kind", "port", "provider", "tunnelId"]);
+    exactKeys(obj, ["kind", "port", "provider", "tunnelId", "toolExposure", "toolMode"]);
     const port = validPort(obj.port, [7888, 7891, 7892, localCorePort]);
     if (obj.provider !== "cloudflare" && obj.provider !== "openai") {
       throw new Error("Select Cloudflare or OpenAI Secure MCP Tunnel");
+    }
+    const toolExposure = obj.toolExposure === undefined ? "gateway" : obj.toolExposure;
+    const toolMode = obj.toolMode === undefined ? "safe" : obj.toolMode;
+    if (toolExposure !== "gateway" && toolExposure !== "full") {
+      throw new Error("MCP tool exposure must be gateway or full");
+    }
+    if (toolMode !== "safe" && toolMode !== "dangerous") {
+      throw new Error("MCP tool mode must be safe or dangerous");
     }
     if (obj.provider === "openai") {
       if (typeof obj.tunnelId !== "string" || !/^tunnel_[a-zA-Z0-9_-]{8,100}$/.test(obj.tunnelId)) {
         throw new Error("OpenAI Secure MCP Tunnel requires a valid tunnel_... ID");
       }
-      return {kind, port, provider: "openai", tunnelId: obj.tunnelId};
+      return {kind, port, provider: "openai", tunnelId: obj.tunnelId, toolExposure, toolMode};
     }
     if (obj.tunnelId !== undefined && obj.tunnelId !== "") {
       throw new Error("Cloudflare MCP tunnel does not accept an OpenAI tunnel ID");
     }
-    return {kind, port, provider: "cloudflare"};
+    return {kind, port, provider: "cloudflare", toolExposure, toolMode};
   }
   if (kind === "core-tunnel") {
     exactKeys(obj, ["kind", "port"]);
@@ -133,7 +141,8 @@ const liveAdapter: TrayCreationAdapter = {
       await import("./mcpManagedTunnelOwner.js");
     // Explicit safe tool exposure only. Existing owner checks duplicate ports.
     const args = ["--mcp-port", String(request.port), "--provider", request.provider,
-      "--mcp-auth", "oauth"];
+      "--mcp-auth", "oauth", "--tool-exposure", request.toolExposure];
+    if (request.toolMode === "dangerous") args.push("--allow-dangerous");
     if (request.provider === "openai") args.push("--tunnel-id", request.tunnelId!);
     const entry = process.argv[1];
     if (!entry) throw new Error("No SuperAgent CLI entry for managed MCP owner startup");
@@ -289,6 +298,8 @@ export async function createTrayConnection(
         pid: data.pid,
         endpoint: data.endpoint,
         provider: data.provider,
+        toolExposure: request.toolExposure,
+        toolMode: request.toolMode,
         bootstrapCode: data.bootstrapCode,
         setupSnippet: data.setupSnippet,
         setupCopied: data.setupCopied === true,

@@ -655,7 +655,7 @@ function runtimeRemoteCard(service) {
         ? `<div class="runtime-evidence">${isExternalTunnel
           ? "External cloudflared detected; public URL unknown and controls disabled."
           : "Public URL unavailable from verified owner metadata."}</div>` : ""}
-    ${service.kind === "mcp" ? '<div class="runtime-mcp-owner-scope">OAuth + Security Approval · Chat YOLO tidak berlaku untuk MCP</div>' : ""}
+    ${service.kind === "mcp" ? `<div class="runtime-mcp-owner-scope">OAuth + Security Approval · Chat YOLO tidak berlaku untuk MCP</div><div class="runtime-evidence">Tool catalog: ${runtimeEscape(service.toolExposure || "not recorded")} · Tool mode: ${runtimeEscape(service.toolMode || "not recorded")}</div>` : ""}
     ${controls}
     ${service.controlReason
       ? `<div class="runtime-evidence">${runtimeEscape(service.controlReason)}</div>`
@@ -988,9 +988,10 @@ function runtimeCreateKindChanged() {
   show("runtime-create-port-field", kind !== "mcp-client" && kind !== "core-tunnel");
   show("runtime-create-provider-field", kind === "mcp-tunnel");
   show("runtime-create-tunnelid-field", kind === "mcp-tunnel" && provider === "openai");
+  show("runtime-create-mcp-modes-field", kind === "mcp-tunnel");
   const guidelines = {
     "mcp-client": "Saves an external MCP client over HTTPS or loopback HTTP. Does not disconnect existing MCP clients; connect/reload it in your active session.",
-    "mcp-tunnel": "Creates a new SAFE/READ-ONLY MCP owner and public tunnel. OAuth is mandatory; tools are NOT available until approved. Existing ports are never replaced.",
+    "mcp-tunnel": "Creates a new MCP owner with the selected Gateway/Full catalog exposure and Safe/Dangerous tool mode. OAuth is mandatory; discovery does not grant permission to execute tools. Existing ports are never replaced.",
     "core-tunnel": "Creates a public HTTPS address for the selected Core API. Bearer authentication remains enabled. Anyone with a valid Core token may access it; do not expose tokens.",
     "muse-tunnel": "Creates an inbound Muse WebSocket owner with an isolated bearer token and Cloudflare WSS tunnel. Uses configured watched workspaces; task execution is permission-gated. No Telegram settings overwritten.",
   };
@@ -1121,7 +1122,13 @@ async function runtimeCreateConnection(event) {
     if (kind === "muse-tunnel") payload = {kind, port};
     else {
       const provider = rt("runtime-create-provider")?.value || "cloudflare";
-      payload = {kind,port,provider};
+      const toolExposure = rt("runtime-create-tool-exposure")?.value || "gateway";
+      const toolMode = rt("runtime-create-tool-mode")?.value || "safe";
+      if (!["gateway", "full"].includes(toolExposure) || !["safe", "dangerous"].includes(toolMode)) {
+        feedback.textContent = "Choose a valid MCP tool exposure and security mode.";
+        return;
+      }
+      payload = {kind,port,provider,toolExposure,toolMode};
       if (provider === "openai") {
         payload.tunnelId = String(rt("runtime-create-tunnelid")?.value || "").trim();
       }
@@ -1130,7 +1137,7 @@ async function runtimeCreateConnection(event) {
   const description = kind === "mcp-client"
     ? "Register this MCP endpoint in SuperAgent? It will not disconnect or replace existing clients."
     : kind === "mcp-tunnel"
-      ? "Start a NEW public MCP tunnel exposing only safe tools, protected by OAuth? Any new authorization must be explicitly approved."
+      ? `Start a NEW public MCP tunnel with ${payload.toolExposure.toUpperCase()} tool discovery and ${payload.toolMode.toUpperCase()} tool mode, protected by OAuth? ${payload.toolMode === "dangerous" ? "Write/execute tools may be discoverable, but every call still requires the configured OAuth scope, Security Approval, project grants and host file rules. " : ""}Existing owners are not changed.`
       : kind === "core-tunnel"
         ? "Create a PUBLIC HTTPS tunnel to the selected Core REST/SSE API? The API still requires its existing bearer token."
         : "Start a NEW public Muse WebSocket tunnel? It will accept only authenticated Muse connections and enforce tool permissions.";

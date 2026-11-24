@@ -19,6 +19,7 @@ export interface ReloadableBackendOptions {
   publicBaseUrl: string;
   authMode: "oauth" | "static-bearer";
   allowDangerous: boolean;
+  toolExposure?: "gateway" | "full";
   bearerToken: string;
   bootstrapCodeHash?: string;
   auditLogPath?: string;
@@ -71,6 +72,7 @@ export function validateReloadableBackendOptions(
   } catch { return false; }
   if (v.authMode !== "oauth" && v.authMode !== "static-bearer") return false;
   if (typeof v.allowDangerous !== "boolean") return false;
+  if (v.toolExposure !== undefined && v.toolExposure !== "gateway" && v.toolExposure !== "full") return false;
   if (typeof v.bearerToken !== "string" || v.bearerToken.length < 32 ||
       v.bearerToken.length > 256) return false;
   if (v.authMode === "oauth" && !/^[a-f0-9]{64}$/.test(v.bootstrapCodeHash || "")) return false;
@@ -94,6 +96,7 @@ export async function startReloadableMcpBackend(
   const handle = await startMcpHttpServer({
     port: 0,
     allowDangerous: opts.allowDangerous,
+    toolExposure: opts.toolExposure,
     authMode: opts.authMode,
     bearerToken: opts.authMode === "static-bearer" ? opts.bearerToken : undefined,
     oauthStore: oauth?.store,

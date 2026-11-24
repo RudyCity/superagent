@@ -866,7 +866,7 @@ fn connection_body(input: Value, core_port: u16) -> Result<Value, String> {
     let kind = object.get("kind").and_then(Value::as_str).unwrap_or("");
     let keys: &[&str] = match kind {
         "mcp-client" => &["kind", "name", "url", "oauth"],
-        "mcp-tunnel" => &["kind", "port", "provider", "tunnelId"],
+        "mcp-tunnel" => &["kind", "port", "provider", "tunnelId", "toolExposure", "toolMode"],
         "core-tunnel" | "muse-tunnel" => &["kind", "port"],
         _ => return Err("Unsupported connection type".into()),
     };
@@ -927,6 +927,14 @@ fn connection_body(input: Value, core_port: u16) -> Result<Value, String> {
             let provider = object.get("provider").and_then(Value::as_str);
             if !matches!(provider, Some("cloudflare" | "openai")) {
                 return Err("Unsupported MCP tunnel provider".into());
+            }
+            let exposure = object.get("toolExposure").and_then(Value::as_str).unwrap_or("gateway");
+            let mode = object.get("toolMode").and_then(Value::as_str).unwrap_or("safe");
+            if !matches!(exposure, "gateway" | "full") {
+                return Err("MCP tool exposure must be gateway or full".into());
+            }
+            if !matches!(mode, "safe" | "dangerous") {
+                return Err("MCP tool mode must be safe or dangerous".into());
             }
             let id = object.get("tunnelId").and_then(Value::as_str).unwrap_or("");
             if provider == Some("openai") {
@@ -4911,6 +4919,14 @@ mod tests {
         .is_ok());
         assert!(connection_body(
             json!({
+              "kind":"mcp-tunnel","port":9228,"provider":"cloudflare",
+              "toolExposure":"full","toolMode":"dangerous"
+            }),
+            7888
+        )
+        .is_ok());
+        assert!(connection_body(
+            json!({
               "kind":"mcp-tunnel","port":9300,"provider":"openai",
               "tunnelId":"tunnel_0123456789abcdef"
             }),
@@ -4937,6 +4953,8 @@ mod tests {
             json!({"kind":"mcp-client","name":"x","url":"https://example.org/?key=secret","oauth":true}),
             json!({"kind":"mcp-client","name":"x","url":"https://example.org/mcp","oauth":true,"command":"cmd.exe"}),
             json!({"kind":"mcp-tunnel","port":9227,"provider":"cloudflare","allowDangerous":true}),
+            json!({"kind":"mcp-tunnel","port":9227,"provider":"cloudflare","toolExposure":"unsafe"}),
+            json!({"kind":"mcp-tunnel","port":9227,"provider":"cloudflare","toolMode":"yolo"}),
             json!({"kind":"mcp-tunnel","port":9227,"provider":"cloudflare","tunnelId":"tunnel_0123456789abcdef"}),
             json!({"kind":"mcp-tunnel","port":9227,"provider":"openai","tunnelId":"invalid"}),
             json!({"kind":"mcp-tunnel","port":9227,"provider":"unknown"}),

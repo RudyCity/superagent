@@ -39,7 +39,7 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
     expect(fs.existsSync(cliEntry)).toBe(true);
     const owner = await startReloadableMcpTunnelOwner({
       port, nonce, createdAt: Date.now(), cliEntry,
-      authMode: "static-bearer", allowDangerous: false,
+      authMode: "static-bearer", allowDangerous: false, toolExposure: "full",
     });
     const local = "http://127.0.0.1:" + port;
     const control = async (operation: string, method = "GET") => {
@@ -61,6 +61,7 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
       expect(state1.reloadable).toBe(true);
       expect(state1.backendGenerations).toBe(1);
       expect(readMcpStateFile(getMcpStateFile(port))?.reloadable).toBe(true);
+      expect(readMcpStateFile(getMcpStateFile(port))?.toolExposure).toBe("full");
       expect(readMcpOwnerLogs(port).map(e => e.event)).toContain("owner_started");
       const getClient = async () => {
         const c = new Client({name:"hot-reload-test", version:"1.0.0"}, {capabilities:{}});
@@ -370,7 +371,7 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
       fs.renameSync(incoming,releaseRoot);
       owner=await startReloadableMcpTunnelOwner({
         port,nonce,createdAt:Date.now(),cliEntry:path.resolve("dist/cli.js"),
-        authMode:"static-bearer",allowDangerous:false,
+        authMode:"static-bearer",allowDangerous:false,toolExposure:"full",
       });
       const root="http://127.0.0.1:"+port;
       const ctl=(url:string,method:"GET"|"POST"="GET",token=nonce)=>

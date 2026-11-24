@@ -1491,6 +1491,23 @@
                   <label for="runtime-create-tunnelid">OpenAI tunnel ID</label>
                   <input id="runtime-create-tunnelid" maxlength="107" placeholder="tunnel_..." autocomplete="off">
                 </div>
+                <div class="runtime-create-field" id="runtime-create-mcp-modes-field" hidden>
+                  <label for="runtime-create-tool-exposure">Tool catalog exposure</label>
+                  <div class="select-wrapper">
+                    <select id="runtime-create-tool-exposure">
+                      <option value="gateway" selected>Gateway · compact discovery</option>
+                      <option value="full">Full · advertise all authorized tools</option>
+                    </select>
+                  </div>
+                  <label for="runtime-create-tool-mode">Tool security mode</label>
+                  <div class="select-wrapper">
+                    <select id="runtime-create-tool-mode">
+                      <option value="safe" selected>Safe · read / low-risk tools</option>
+                      <option value="dangerous">Dangerous · include write / execute tools</option>
+                    </select>
+                  </div>
+                  <small>These choices apply only to this hosted MCP owner. OAuth, Security Approval, project grants and host file rules remain enforced.</small>
+                </div>
                 <div class="runtime-create-field runtime-create-checkbox" id="runtime-create-oauth-field">
                   <label class="toggle-control sm">
                     <input id="runtime-create-oauth" type="checkbox" checked>
