@@ -271,6 +271,7 @@ const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace
   // helpers and inspect blocked paths. An unmediated status is not file-safe.
   "inspect_port","find_process","get_remote_service_status",
   "superagent_tool_search","superagent_tool_describe","superagent_tool_status",
+  "superagent_tool_preflight","superagent_tool_doctor",
   "superagent_core_status","superagent_core_plan","superagent_server_health","get_current_time",
   "superagent_get_project","superagent_list_projects","superagent_list_project_access",
   "superagent_request_project_access","superagent_request_file_access",

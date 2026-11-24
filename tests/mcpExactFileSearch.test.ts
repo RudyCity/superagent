@@ -88,7 +88,7 @@ describe("bounded explicit approved-file literal search",()=>{
       registeredFileToolGate({name:"superagent_grep_search",args},cwd,opts);
     expect(gate({query:"hello",filePaths:["alpha.txt"],limit:2})).toBeNull();
     expect(gate({query:"hello",filePaths:["alpha.txt","secret.txt"]})).toMatch(/denies read/);
-    expect(gate({query:"hello",path:cwd})).toMatch(/Unmediated/);
+    expect(gate({query:"hello",path:cwd})).toMatch(/Recursive grep is not certified/);
     expect(gate({query:"hello",filePaths:["alpha.txt"],isRegex:true})).toMatch(/Unmediated/);
     expect(gate({query:"hello",filePaths:["alpha.txt"],path:"../outside"}))
       .toMatch(/Unmediated/);

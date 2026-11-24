@@ -48,7 +48,8 @@ describe("Cross-IDE gateway MCP exposure and direct bypass policy", () => {
     try {
       const tools = await list(mcp);
       expect(tools).toContain(MCP_GATEWAY_TOOL_NAMES.execute);
-      expect(tools).not.toContain("superagent_browser_gateway");
+      // Browser gateway is deliberately included in the eager core catalog.
+      expect(tools).toContain("superagent_browser_gateway");
       const result = await call(mcp, MCP_GATEWAY_TOOL_NAMES.execute, {
         name: "superagent_browser_gateway", arguments: { action: "identity", agentId: "FORGED" },
       });

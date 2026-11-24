@@ -57,7 +57,7 @@ describe("MCP explicit file grep enforces registered host denies end-to-end",()=
         workspace:project,projectId:"explicit-grep-project",path:".",query:"PRIVATE_MARKER",
       });
       expect(recursive.isError).toBe(true);
-      expect(JSON.stringify(recursive)).toMatch(/Unmediated discovery/);
+      expect(JSON.stringify(recursive)).toMatch(/Recursive grep is not certified/);
       const nested=await invoke(server,MCP_GATEWAY_TOOL_NAMES.execute,{
         name:"superagent_grep_search",
         arguments:{workspace:project,projectId:"explicit-grep-project",filePaths:["blocked.txt"],query:"PRIVATE_MARKER"},
