@@ -15,7 +15,7 @@ import {validateCoreOperationId} from "./coreLifecycleLedger.js";
 import {readTrayReleaseState,releaseBinaryPath,trustedTrayBuild,
   stageTrustedTrayRelease,promoteTrayRelease,switchTrayReleaseBack,
   fileSha256,stageInstalledTrayFallback,
-  restoreTrayReleaseState} from "./trayReleaseStore.js";
+  restoreTrayReleaseState,type TrayReleaseState} from "./trayReleaseStore.js";
 import {execFileSync} from "node:child_process";
 
 type Action="start"|"stop"|"restart";
@@ -33,6 +33,36 @@ function cleanWinPrefix(p: string): string {
 }
 function canonical(file:string) {
   return fs.realpathSync.native(cleanWinPrefix(file));
+}
+function comparablePath(file:string) {
+  try{return canonical(file);}
+  catch{return path.resolve(cleanWinPrefix(file));}
+}
+function samePath(left:string,right:string) {
+  const a=comparablePath(left),b=comparablePath(right);
+  return process.platform==="win32"?a.toLowerCase()===b.toLowerCase():a===b;
+}
+export type ManagedTrayRuntimeKind=
+  "active-release"|"previous-release"|"workspace-build"|"trusted-installed";
+/** Classify the running executable before comparing it with the active release.
+ * A local Cargo target is built from the workspace and is not expected to hash
+ * like the immutable release slot recorded by tray-release-state.json.
+ */
+export function classifyManagedTrayRuntimeKind(
+  executablePath:string,
+  release:Pick<TrayReleaseState,"activeDigest"|"previousDigest">,
+  packageRoot=getPackageRootDir(),
+  configRoot=getRootConfigDir(),
+):ManagedTrayRuntimeKind {
+  if(release.activeDigest&&samePath(executablePath,
+    releaseBinaryPath(release.activeDigest,configRoot)))return "active-release";
+  if(release.previousDigest&&samePath(executablePath,
+    releaseBinaryPath(release.previousDigest,configRoot)))return "previous-release";
+  const target=path.join(packageRoot,"apps","superagent-tray","src-tauri","target");
+  if(samePath(executablePath,path.join(target,"debug","superagent-tray.exe"))||
+     samePath(executablePath,path.join(target,"release","superagent-tray.exe")))
+    return "workspace-build";
+  return "trusted-installed";
 }
 function candidates() {
   const release=readTrayReleaseState();
@@ -115,6 +145,7 @@ export async function inspectManagedTrayAttestation(){
   return {
     installedReleaseDigest:fileSha256(owner.executablePath),
     sourceBuildDigest:valid(release.activeDigest),
+    runtimeKind:classifyManagedTrayRuntimeKind(owner.executablePath,release),
     webviewBundleDigest:valid(health.webviewBundleDigest),
     loadedSourceRevision:typeof health.sourceRevision==="string" &&
       /^[a-f0-9]{40}$/.test(health.sourceRevision)?health.sourceRevision:null,

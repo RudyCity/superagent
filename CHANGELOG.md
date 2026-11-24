@@ -1,3 +1,16 @@
+## [1.14.109] - 2026-11-24
+### Desktop Live Request Center integration
+- Add identity-bound, expiring one-shot Desktop UI session requests to the local Core approval broker.
+- Route Viewer and Viewer + Input requests through Request Center with native Tray HMAC approval and fresh OS window identity verification.
+- Keep permanent host ACL, Host File Policy, Android device consent and remote PC controller readiness as independent gates.
+- Add pending/history UI, notification lifecycle, fail-closed queue badges and focused regression coverage.
+
+## [1.14.108] - 2026-11-24
+### Tray Desktop Live permission navigation
+- Add a direct Access Manager shortcut to the Desktop Live session header.
+- Keep navigation separate from permission grants; viewer, controller and native host approvals remain independent.
+- Cover route wiring and no-grant regression behavior with focused UI tests.
+
 ## [1.14.107] - 2026-11-19
 ### Permission diagnostics and native notification integrity
 - Share the production service read-action policy with nonexecuting MCP permission diagnostics; retain independent Execute, project, host policy and native consent gates, with privacy and argument-parity regression coverage.

@@ -50,6 +50,7 @@ import {evaluatePersistentAccess,hasRegisteredDesktopInputCandidate,
   type ExecutableIdentity,type PersistentAccessPolicy}
   from "../desktopUi/persistentAccessPolicy.js";
 import {resolveNativeDesktopExecutable} from "../desktopUi/nativeExecutableIdentity.js";
+import { desktopUiSessionAccessRequests, type DesktopUiSessionAccessRequest } from "../desktopUi/desktopUiSessionAccessRequests.js";
 
 export const MAX_DESKTOP_UI_SESSIONS = 10;
 export const DEFAULT_SESSION_TTL_MS = 10 * 60 * 1000;
@@ -83,7 +84,7 @@ export const DISCOVERY_COMMAND_FIELDS: Record<string, ReadonlySet<string>> = {
   list_windows: new Set(["command", "action", "limit"]),
   get_active_window: new Set(["command", "action"]),
   find_window: new Set(["command", "action", "query", "pid", "limit"]),
-  inspect_window: new Set(["command", "action", "pid", "nativeId", "includeScreenshotImage", "maxImageBytes"]),
+  inspect_window: new Set(["command", "action", "pid", "nativeId", "includeScreenshotImage", "maxImageBytes", "approvalRequestId", "reason", "ttlMs"]),
   list_installed_apps: new Set(["command", "action", "limit"]),
   launch_app: new Set(["command", "action", "appId"]),
   focus_window: new Set(["command", "action", "pid", "nativeId"]),
@@ -268,6 +269,7 @@ export interface ActiveSessionRecord {
   inputAllowed: boolean;
   trustedGrantId?: string;
   trustedTarget?: TrustedInputTarget;
+  sessionApprovalGrantId?: string;
   registeredGrantId?: string;
   registeredIdentity?: ExecutableIdentity;
   registeredViewIdentity?: ExecutableIdentity;
@@ -281,6 +283,7 @@ export interface OpenSessionParams {
   title: string;
   ownerPrincipal?: string;
   allowInput?: boolean;
+  oneShotHostApproval?: boolean;
   enableVision?: boolean;
   visionEndpoint?: string;
   ttlMs?: number;
@@ -390,6 +393,7 @@ export class DesktopUiSessionManager {
     for (const [token, session] of this.sessions.entries()) {
       if (session.expiresAt <= now) {
         if (session.trustedGrantId) this.consentManager.revokeConsent(session.trustedGrantId);
+        if (session.sessionApprovalGrantId) this.consentManager.revokeConsent(session.sessionApprovalGrantId);
         if (session.registeredGrantId) this.consentManager.revokeConsent(session.registeredGrantId);
         this.sessions.delete(token);
       }
@@ -411,6 +415,7 @@ export class DesktopUiSessionManager {
     for (const [token, s] of this.sessions) {
       if (s.target.pid !== pid || s.target.nativeId !== nativeId) continue;
       if (s.trustedGrantId) this.consentManager.revokeConsent(s.trustedGrantId);
+      if (s.sessionApprovalGrantId) this.consentManager.revokeConsent(s.sessionApprovalGrantId);
       if ("registeredGrantId" in s && typeof s.registeredGrantId === "string") {
         this.consentManager.revokeConsent(s.registeredGrantId);
       }
@@ -548,6 +553,7 @@ export class DesktopUiSessionManager {
     }
     let trustedGrantId: string | undefined;
     let trustedTarget: TrustedInputTarget | undefined;
+    let sessionApprovalGrantId: string | undefined;
     let registeredGrantId: string | undefined;
     let registeredIdentity: ExecutableIdentity | undefined;
 
@@ -574,6 +580,14 @@ export class DesktopUiSessionManager {
       } catch {
         // OS process identity unavailable, app replaced, or denied: no input.
       }
+    }
+
+    // A Request Center decision is a one-shot approval for this exact session.
+    // A live permanent registry remains authoritative and cannot be bypassed.
+    if (inputRequested && params.oneShotHostApproval === true && !permanent) {
+      sessionApprovalGrantId = this.consentManager.grantConsent({
+        sessionToken, ttlMs, grantedBy: "native-request-center-approval",
+      });
     }
 
     // Trusted means allow a native approval REQUEST, not an automatic grant.
@@ -671,6 +685,7 @@ export class DesktopUiSessionManager {
       inputRequested,
       inputAllowed,
       ...(trustedGrantId ? { trustedGrantId, trustedTarget } : {}),
+      ...(sessionApprovalGrantId ? { sessionApprovalGrantId } : {}),
       ...(registeredGrantId ? { registeredGrantId, registeredIdentity } : {}),
       ...(registeredViewIdentity ? { registeredViewIdentity } : {}),
       adapter,
@@ -930,6 +945,7 @@ export class DesktopUiSessionManager {
     const session = this.getSession(sessionToken, ownerPrincipal);
     if (!session) return { closed: false };
     if (session.trustedGrantId) this.consentManager.revokeConsent(session.trustedGrantId);
+    if (session.sessionApprovalGrantId) this.consentManager.revokeConsent(session.sessionApprovalGrantId);
     if (session.registeredGrantId) this.consentManager.revokeConsent(session.registeredGrantId);
     return { closed: this.sessions.delete(sessionToken) };
   }
@@ -937,6 +953,7 @@ export class DesktopUiSessionManager {
   clearAllSessions(): void {
     for (const session of this.sessions.values()) {
       if (session.trustedGrantId) this.consentManager.revokeConsent(session.trustedGrantId);
+      if (session.sessionApprovalGrantId) this.consentManager.revokeConsent(session.sessionApprovalGrantId);
       if (session.registeredGrantId) this.consentManager.revokeConsent(session.registeredGrantId);
     }
     this.sessions.clear();
@@ -944,6 +961,41 @@ export class DesktopUiSessionManager {
 }
 
 export const desktopUiSessionManager = new DesktopUiSessionManager();
+
+async function createDesktopUiSessionAccessRequest(input: {
+  pid: unknown;
+  nativeId: unknown;
+  accessMode: "view" | "input";
+  ttlMs?: number;
+  reason?: unknown;
+}): Promise<DesktopUiSessionAccessRequest> {
+  const pid = Number(input.pid);
+  const nativeId = typeof input.nativeId === "string" ? input.nativeId : "";
+  const ttlMs = requireBoundedTtl(input.ttlMs);
+  const discovery = await desktopUiSessionManager.listWindows();
+  const matches = discovery.windows.filter(window =>
+    window.pid === pid && window.nativeId === nativeId);
+  if (matches.length !== 1) {
+    throw new DesktopUiError("TARGET_NOT_FOUND", "The exact native window is missing or ambiguous.");
+  }
+  const target = matches[0];
+  if (input.accessMode === "input" && !target.active) {
+    throw new DesktopUiError("INPUT_DISABLED", "Native input requests require the exact target window to be foreground.");
+  }
+  return desktopUiSessionAccessRequests.create({
+    principalId: LOCAL_DESKTOP_UI_OWNER,
+    pid: target.pid,
+    nativeId: target.nativeId,
+    title: target.title,
+    application: target.application,
+    accessMode: input.accessMode,
+    ttlMs,
+    ...(typeof input.reason === "string" && input.reason.trim()
+      ? { reason: input.reason.trim() } : {}),
+  });
+}
+
+
 
 function sanitizeDesktopUiLogValue(value: unknown, key = ""): unknown {
   const normalizedKey = key.toLowerCase();
@@ -1012,8 +1064,8 @@ export const desktopUiTool: Tool = {
   description:
     "Perceive and automate native desktop application windows using bounded discovery and accessibility semantics. " +
     "Commands also expose installed-app inventory, verified Windows app lifecycle, guarded package planning/apply, and read-only security-prompt inspection. " +
-    "The existing open command only creates a scoped window session; launch_app is the separate installed-app launcher. " +
-    "Lifecycle mutation requires exact host consent; package mutation additionally requires separate host-operator approval bound to the exact operation.",
+    "The open and inspect_window commands first create an exact-target one-shot session request in Tray Request Center; retry with approvalRequestId after native operator approval. " +
+    "This does not bypass Host File Policy or permanent host ACL. Lifecycle mutation requires exact host consent; package mutation additionally requires separate host-operator approval bound to the exact operation.",
   parameters: {
     type: "object",
     additionalProperties: false,
@@ -1040,7 +1092,19 @@ export const desktopUiTool: Tool = {
       title: { type: "string", minLength: 1, maxLength: 512, description: "Window title metadata for 'open'; never used as authorization." },
       allowInput: {
         type: "boolean",
-        description: "true requests input; false forces read-only. Omission auto-requests only an exact currently Trusted window, and still requires a fresh native host approval.",
+        description: "true requests one-session native input; false requests view-only. A Request Center native approval is required before session creation.",
+      },
+      approvalRequestId: {
+        type: "string",
+        minLength: 1,
+        maxLength: 96,
+        description: "Retry token returned with approvalPending after the operator approves this exact one-shot request in Tray > Request Center.",
+      },
+      reason: {
+        type: "string",
+        minLength: 1,
+        maxLength: 240,
+        description: "Human-readable reason shown to the operator in Request Center; never authority.",
       },
       enableVision: {
         type: "boolean",
@@ -1104,7 +1168,7 @@ export const desktopUiTool: Tool = {
       packageId: { type: "string", minLength: 1, maxLength: 128 },
       source: { type: "string", minLength: 1, maxLength: 64 },
       version: { type: "string", minLength: 1, maxLength: 128 },
-      approvalRequestId: { type: "string", minLength: 1, maxLength: 128 },
+
       operationDigest: { type: "string", pattern: "^[a-fA-F0-9]{64}$" },
       invocationId: { type: "string", minLength: 1, maxLength: 128 },
     },
@@ -1135,8 +1199,32 @@ export const desktopUiTool: Tool = {
           return JSON.stringify({ success: true, window: await desktopUiSessionManager.getActiveWindow() }, null, 2);
         case "find_window":
           return JSON.stringify({ success: true, ...(await desktopUiSessionManager.findWindow({ query: args.query, pid: typeof args.pid === "number" ? args.pid : undefined, limit: typeof args.limit === "number" ? args.limit : undefined })) }, null, 2);
-        case "inspect_window":
-          return JSON.stringify({ success: true, ...(await desktopUiSessionManager.inspectWindow({ pid: Number(args.pid), nativeId: args.nativeId, ownerPrincipal: LOCAL_DESKTOP_UI_OWNER, includeScreenshotImage: args.includeScreenshotImage === true, maxImageBytes: typeof args.maxImageBytes === "number" ? args.maxImageBytes : undefined })) }, null, 2);
+        case "inspect_window": {
+          const approvalRequestId = typeof args.approvalRequestId === "string" ? args.approvalRequestId : "";
+          if (!approvalRequestId) {
+            const request = await createDesktopUiSessionAccessRequest({
+              pid: args.pid,
+              nativeId: args.nativeId,
+              accessMode: "view",
+              ttlMs: typeof args.ttlMs === "number" ? args.ttlMs : MIN_SESSION_TTL_MS,
+              reason: args.reason,
+            });
+            return JSON.stringify({ success: true, approvalPending: true, request }, null, 2);
+          }
+          const approved = desktopUiSessionAccessRequests.consumeApproved(
+            approvalRequestId, LOCAL_DESKTOP_UI_OWNER, {
+              pid: Number(args.pid), nativeId: String(args.nativeId ?? ""), accessMode: "view",
+            },
+          );
+          const snapshot = await desktopUiSessionManager.inspectWindow({
+            pid: approved.pid,
+            nativeId: approved.nativeId,
+            ownerPrincipal: approved.principalId,
+            includeScreenshotImage: args.includeScreenshotImage === true,
+            maxImageBytes: typeof args.maxImageBytes === "number" ? args.maxImageBytes : undefined,
+          });
+          return JSON.stringify({ success: true, approvalConsumed: true, ...snapshot }, null, 2);
+        }
         case "list_installed_apps":
           return JSON.stringify({ success: true, ...(await desktopAppManager.listInstalledApps(typeof args.limit === "number" ? args.limit : 50)) }, null, 2);
         case "launch_app":
@@ -1154,17 +1242,43 @@ export const desktopUiTool: Tool = {
         case "inspect_security_prompts":
           return JSON.stringify({ success: true, report: await inspectSecurityPrompts() }, null, 2);
         case "open": {
+          if (args.enableVision === true) {
+            throw new DesktopUiError("INPUT_DISABLED",
+              "Vision upload requires a separate host configuration and consent flow; it is not part of a Desktop UI session request.");
+          }
+          const approvalRequestId = typeof args.approvalRequestId === "string" ? args.approvalRequestId : "";
+          if (!approvalRequestId) {
+            const request = await createDesktopUiSessionAccessRequest({
+              pid: args.pid,
+              nativeId: args.nativeId,
+              accessMode: args.allowInput === true ? "input" : "view",
+              ttlMs: typeof args.ttlMs === "number" ? args.ttlMs : undefined,
+              reason: args.reason,
+            });
+            return JSON.stringify({ success: true, approvalPending: true, request }, null, 2);
+          }
+          const approved = desktopUiSessionAccessRequests.consumeApproved(
+            approvalRequestId, LOCAL_DESKTOP_UI_OWNER, {
+              pid: Number(args.pid), nativeId: String(args.nativeId ?? ""),
+              accessMode: args.allowInput === true ? "input" : "view",
+            },
+          );
           const session = await desktopUiSessionManager.openSession({
-            pid: Number(args.pid),
-            nativeId: String(args.nativeId ?? ""),
-            title: String(args.title ?? ""),
-            ownerPrincipal: LOCAL_DESKTOP_UI_OWNER,
-            allowInput: args.allowInput === true ? true : args.allowInput === false ? false : undefined,
-            enableVision: args.enableVision === true,
-            visionEndpoint: typeof args.visionEndpoint === "string" ? args.visionEndpoint : undefined,
-            ttlMs: typeof args.ttlMs === "number" ? args.ttlMs : undefined,
+            pid: approved.pid,
+            nativeId: approved.nativeId,
+            title: approved.title,
+            ownerPrincipal: approved.principalId,
+            allowInput: approved.accessMode === "input",
+            oneShotHostApproval: approved.accessMode === "input",
+            enableVision: false,
+            ttlMs: approved.ttlMs,
           });
-          return JSON.stringify({ success: true, session }, null, 2);
+          if (approved.accessMode === "input" && !session.inputAllowed) {
+            desktopUiSessionManager.closeSession(session.sessionToken, approved.principalId);
+            throw new DesktopUiError("INPUT_DISABLED",
+              "The permanent host policy does not allow input for this exact application and window.");
+          }
+          return JSON.stringify({ success: true, approvalConsumed: true, session }, null, 2);
         }
         case "snapshot": {
           const snapshot = await desktopUiSessionManager.snapshot({

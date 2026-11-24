@@ -34,12 +34,22 @@ export function summarizeServiceOwnerAttestation(rows:ReadonlyArray<ServiceStatu
       /^[a-f0-9]{40}$/.test(d.sourceRevision)?d.sourceRevision:null;
     const loadedSourceRevision=typeof d.loadedSourceRevision==="string"&&
       /^[a-f0-9]{40}$/.test(d.loadedSourceRevision)?d.loadedSourceRevision:null;
+    // The active release digest describes the immutable release slot. A
+    // workspace Cargo target is a separate local build and must be checked by
+    // its embedded Git revision instead of being compared to that slot hash.
+    const runtimeKind=s.service==="tray"&&
+      ["active-release","previous-release","workspace-build","trusted-installed"].includes(String(d.runtimeKind))
+        ?String(d.runtimeKind):s.service==="tray"?"active-release":null;
+    const compareReleaseDigest=s.service!=="tray"||runtimeKind!=="workspace-build";
+    const digestMismatch=compareReleaseDigest&&runtimeDigest!==null&&
+      sourceDigest!==null&&runtimeDigest!==sourceDigest;
+    const digestUnavailable=runtimeDigest===null||
+      (compareReleaseDigest&&sourceDigest===null);
     const code=s.state==="inactive"?"NOT_RUNNING":
       !owner?"HOST_OWNER_UNVERIFIED":
-      d.buildFresh===false || d.versionDrift===true ||
-      (runtimeDigest!==null&&sourceDigest!==null&&runtimeDigest!==sourceDigest)
+      d.buildFresh===false || d.versionDrift===true || digestMismatch
         ?"SOURCE_CHANGED_NOT_LOADED":
-      runtimeDigest===null||sourceDigest===null?"RUNTIME_DIGEST_UNAVAILABLE":
+      digestUnavailable?"RUNTIME_DIGEST_UNAVAILABLE":
       s.service==="tray"&&webviewDigest===null?"WEBVIEW_DIGEST_UNAVAILABLE":
       s.service==="tray"&&(!sourceRevision||!loadedSourceRevision)
         ?"SOURCE_REVISION_UNAVAILABLE":
@@ -52,7 +62,7 @@ export function summarizeServiceOwnerAttestation(rows:ReadonlyArray<ServiceStatu
       supervisor:{state:supervisorVerified?"authenticated":"unknown",
         safeLifecycleVersion:supervisorVerified?2:null},
       nativeSigner:{state:"unknown",reasonCode:"NATIVE_SIGNER_NOT_ATTESTED"},
-      build:{runtimeDigest,sourceDigest,webviewDigest,
+      build:{runtimeDigest,sourceDigest,webviewDigest,runtimeKind,
         worker:{pid:owner&&s.service==="core"?positive(d.activeWorkerPid):null,
           since:owner&&s.service==="core"?positive(d.activeWorkerSince):null,
           mode:owner&&s.service==="core"&&(d.activeWorkerBuildMode==="source"||d.activeWorkerBuildMode==="compiled")

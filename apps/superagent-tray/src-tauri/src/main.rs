@@ -3269,6 +3269,199 @@ async fn signed_project_operator_mutation(payload: Value) -> Result<Value, Strin
         Some(json!({"payloadText": payload_text, "proof": {"nonce": nonce, "mac": mac}}))).await
 }
 
+// Native one-shot approval bridge for local Desktop UI sessions.
+// The WebView supplies only an opaque request ID; Core returns the authoritative
+// request, and this command rechecks the exact OS window before signing a decision.
+fn desktop_ui_session_request_mac(
+    nonce: &str,
+    request: &Value,
+    decision: &str,
+) -> Result<String, String> {
+    if nonce.len() != 48 || !nonce.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) ||
+        !["approve", "deny"].contains(&decision) {
+        return Err("Invalid Desktop UI native approval challenge".into());
+    }
+    let key_path = config_dir()?.join(".desktop-live-native-approval.key");
+    let metadata = std::fs::symlink_metadata(&key_path)
+        .map_err(|_| "Native Desktop UI approval key is unavailable")?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() ||
+        !(64..=80).contains(&metadata.len()) {
+        return Err("Native Desktop UI approval key file is not secure".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err("Native Desktop UI approval key permissions are too broad".into());
+        }
+    }
+    let text = std::fs::read_to_string(&key_path)
+        .map_err(|_| "Native Desktop UI approval key is unreadable")?;
+    let hex_key = text.trim();
+    if hex_key.len() != 64 || !hex_key.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+        return Err("Native Desktop UI approval key is invalid".into());
+    }
+    let key = (0..32).map(|i| u8::from_str_radix(&hex_key[2*i..2*i+2], 16))
+        .collect::<Result<Vec<_>, _>>().map_err(|_| "Native Desktop UI approval key is invalid")?;
+    let text_field = |name: &str, max: usize| -> Result<String, String> {
+        let value = request.get(name).and_then(Value::as_str)
+            .filter(|value| !value.is_empty() && value.len() <= max &&
+                !value.chars().any(char::is_control))
+            .ok_or("Desktop UI request identity is invalid")?;
+        Ok(value.to_string())
+    };
+    let request_id = text_field("requestId", 96)?;
+    let principal_id = text_field("principalId", 256)?;
+    let pid = request.get("pid").and_then(Value::as_u64)
+        .filter(|pid| *pid > 0 && *pid <= u32::MAX as u64)
+        .ok_or("Desktop UI request PID is invalid")?;
+    let native_id = text_field("nativeId", 256)?;
+    let title = text_field("title", 512)?;
+    let application = text_field("application", 256)?;
+    let access_mode = text_field("accessMode", 8)?;
+    if !["view", "input"].contains(&access_mode.as_str()) {
+        return Err("Desktop UI request scope is invalid".into());
+    }
+    let ttl_ms = request.get("ttlMs").and_then(Value::as_u64)
+        .filter(|ttl| (60_000..=30 * 60_000).contains(ttl))
+        .ok_or("Desktop UI request expiry is invalid")?;
+    let reason = text_field("reason", 240)?;
+    let message = format!(
+        "superagent-desktop-ui-session-approval-v1\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        nonce, request_id, principal_id, pid, native_id, title, application,
+        access_mode, ttl_ms, reason, decision,
+    );
+    Ok(desktop_live_hmac(&key, message.as_bytes()))
+}
+
+#[tauri::command]
+async fn desktop_ui_session_requests_action(
+    window: tauri::WebviewWindow,
+    action: String,
+    request_id: Option<String>,
+) -> Result<Value, String> {
+    if window.label() != "main" {
+        return Err("Desktop UI session requests require the native main Tray window".into());
+    }
+    if action == "list" {
+        return core_request(Method::GET, "/api/desktop/ui/session-requests", None).await;
+    }
+    if !["approve", "deny"].contains(&action.as_str()) ||
+        !window.is_visible().unwrap_or(false) ||
+        window.is_minimized().unwrap_or(true) ||
+        !window.is_focused().unwrap_or(false) {
+        return Err("Bring the native Tray to the foreground to review this Desktop UI request".into());
+    }
+    let request_id = request_id
+        .filter(|value| value.len() <= 96 && value.starts_with("desktop_req_") &&
+            value.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'))
+        .ok_or("A valid Desktop UI request ID is required")?;
+    let challenge = core_request(
+        Method::POST,
+        "/api/desktop/ui/session-requests/challenge",
+        Some(json!({ "requestId": request_id, "decision": action })),
+    ).await?;
+    let challenge = challenge.get("challenge").ok_or("Desktop UI approval challenge unavailable")?;
+    let request = challenge.get("request").ok_or("Desktop UI request details unavailable")?;
+    if challenge.get("decision").and_then(Value::as_str) != Some(action.as_str()) ||
+        request.get("requestId").and_then(Value::as_str) != Some(request_id.as_str()) ||
+        request.get("status").and_then(Value::as_str) != Some("pending") {
+        return Err("Desktop UI request changed before review".into());
+    }
+    let nonce = challenge.get("nonce").and_then(Value::as_str)
+        .ok_or("Desktop UI native challenge nonce missing")?;
+    let pid = request.get("pid").and_then(Value::as_u64)
+        .filter(|pid| *pid > 0 && *pid <= u32::MAX as u64)
+        .ok_or("Desktop UI target PID invalid")?;
+    let native_id = request.get("nativeId").and_then(Value::as_str)
+        .ok_or("Desktop UI native window ID missing")?;
+    let title = request.get("title").and_then(Value::as_str)
+        .ok_or("Desktop UI target title missing")?;
+    let application = request.get("application").and_then(Value::as_str)
+        .ok_or("Desktop UI target application missing")?;
+    let access_mode = request.get("accessMode").and_then(Value::as_str)
+        .filter(|mode| ["view", "input"].contains(mode))
+        .ok_or("Desktop UI request scope invalid")?;
+    let ttl_ms = request.get("ttlMs").and_then(Value::as_u64)
+        .filter(|ttl| (60_000..=30 * 60_000).contains(ttl))
+        .ok_or("Desktop UI requested lifetime invalid")?;
+    let principal = request.get("principalId").and_then(Value::as_str)
+        .ok_or("Desktop UI requester identity missing")?;
+    let reason = request.get("reason").and_then(Value::as_str).unwrap_or("No reason supplied");
+    let clean = |value: &str, max: usize| -> String {
+        value.chars().filter(|character| !character.is_control()).take(max).collect()
+    };
+    if action == "approve" {
+        let inventory = core_request(Method::GET, "/api/desktop/live/windows", None).await?;
+        let windows = inventory.get("windows").and_then(Value::as_array)
+            .ok_or("Native window inventory unavailable")?;
+        let matches: Vec<_> = windows.iter().filter(|item|
+            item.get("pid").and_then(Value::as_u64) == Some(pid) &&
+            item.get("nativeId").and_then(Value::as_str) == Some(native_id)
+        ).collect();
+        if matches.len() != 1 {
+            return Err("The exact Desktop UI target is missing or ambiguous".into());
+        }
+        let observed = matches[0];
+        if observed.get("title").and_then(Value::as_str) != Some(title) ||
+            observed.get("application").and_then(Value::as_str) != Some(application) ||
+            (access_mode == "input" && observed.get("active").and_then(Value::as_bool) != Some(true)) {
+            return Err("Desktop UI target identity or foreground state changed".into());
+        }
+    }
+    let verb = if action == "approve" { "APPROVE" } else { "DENY" };
+    let scope = if access_mode == "input" {
+        "Viewer + one-session native mouse/keyboard input"
+    } else {
+        "Viewer only (read-only)"
+    };
+    let prompt = format!(
+        "{verb} THIS DESKTOP UI SESSION REQUEST?\n\nRequester: {}\nApplication: {}\nWindow: {}\nPID: {}\nAccess: {}\nRequested session lifetime: {} minutes\nReason: {}\nRequest: {}\n\nApproval is one-shot and bound to this exact window and requester. Existing permanent host rules remain authoritative. This does not enable remote PC control or bypass Host File Policy.",
+        clean(principal, 120), clean(application, 140), clean(title, 180), pid,
+        scope, ttl_ms / 60_000, clean(reason, 240), request_id,
+    );
+    let dialog_app = window.app_handle().clone();
+    let is_approve = action == "approve";
+    let approved = tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+        dialog_app.dialog().message(prompt).buttons(
+            MessageDialogButtons::OkCancelCustom(
+                if is_approve { "Allow once".into() } else { "Confirm deny".into() },
+                "Cancel".into(),
+            )
+        ).blocking_show()
+    }).await.map_err(|_| "Native Desktop UI approval dialog failed")?;
+    if !approved {
+        return Err("Desktop UI request decision was cancelled in the native dialog".into());
+    }
+    if !window.is_visible().unwrap_or(false) ||
+        window.is_minimized().unwrap_or(true) ||
+        !window.is_focused().unwrap_or(false) {
+        return Err("Native Tray lost foreground during Desktop UI approval".into());
+    }
+    if action == "approve" {
+        let fresh = core_request(Method::GET, "/api/desktop/live/windows", None).await?;
+        let fresh_windows = fresh.get("windows").and_then(Value::as_array)
+            .ok_or("Fresh native window inventory unavailable")?;
+        let fresh_matches: Vec<_> = fresh_windows.iter().filter(|item|
+            item.get("pid").and_then(Value::as_u64) == Some(pid) &&
+            item.get("nativeId").and_then(Value::as_str) == Some(native_id)
+        ).collect();
+        if fresh_matches.len() != 1 ||
+            fresh_matches[0].get("title").and_then(Value::as_str) != Some(title) ||
+            fresh_matches[0].get("application").and_then(Value::as_str) != Some(application) ||
+            (access_mode == "input" && fresh_matches[0].get("active").and_then(Value::as_bool) != Some(true)) {
+            return Err("Desktop UI target changed while native approval was displayed".into());
+        }
+    }
+    let mac = desktop_ui_session_request_mac(nonce, request, &action)?;
+    core_request(
+        Method::POST,
+        "/api/desktop/ui/session-requests/decision",
+        Some(json!({ "requestId": request_id, "decision": action, "nonce": nonce, "mac": mac })),
+    ).await
+}
+
 // Fixed-shape native bridge for the MCP Security Approval Manager.
 // Only the installed, focused Tray window can issue grants or revoke access;
 // the Core bearer token stays in Rust, never in WebView JavaScript.
@@ -3922,6 +4115,51 @@ async fn poll_pending_security_requests(app: &tauri::AppHandle) -> Result<(), St
             }
         }
     }
+    // Desktop UI session requests have their own one-shot approval boundary;
+    // keep their notification lifecycle separate from permanent MCP/host rules.
+    if let Ok(ui_payload) = core_request(Method::GET, "/api/desktop/ui/session-requests", None).await {
+        if ui_payload.get("success") == Some(&Value::Bool(true)) {
+            if let Some(ui_requests) = ui_payload.get("requests").and_then(Value::as_array) {
+                if ui_requests.len() <= 300 {
+                    let mut ui_active = HashSet::new();
+                    for request in ui_requests {
+                        let Some(id) = request.get("requestId").and_then(Value::as_str) else { continue; };
+                        if !id.starts_with("desktop_req_") || id.len() != 44 ||
+                            !id.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_') {
+                            continue;
+                        }
+                        let key = format!("desktop-ui-pending:{}", id);
+                        match request.get("status").and_then(Value::as_str).unwrap_or("") {
+                            "pending" => {
+                                ui_active.insert(key.clone());
+                                let created = record_operational_incident(
+                                    app, "security", "critical", &key,
+                                    "Permintaan Desktop Live",
+                                    "A local Desktop UI session request is waiting for operator review in Request Center.",
+                                )?;
+                                if created { let _ = app.emit("access-manager://requests-updated", ()); }
+                            }
+                            "expired" => {
+                                if tray_notification_center::expire_verified(&config_dir()?, &key)? {
+                                    let _ = app.emit("tray-notifications-changed", ());
+                                }
+                            }
+                            "approved" | "denied" | "consumed" => {
+                                if tray_notification_center::resolve(&config_dir()?, &key)? {
+                                    let _ = app.emit("tray-notifications-changed", ());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    let resolved = tray_notification_center::resolve_missing(
+                        &config_dir()?, "desktop-ui-pending:", &ui_active,
+                    )?;
+                    if resolved > 0 { let _ = app.emit("tray-notifications-changed", ()); }
+                }
+            }
+        }
+    }
     // The API is unpaginated; avoid false resolves if a future revision
     // returns a partial/bounded projection.
     if requests.len() <= 300 {
@@ -4511,6 +4749,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             mcp_project_access_action,
+            desktop_ui_session_requests_action,
             daemon_action,
             external_lifecycle_action,
             detect_runtime,

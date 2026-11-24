@@ -1747,7 +1747,9 @@ export async function handleServerRoute(
   // operator consent; never expose this endpoint through a public tunnel.
   if (["/api/desktop/live/access-executable", "/api/desktop/live/windows", "/api/desktop/live/challenge", "/api/desktop/live/start",
        "/api/desktop/live/frame", "/api/desktop/live/stop",
-       "/api/desktop/live/remote/status", "/api/desktop/live/remote/stop", "/api/desktop/live/manage", "/api/desktop/live/manage/stop", "/api/desktop/tray-password/status", "/api/desktop/tray-password/set", "/api/desktop/tray-remote/status", "/api/desktop/tray-remote/start", "/api/desktop/tray-remote/start-quick", "/api/desktop/tray-remote/stop"].includes(pathname)) {
+       "/api/desktop/live/remote/status", "/api/desktop/live/remote/stop", "/api/desktop/live/manage", "/api/desktop/live/manage/stop",
+       "/api/desktop/ui/session-requests", "/api/desktop/ui/session-requests/challenge", "/api/desktop/ui/session-requests/decision",
+       "/api/desktop/tray-password/status", "/api/desktop/tray-password/set", "/api/desktop/tray-remote/status", "/api/desktop/tray-remote/start", "/api/desktop/tray-remote/start-quick", "/api/desktop/tray-remote/stop"].includes(pathname)) {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -1771,7 +1773,8 @@ export async function handleServerRoute(
       return true;
     }
     if (((pathname === "/api/desktop/live/access-executable" || pathname === "/api/desktop/live/windows" ||
-          pathname === "/api/desktop/live/manage" || pathname === "/api/desktop/tray-password/status" || pathname === "/api/desktop/tray-remote/status" || pathname === "/api/desktop/live/remote/status") ?
+          pathname === "/api/desktop/live/manage" || pathname === "/api/desktop/ui/session-requests" ||
+          pathname === "/api/desktop/tray-password/status" || pathname === "/api/desktop/tray-remote/status" || pathname === "/api/desktop/live/remote/status") ?
           req.method !== "GET" : req.method !== "POST")) {
       sendJSON(res, 405, { success: false, error: "DESKTOP_LIVE_INVALID_METHOD" });
       return true;
@@ -1781,6 +1784,33 @@ export async function handleServerRoute(
         // The native Tray independently attests the actual executing Core
         // worker binary. Never accept a WebView PID/executable path for policy.
         sendJSON(res, 200, { success: true, pid: process.pid });
+      } else if (pathname === "/api/desktop/ui/session-requests") {
+        const { desktopUiSessionAccessRequests } = await import("./core/desktopUi/desktopUiSessionAccessRequests.js");
+        sendJSON(res, 200, { success: true, requests: desktopUiSessionAccessRequests.list() });
+      } else if (pathname === "/api/desktop/ui/session-requests/challenge") {
+        const raw = await readBody(req);
+        if (Buffer.byteLength(raw, "utf8") > 512) throw Error("Oversized Desktop UI approval challenge.");
+        const body = JSON.parse(raw);
+        if (!body || typeof body !== "object" || Array.isArray(body) ||
+            Object.keys(body).length !== 2 ||
+            Object.keys(body).some(key => key !== "requestId" && key !== "decision")) {
+          throw Error("Invalid Desktop UI approval challenge.");
+        }
+        const { desktopUiSessionAccessRequests } = await import("./core/desktopUi/desktopUiSessionAccessRequests.js");
+        sendJSON(res, 200, { success: true, challenge:
+          desktopUiSessionAccessRequests.issueChallenge(body.requestId, body.decision) });
+      } else if (pathname === "/api/desktop/ui/session-requests/decision") {
+        const raw = await readBody(req);
+        if (Buffer.byteLength(raw, "utf8") > 1024) throw Error("Oversized Desktop UI approval decision.");
+        const body = JSON.parse(raw);
+        if (!body || typeof body !== "object" || Array.isArray(body) ||
+            Object.keys(body).length !== 4 ||
+            Object.keys(body).some(key => !["requestId", "decision", "nonce", "mac"].includes(key))) {
+          throw Error("Invalid Desktop UI approval decision.");
+        }
+        const { desktopUiSessionAccessRequests } = await import("./core/desktopUi/desktopUiSessionAccessRequests.js");
+        sendJSON(res, 200, { success: true,
+          request: desktopUiSessionAccessRequests.decide(body) });
       } else if (pathname === "/api/desktop/live/manage") {
         const { listDesktopLiveInventory } = await import("./core/desktopUi/desktopLiveInventory.js");
         sendJSON(res, 200, { success:true, ...await listDesktopLiveInventory() });

@@ -3,7 +3,7 @@
   // Native Tray Access Manager: no WebView-side policy writes or localStorage.
   // All grants are performed by the native host after OS verification + dialog.
   const $ = (id) => document.getElementById(id);
-  const state = { registry: null, windows: [], installedApps: [], appSource: "active", selected: "", busy: false, view: "desktop", ruleFilter: "all", ruleSearch: "", auditLogs: [], activeTab: "register", selectedRuleIds: new Set(), pendingRuleRequests: [], requestSubTab: "all" };
+  const state = { registry: null, windows: [], installedApps: [], appSource: "active", selected: "", busy: false, view: "desktop", ruleFilter: "all", ruleSearch: "", auditLogs: [], activeTab: "register", selectedRuleIds: new Set(), pendingRuleRequests: [], pendingDesktopUiRequests: null, requestSubTab: "all" };
   const invoke = (name, args) => {
     const native = window.__TAURI__?.core?.invoke;
     if (typeof native !== "function") throw Error("Installed native Tray required");
@@ -680,11 +680,12 @@
     updateSelection();
   }
   function setRequestSubTab(subTab) {
-    state.requestSubTab = ["all", "incoming", "rules"].includes(subTab) ? subTab : "all";
+    state.requestSubTab = ["all", "incoming", "rules", "desktop"].includes(subTab) ? subTab : "all";
     for (const [id, val] of [
       ["access-req-subtab-all", "all"],
       ["access-req-subtab-incoming", "incoming"],
       ["access-req-subtab-rules", "rules"],
+      ["access-req-subtab-desktop", "desktop"],
     ]) {
       const btn = $(id);
       if (btn) btn.className = "access-filter-btn" + (state.requestSubTab === val ? " active" : "");
@@ -692,8 +693,10 @@
     const grid = $("access-req-center-grid");
     const incomingCard = $("access-req-center-incoming-card");
     const rulesCard = $("access-req-center-rules-card");
-    if (incomingCard) incomingCard.hidden = state.requestSubTab === "rules";
-    if (rulesCard) rulesCard.hidden = state.requestSubTab === "incoming";
+    const desktopCard = $("access-req-center-desktop-card");
+    if (incomingCard) incomingCard.hidden = state.requestSubTab === "rules" || state.requestSubTab === "desktop";
+    if (rulesCard) rulesCard.hidden = state.requestSubTab === "incoming" || state.requestSubTab === "desktop";
+    if (desktopCard) desktopCard.hidden = state.requestSubTab === "incoming" || state.requestSubTab === "rules";
     if (grid) {
       grid.className = "access-req-center-grid" + (state.requestSubTab !== "all" ? " is-single" : "");
     }
@@ -1501,10 +1504,16 @@
     const ruleTarget = Array.isArray(state.pendingRuleRequests)
       ? state.pendingRuleRequests.find((request) => request.id === id)
       : null;
-    if (!mcpTarget && !ruleTarget) return false;
-    if (ruleTarget) {
+    const desktopTarget = Array.isArray(state.pendingDesktopUiRequests)
+      ? state.pendingDesktopUiRequests.find((request) => request.requestId === id)
+      : null;
+    if (!mcpTarget && !ruleTarget && !desktopTarget) return false;
+    if (desktopTarget) {
       if (state.activeTab !== "requests") setActiveTab("requests");
-      if (state.requestSubTab === "incoming") setRequestSubTab("all");
+      if (state.requestSubTab !== "desktop") setRequestSubTab("desktop");
+    } else if (ruleTarget) {
+      if (state.activeTab !== "requests") setActiveTab("requests");
+      if (state.requestSubTab === "incoming" || state.requestSubTab === "desktop") setRequestSubTab("all");
     } else if (mcpTarget) {
       const legacyConnectionRequest = mcpTarget.projectId === "mcp-connection";
       if (legacyConnectionRequest) {
@@ -1518,6 +1527,8 @@
       "access-req-center-incoming-list",
       "access-req-center-rules-list",
       "access-req-center-rules-history",
+      "access-req-center-desktop-list",
+      "access-req-center-desktop-history",
       "access-mcp-pending-list",
       "access-mcp-legacy-list",
       "access-mcp-history-list",
@@ -1646,30 +1657,43 @@
   }
 
   function updateRequestCenterBadges() {
-    const projectPending = Array.isArray(mcpCache.requests)
+    const projectKnown = Array.isArray(mcpCache.requests);
+    const rulesKnown = Array.isArray(state.pendingRuleRequests);
+    const desktopKnown = Array.isArray(state.pendingDesktopUiRequests);
+    const projectPending = projectKnown
       ? mcpCache.requests.filter(req => req.projectId !== "mcp-connection" && req.status === "pending")
       : [];
-    const rulePending = Array.isArray(state.pendingRuleRequests)
+    const rulePending = rulesKnown
       ? state.pendingRuleRequests.filter(req => req.status === "pending")
       : [];
-    const total = projectPending.length + rulePending.length;
+    const desktopPending = desktopKnown
+      ? state.pendingDesktopUiRequests.filter(req => req.status === "pending")
+      : [];
+    const total = projectPending.length + rulePending.length + desktopPending.length;
+    const allKnown = projectKnown && rulesKnown && desktopKnown;
 
     const badgeTotal = $("access-tab-badge-requests");
     if (badgeTotal) {
-      badgeTotal.textContent = String(total);
-      badgeTotal.className = "access-nav-tab-badge" + (total > 0 ? " pending" : " zero");
+      badgeTotal.textContent = allKnown ? String(total) : "!";
+      badgeTotal.className = "access-nav-tab-badge" + (!allKnown ? " pending" : total > 0 ? " pending" : " zero");
+      badgeTotal.title = allKnown ? "" : "Some Request Center queues are unavailable; counts are incomplete.";
     }
     const subAll = $("access-req-subtab-all");
     const subIncoming = $("access-req-subtab-incoming");
     const subRules = $("access-req-subtab-rules");
-    if (subAll) subAll.textContent = "Semua (" + total + ")";
-    if (subIncoming) subIncoming.textContent = "Permintaan Akses Masuk (" + projectPending.length + ")";
-    if (subRules) subRules.textContent = "Permintaan Aturan Aktif (" + rulePending.length + ")";
+    const subDesktop = $("access-req-subtab-desktop");
+    if (subAll) subAll.textContent = "Semua (" + (allKnown ? total : "!") + ")";
+    if (subIncoming) subIncoming.textContent = "Permintaan Akses Masuk (" + (projectKnown ? projectPending.length : "!") + ")";
+    if (subRules) subRules.textContent = "Permintaan Aturan Aktif (" + (rulesKnown ? rulePending.length : "!") + ")";
+    if (subDesktop) subDesktop.textContent = "Desktop Live (" + (desktopKnown ? desktopPending.length : "!") + ")";
     if ($("access-req-center-incoming-count")) {
-      $("access-req-center-incoming-count").textContent = projectPending.length + " permintaan";
+      $("access-req-center-incoming-count").textContent = projectKnown ? projectPending.length + " permintaan" : "Data tidak tersedia";
     }
     if ($("access-req-center-rules-count")) {
-      $("access-req-center-rules-count").textContent = rulePending.length + " permintaan";
+      $("access-req-center-rules-count").textContent = rulesKnown ? rulePending.length + " permintaan" : "Data tidak tersedia";
+    }
+    if ($("access-req-center-desktop-count")) {
+      $("access-req-center-desktop-count").textContent = desktopKnown ? desktopPending.length + " menunggu" : "Data tidak tersedia";
     }
     const permitBadge = $("access-rules-pending-permit-badge");
     if (permitBadge) {
@@ -1829,6 +1853,151 @@
     }
   }
 
+  function validDesktopUiSessionRequest(req) {
+    return Boolean(req &&
+      typeof req.requestId === "string" && /^desktop_req_[a-f0-9]{32}$/.test(req.requestId) &&
+      typeof req.principalId === "string" && req.principalId.length > 0 && req.principalId.length <= 256 &&
+      Number.isSafeInteger(req.pid) && req.pid > 0 &&
+      typeof req.nativeId === "string" && req.nativeId.length > 0 && req.nativeId.length <= 256 &&
+      typeof req.title === "string" && req.title.length > 0 && req.title.length <= 512 &&
+      typeof req.application === "string" && req.application.length > 0 && req.application.length <= 256 &&
+      ["view", "input"].includes(req.accessMode) &&
+      Number.isSafeInteger(req.ttlMs) && req.ttlMs >= 60_000 && req.ttlMs <= 30 * 60_000 &&
+      typeof req.reason === "string" && req.reason.length <= 240 &&
+      Number.isSafeInteger(req.createdAt) && Number.isSafeInteger(req.expiresAt) &&
+      ["pending", "approved", "denied", "consumed", "expired"].includes(req.status));
+  }
+
+  async function executeDesktopUiSessionRequestDecision(decision, requestId, button) {
+    if (!["approve", "deny"].includes(decision) || typeof requestId !== "string") return;
+    if (button) button.disabled = true;
+    try {
+      const result = await invoke("desktop_ui_session_requests_action", { action: decision, requestId });
+      if (result?.success !== true || result?.request?.status !== (decision === "approve" ? "approved" : "denied")) {
+        throw Error(result?.error || "Native Tray did not confirm the Desktop UI decision.");
+      }
+      status(decision === "approve"
+        ? "Permintaan Desktop UI disetujui melalui dialog native. Agent harus menggunakan ID permintaan untuk membuka sesi."
+        : "Permintaan Desktop UI ditolak melalui dialog native.", "success");
+      window.TrayFeedback?.notify?.({
+        kind: "success",
+        message: decision === "approve" ? "Desktop UI session approved once." : "Desktop UI session request denied.",
+        scope: "security",
+        dedupeKey: "desktop-ui-session:" + requestId + ":" + decision,
+      });
+    } catch (error) {
+      status("Keputusan Desktop UI gagal atau dibatalkan: " + String(error?.message || error), "error");
+    } finally {
+      await refreshDesktopUiSessionRequests();
+      if (button) button.disabled = false;
+    }
+  }
+
+  function renderDesktopUiSessionRequests() {
+    const list = $("access-req-center-desktop-list");
+    const histList = $("access-req-center-desktop-history");
+    const items = Array.isArray(state.pendingDesktopUiRequests) &&
+      state.pendingDesktopUiRequests.every(validDesktopUiSessionRequest)
+      ? state.pendingDesktopUiRequests : null;
+    updateRequestCenterBadges();
+    if (!items) {
+      if (list) {
+        list.replaceChildren();
+        list.append(make("p", "access-empty", "Desktop UI requests could not be loaded. Select Reload to try again."));
+      }
+      if (histList) {
+        histList.replaceChildren();
+        histList.append(make("p", "access-empty", "Desktop UI request history is unavailable."));
+      }
+      return;
+    }
+    const pending = items.filter(req => req.status === "pending");
+    const decided = items.filter(req => req.status !== "pending");
+    if (list) {
+      list.replaceChildren();
+      if (!pending.length) {
+        list.append(make("p", "access-empty", "Tidak ada permintaan Desktop Live yang menunggu persetujuan."));
+      } else {
+        for (const req of pending) {
+          const card = make("article", "access-mcp-request-card");
+          card.dataset.requestId = req.requestId;
+          const head = make("div", "access-mcp-request-head");
+          const title = make("strong", "", req.application + " · " + req.title);
+          const scope = make("span", "access-scope-badge desktop",
+            req.accessMode === "input" ? "Viewer + Input" : "Viewer only");
+          head.append(title, scope);
+          const target = make("div", "access-mcp-target access-mcp-mono",
+            "PID " + req.pid + " · " + req.nativeId);
+          const meta = make("p", "access-mcp-meta",
+            req.principalId + " · " + new Date(req.createdAt).toLocaleString() +
+            " · " + Math.round(req.ttlMs / 60_000) + " menit sesi");
+          const reason = make("p", "access-mcp-description", req.reason);
+          const expiry = make("p", "access-hint",
+            "Permintaan berakhir " + new Date(req.expiresAt).toLocaleString() +
+            ". Persetujuan ini hanya sekali untuk sesi tepat ini.");
+          const actions = make("div", "access-mcp-actions");
+          const approve = action("Tinjau & Setujui", "access-submit", async () => {
+            await executeDesktopUiSessionRequestDecision("approve", req.requestId, approve);
+          });
+          const deny = action("Tolak", "access-revoke", async () => {
+            await executeDesktopUiSessionRequestDecision("deny", req.requestId, deny);
+          });
+          actions.append(approve, deny);
+          card.append(head, target, meta, reason, expiry, actions);
+          list.append(card);
+        }
+      }
+    }
+    if (histList) {
+      histList.replaceChildren();
+      if (!decided.length) {
+        histList.append(make("p", "access-empty", "Belum ada riwayat keputusan Desktop UI."));
+      } else {
+        for (const req of decided.slice(0, 30)) {
+          const row = make("div", "access-mcp-history-row");
+          row.dataset.requestId = req.requestId;
+          const details = make("div", "access-mcp-history-detail");
+          const head = make("div", "access-mcp-history-head");
+          const label = req.application + " · " + req.title;
+          const statusLabel = ({
+            approved: "Disetujui · menunggu dipakai",
+            denied: "Ditolak",
+            consumed: "Dipakai",
+            expired: "Kedaluwarsa",
+          })[req.status] || req.status;
+          head.append(
+            make("strong", "", label),
+            make("span", "access-mcp-state access-mcp-state-" + req.status, statusLabel)
+          );
+          details.append(head, make("span", "access-mcp-meta",
+            (req.accessMode === "input" ? "Viewer + Input" : "Viewer only") +
+            " · " + req.principalId + " · " +
+            new Date(req.decidedAt || req.createdAt).toLocaleString()));
+          row.append(details);
+          histList.append(row);
+        }
+      }
+    }
+  }
+
+  async function refreshDesktopUiSessionRequests() {
+    try {
+      const result = await invoke("desktop_ui_session_requests_action", { action: "list" });
+      if (result?.success !== true || !Array.isArray(result.requests) ||
+          result.requests.length > 96 || !result.requests.every(validDesktopUiSessionRequest)) {
+        throw Error("Core returned an incomplete or invalid Desktop UI request inventory.");
+      }
+      state.pendingDesktopUiRequests = result.requests;
+      renderDesktopUiSessionRequests();
+      return { success: true };
+    } catch (error) {
+      state.pendingDesktopUiRequests = null;
+      renderDesktopUiSessionRequests();
+      updateRequestCenterBadges();
+      return { success: false, error: String(error?.message || error) };
+    }
+  }
+
   function buildRequestCenterPane() {
     const pane = make("div", "access-pane access-mcp-section");
     pane.id = "access-pane-requests";
@@ -1842,7 +2011,7 @@
     introCopy.append(
       make("h3", "", "Pusat Permintaan"),
       make("p", "access-mcp-description",
-        "Kelola Permintaan Akses Masuk (izin proyek & capability agen MCP) serta Permintaan Aturan Aktif (izin path file/folder dan aplikasi host) dalam satu tempat dengan notifikasi OS native.")
+        "Kelola Permintaan Akses Masuk (izin proyek & capability agen MCP), Permintaan Aturan Aktif (izin host permanen), serta permintaan sesi Desktop Live satu kali dalam satu tempat dengan tinjauan native.")
     );
     const introActions = make("div", "access-mcp-pending-controls");
     const toggleNewRuleReq = action("+ Ajukan Permintaan Aturan Aktif", "access-submit", () => {
@@ -1863,9 +2032,10 @@
       requestLoadError.hidden = true;
       requestLoadError.textContent = "";
       try {
-        const [mcpResult, ruleResult] = await Promise.all([
+        const [mcpResult, ruleResult, desktopResult] = await Promise.all([
           refreshMcpRequests({ queueIfBusy: true }),
           refreshPendingRuleRequests(),
+          refreshDesktopUiSessionRequests(),
         ]);
         const requestFailures = Object.entries(mcpResult?.failures || {})
           .filter(([key]) => key !== "live");
@@ -1877,6 +2047,8 @@
         }
         if (ruleResult?.success !== true)
           problems.push("Active-rule requests: " + (ruleResult?.error || "refresh failed"));
+        if (desktopResult?.success !== true)
+          problems.push("Desktop UI requests: " + (desktopResult?.error || "refresh failed"));
         if (problems.length) {
           requestLoadError.textContent = "Some Request Center data could not be loaded: " +
             problems.join(" · ") + ". Retry with Reload.";
@@ -1908,7 +2080,9 @@
     subIncoming.id = "access-req-subtab-incoming";
     const subRules = action("Permintaan Aturan Aktif (0)", "access-filter-btn", () => setRequestSubTab("rules"));
     subRules.id = "access-req-subtab-rules";
-    subTabs.append(subAll, subIncoming, subRules);
+    const subDesktop = action("Desktop Live (0)", "access-filter-btn", () => setRequestSubTab("desktop"));
+    subDesktop.id = "access-req-subtab-desktop";
+    subTabs.append(subAll, subIncoming, subRules, subDesktop);
     subBar.append(subTabs);
 
     const ruleReqForm = make("div", "access-req-rule-form");
@@ -2037,7 +2211,24 @@
       rulesList
     );
 
-    grid.append(incomingCard, rulesCard);
+    const desktopCard = make("section", "access-stored access-mcp-card");
+    desktopCard.id = "access-req-center-desktop-card";
+    const desktopHead = make("div", "access-stored-head");
+    const desktopTitle = make("h3", "", "Permintaan Sesi Desktop Live");
+    const desktopBadge = make("span", "access-count", "0 menunggu");
+    desktopBadge.id = "access-req-center-desktop-count";
+    desktopHead.append(desktopTitle, desktopBadge);
+    const desktopList = make("div", "access-mcp-list");
+    desktopList.id = "access-req-center-desktop-list";
+    desktopList.append(make("p", "access-empty", "Tidak ada permintaan Desktop UI yang menunggu persetujuan."));
+    desktopCard.append(
+      desktopHead,
+      make("p", "access-hint",
+        "Persetujuan satu kali untuk sesi lokal desktop_ui. Izin Viewer dan Input tetap terikat pada jendela tepat, masa sesi, serta Aturan Host Permanen. Ini tidak membuka controller PC jarak jauh atau melewati Host File Policy."),
+      desktopList
+    );
+
+    grid.append(incomingCard, rulesCard, desktopCard);
 
     const ruleHistCard = make("section", "access-stored access-mcp-card");
     const ruleHistHead = make("div", "access-stored-head");
@@ -2047,7 +2238,15 @@
     ruleHistList.append(make("p", "access-empty", "Belum ada riwayat keputusan aturan aktif."));
     ruleHistCard.append(ruleHistHead, ruleHistList);
 
-    pane.append(intro, requestLoadError, grid, ruleHistCard);
+    const desktopHistCard = make("section", "access-stored access-mcp-card");
+    const desktopHistHead = make("div", "access-stored-head");
+    desktopHistHead.append(make("h3", "", "Riwayat Keputusan Desktop Live"));
+    const desktopHistList = make("div", "access-mcp-list access-mcp-scroll-list");
+    desktopHistList.id = "access-req-center-desktop-history";
+    desktopHistList.append(make("p", "access-empty", "Belum ada riwayat keputusan Desktop UI."));
+    desktopHistCard.append(desktopHistHead, desktopHistList);
+
+    pane.append(intro, requestLoadError, grid, ruleHistCard, desktopHistCard);
     return pane;
   }
 
@@ -2918,6 +3117,7 @@
     parent.insertBefore(root, old);
     void refreshMcpRequests();
     void refreshPendingRuleRequests();
+    void refreshDesktopUiSessionRequests();
     // Permanent host ACL and attended desktop input sessions are different
     // approvals. Retain the full trusted-session controls on demand.
     const trustPanel = make("section", "access-editor access-trusted-session");
@@ -2957,6 +3157,7 @@
         setActiveTab(tabName);
         void refreshMcpRequests();
         void refreshPendingRuleRequests();
+        if (tabName === "requests") void refreshDesktopUiSessionRequests();
       };
       // Navigation-only notification affordance. The actual approval/deny
       // buttons remain protected by their existing native human review.
@@ -2971,11 +3172,12 @@
         mcpNotificationFocus.id = requestId;
         mcpNotificationFocus.didFocus = false;
         setActiveTab(tab || "requests");
+        if (tabHint === "desktop") setRequestSubTab("desktop");
         const wasRefreshing = Boolean(mcpCache.refreshing);
-        await Promise.all([refreshMcpRequests(), refreshPendingRuleRequests()]);
+        await Promise.all([refreshMcpRequests(), refreshPendingRuleRequests(), refreshDesktopUiSessionRequests()]);
         let found = highlightMcpNotificationRequest() === true;
         if (!found && wasRefreshing) {
-          await Promise.all([refreshMcpRequests(), refreshPendingRuleRequests()]);
+          await Promise.all([refreshMcpRequests(), refreshPendingRuleRequests(), refreshDesktopUiSessionRequests()]);
           found = highlightMcpNotificationRequest() === true;
         }
         return {targetFound:found,
@@ -2984,6 +3186,7 @@
       window.__superagentAccessManagerRefresh = () => {
         void refreshMcpRequests({ queueIfBusy: true });
         void refreshPendingRuleRequests();
+        void refreshDesktopUiSessionRequests();
         void refreshRegistry().catch(() => {});
         void refreshWindows().catch(() => {});
         void refreshInstalledApps().catch(() => {});
@@ -2993,11 +3196,13 @@
       window.__TAURI__?.event?.listen?.("access-manager://requests-updated", () => {
         void refreshMcpRequests({ queueIfBusy: true });
         void refreshPendingRuleRequests();
+        void refreshDesktopUiSessionRequests();
       });
       window.__TAURI__?.event?.listen?.("access-manager://focus-request-center", () => {
         setActiveTab("requests");
         void refreshMcpRequests();
         void refreshPendingRuleRequests();
+        void refreshDesktopUiSessionRequests();
       });
       const pendingNotificationId = window.__superagentPendingAccessNotificationId;
       const pendingNotificationTab = window.__superagentPendingAccessNotificationTab;

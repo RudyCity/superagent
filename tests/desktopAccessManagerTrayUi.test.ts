@@ -45,10 +45,12 @@ function boot(nativeEnabled=true, mcpData?: {
   requests?: any[]; identities?: any[]; projects?: any[];
   requestResponses?: Promise<any>[];
   pendingRuleRequests?: any[];
+  desktopUiRequests?: any[];
   connectedClients?: {success:boolean;state:string;clients:any[]|null;observedAt?:number};
   tools?: any[];
   failActions?: string[];
   decisionResults?: Record<string, any>;
+  desktopUiDecisionResults?: Record<string, any>;
 }){
   const parent=new Element("section");parent.id="settings-subpage-security";
   const old=new Element("section");old.id="desktop-trust-panel";parent.append(old);
@@ -63,8 +65,23 @@ function boot(nativeEnabled=true, mcpData?: {
   const mcpIdentities=mcpData?.identities || [];
   const mcpProjects=(mcpData?.projects || []).map(p=>({...p,enabled:p.enabled!==false,
     description:p.description||"",updatedAt:p.updatedAt??123456789}));
+  const desktopUiRequests=(mcpData?.desktopUiRequests || []).map(request=>({...request}));
   const invoke=vi.fn(async(name:string,args:any)=>{
     calls.push({name,args});
+    if(name==="desktop_ui_session_requests_action"){
+      if(mcpData?.failActions?.includes("desktop_ui_requests"))
+        throw Error("Desktop UI request service unavailable");
+      if(args.action==="list")return {success:true,requests:desktopUiRequests.map(request=>({...request}))};
+      if(["approve","deny"].includes(args.action)){
+        const index=desktopUiRequests.findIndex(request=>request.requestId===args.requestId);
+        if(index<0)throw Error("Desktop UI request not found");
+        const override=mcpData?.desktopUiDecisionResults?.[args.action];
+        if(override?.success===false)return override;
+        desktopUiRequests[index]={...desktopUiRequests[index],
+          status:args.action==="approve"?"approved":"denied",decidedAt:Date.now()};
+        return override ?? {success:true,request:{...desktopUiRequests[index]}};
+      }
+    }
     if(name==="get_permanent_access_registry"){
       if(!nativeEnabled)throw Error("old Tray");
       return policy;
@@ -1405,5 +1422,122 @@ describe("Pusat Permintaan (Request Center)", () => {
     expect(ui.document.getElementById("access-pane-requests")!.hidden).toBe(false);
     expect(ui.document.getElementById("access-pane-rules")!.hidden).toBe(true);
     expect(ui.document.getElementById("access-req-rule-form")!.hidden).toBe(false);
+  });
+});
+
+describe("Desktop Live session requests in Request Center", () => {
+  const makeRequest = (overrides: Record<string, unknown> = {}) => {
+    const now = Date.now();
+    return {
+      requestId: "desktop_req_" + "a".repeat(32),
+      principalId: "local-agent",
+      pid: 4812,
+      nativeId: "hwnd-4812",
+      title: "Workspace Editor",
+      application: "Code Editor",
+      accessMode: "input",
+      ttlMs: 300_000,
+      reason: "Review and update the active workspace",
+      createdAt: now - 1_000,
+      expiresAt: now + 4 * 60_000,
+      status: "pending",
+      ...overrides,
+    };
+  };
+
+  it("shows Desktop Live as a separate subtab and includes its pending count in Request Center", async () => {
+    const ui = boot(true, {
+      requests: [{
+        requestId: "req_project_live",
+        projectId: "superagent",
+        projectName: "SuperAgent",
+        status: "pending",
+        subject: "Gemini MCP",
+        mode: "oauth",
+        capabilities: ["read"],
+        reason: "Inspect workspace",
+        createdAt: Date.now(),
+      }],
+      desktopUiRequests: [makeRequest()],
+    });
+    await flush();
+
+    expect(ui.document.getElementById("access-tab-badge-requests")?.textContent).toBe("2");
+    ui.document.getElementById("access-nav-tab-requests")!.click();
+    await flush();
+
+    const desktopTab = ui.document.getElementById("access-req-subtab-desktop")!;
+    expect(desktopTab.textContent).toBe("Desktop Live (1)");
+    desktopTab.click();
+    const desktopCard = ui.document.getElementById("access-req-center-desktop-card")!;
+    expect(desktopCard.hidden).toBe(false);
+    expect(ui.document.getElementById("access-req-center-incoming-card")!.hidden).toBe(true);
+    expect(ui.document.getElementById("access-req-center-rules-card")!.hidden).toBe(true);
+
+    const list = ui.document.getElementById("access-req-center-desktop-list")!;
+    expect(list.textContent).toContain("Code Editor");
+    expect(list.textContent).toContain("Workspace Editor");
+    expect(list.textContent).toContain("PID 4812");
+    expect(list.textContent).toContain("local-agent");
+    expect(list.textContent).toContain("Viewer + Input");
+    expect(list.textContent).toContain("Review and update the active workspace");
+    expect(list.textContent).toContain("hanya sekali");
+  });
+
+  it("runs approval only through the native Tray command and records the confirmed history", async () => {
+    const request = makeRequest();
+    const ui = boot(true, { desktopUiRequests: [request] });
+    await flush();
+    ui.document.getElementById("access-nav-tab-requests")!.click();
+    await flush();
+    ui.document.getElementById("access-req-subtab-desktop")!.click();
+
+    const card = ui.document.getElementById("access-req-center-desktop-list")!.children[0];
+    const actions = card.children[card.children.length - 1];
+    actions.children[0].click();
+    await flush();
+
+    expect(ui.calls.some(call => call.name === "desktop_ui_session_requests_action" &&
+      call.args.action === "approve" && call.args.requestId === request.requestId)).toBe(true);
+    expect(ui.document.getElementById("access-req-center-desktop-history")!.textContent)
+      .toContain("Disetujui · menunggu dipakai");
+    expect(ui.getPolicy().rules).toHaveLength(0);
+    expect(ui.calls.some(call => call.name === "register_permanent_access_rule")).toBe(false);
+    expect(ui.calls.some(call => call.name === "mcp_project_access_action" &&
+      ["approve", "direct_grant"].includes(call.args.action))).toBe(false);
+  });
+
+  it("routes denial through native Tray and never presents an approval as a completed grant", async () => {
+    const request = makeRequest({ accessMode: "view", requestId: "desktop_req_" + "b".repeat(32) });
+    const ui = boot(true, { desktopUiRequests: [request] });
+    await flush();
+    ui.document.getElementById("access-nav-tab-requests")!.click();
+    await flush();
+    ui.document.getElementById("access-req-subtab-desktop")!.click();
+
+    const card = ui.document.getElementById("access-req-center-desktop-list")!.children[0];
+    const actions = card.children[card.children.length - 1];
+    actions.children[1].click();
+    await flush();
+
+    expect(ui.calls.some(call => call.name === "desktop_ui_session_requests_action" &&
+      call.args.action === "deny" && call.args.requestId === request.requestId)).toBe(true);
+    expect(ui.document.getElementById("access-req-center-desktop-history")!.textContent).toContain("Ditolak");
+    expect(ui.getPolicy().rules).toHaveLength(0);
+  });
+
+  it("reports an unavailable Desktop Live request queue instead of showing stale actionable cards", async () => {
+    const ui = boot(true, { desktopUiRequests: [makeRequest()], failActions: ["desktop_ui_requests"] });
+    await flush();
+    ui.document.getElementById("access-nav-tab-requests")!.click();
+    await flush();
+    ui.document.getElementById("access-req-subtab-desktop")!.click();
+
+    expect(ui.document.getElementById("access-req-center-desktop-list")!.textContent)
+      .toContain("could not be loaded");
+    expect(ui.document.getElementById("access-req-center-desktop-list")!.textContent)
+      .not.toContain("Workspace Editor");
+    expect(ui.document.getElementById("access-req-subtab-desktop")!.textContent).toBe("Desktop Live (!)");
+    expect(ui.document.getElementById("access-tab-badge-requests")!.textContent).toBe("!");
   });
 });

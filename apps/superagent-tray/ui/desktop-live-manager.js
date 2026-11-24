@@ -733,7 +733,19 @@
   }
   window.__superagentDesktopLiveRefresh=refresh;
   window.__superagentDesktopLiveStopStream=stopStream;
+  function installPermissionNavigation() {
+    const header=document.querySelector("#page-desktop-live .panel-head");
+    const refreshButton=el("desktop-live-manager-refresh");
+    if(!header||!refreshButton||el("desktop-live-manage-permissions"))return;
+    const link=node("a","button secondary","Manage permissions");
+    link.id="desktop-live-manage-permissions";
+    link.href="#security";
+    link.title="Open Access Manager to manage trusted desktop input permissions";
+    link.setAttribute("aria-label","Manage trusted desktop input permissions in Access Manager");
+    header.insertBefore(link,refreshButton);
+  }
   function install() {
+    installPermissionNavigation();
     for(const kind of Object.keys(kinds))el("desktop-live-filter-"+kind)?.addEventListener("click",()=>{
       state.filter=kind;draw();
     });

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {manageServices} from "../src/core/runtime/serviceManager.js";
-import {inspectManagedTray,readManagedTrayOwner}
+import {classifyManagedTrayRuntimeKind,inspectManagedTray,readManagedTrayOwner}
   from "../src/core/runtime/managedTrayControl.js";
 import {readListenerOwners} from "../src/core/runtime/coreMcpOwnershipAudit.js";
 
@@ -15,6 +15,24 @@ const oldSmoke=process.env.SUPERAGENT_TRAY_LIFECYCLE_TEST;
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),"managed-tray-e2e-"));
 const binary=path.resolve("apps/superagent-tray/src-tauri/target/debug/superagent-tray.exe");
 let ownedPid:number|undefined;
+describe("managed Tray runtime build provenance",()=>{
+  it("classifies a workspace debug binary independently of the active release slot",()=>{
+    const digest="a".repeat(64);
+    expect(classifyManagedTrayRuntimeKind(binary,
+      {activeDigest:digest,previousDigest:null},process.cwd(),temp))
+      .toBe("workspace-build");
+  });
+  it("recognizes content-addressed active and previous release binaries",()=>{
+    const active="b".repeat(64),previous="c".repeat(64);
+    const releasePath=(digest:string)=>path.join(temp,"bin","tray-releases",`superagent-tray-${digest}.exe`);
+    expect(classifyManagedTrayRuntimeKind(releasePath(active),
+      {activeDigest:active,previousDigest:previous},process.cwd(),temp))
+      .toBe("active-release");
+    expect(classifyManagedTrayRuntimeKind(releasePath(previous),
+      {activeDigest:active,previousDigest:previous},process.cwd(),temp))
+      .toBe("previous-release");
+  });
+});
 beforeAll(()=>{
   expect(fs.existsSync(binary)).toBe(true);
   expect(process.env.VITEST).toBeTruthy();

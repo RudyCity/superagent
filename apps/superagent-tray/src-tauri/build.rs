@@ -1,5 +1,48 @@
 use sha2::{Digest,Sha256};
-use std::{fs,path::{Path,PathBuf}};
+use std::{fs,path::{Path,PathBuf},process::Command};
+
+fn git_output(root:&Path,args:&[&str])->Option<String>{
+    let output=Command::new("git").args(args).current_dir(root).output().ok()?;
+    if !output.status.success(){return None;}
+    let value=String::from_utf8(output.stdout).ok()?.trim().to_owned();
+    if value.is_empty(){None}else{Some(value)}
+}
+
+fn valid_revision(value:&str)->Option<String>{
+    if value.len()==40&&value.bytes().all(|b|b.is_ascii_hexdigit()){
+        Some(value.to_ascii_lowercase())
+    }else{None}
+}
+
+fn watch_git_path(root:&Path,value:&str){
+    let path=PathBuf::from(value);
+    let path=if path.is_absolute(){path}else{root.join(path)};
+    println!("cargo:rerun-if-changed={}",path.display());
+}
+
+/// Resolve the local checkout revision and watch the Git ref that can move it.
+/// GITHUB_SHA remains authoritative in CI; this fallback makes developer
+/// builds attest their actual checkout instead of compiling a null revision.
+fn git_revision(root:&Path)->Option<String>{
+    if let Some(head)=git_output(root,&["rev-parse","--git-path","HEAD"]){
+        watch_git_path(root,&head);
+    }
+    if let Some(reference)=git_output(root,&["symbolic-ref","--quiet","HEAD"]){
+        let safe=reference.starts_with("refs/heads/")&&reference.len()<=256&&
+            reference.bytes().all(|b|b.is_ascii_alphanumeric()||b"/._-".contains(&b))&&
+            !reference.contains("..")&&!reference.contains("//")&&!reference.ends_with('/');
+        if safe{
+            if let Some(ref_path)=git_output(root,&["rev-parse","--git-path",&reference]){
+                watch_git_path(root,&ref_path);
+            }
+        }
+    }
+    if let Some(packed)=git_output(root,&["rev-parse","--git-path","packed-refs"]){
+        watch_git_path(root,&packed);
+    }
+    let revision=git_output(root,&["rev-parse","--verify","HEAD"])?;
+    valid_revision(&revision)
+}
 
 /// Hash exactly the static frontendDist tree embedded by Tauri, in stable order.
 /// Never use Git labels or file mtimes as a WebView asset fingerprint.
@@ -39,10 +82,13 @@ fn main() {
     println!("cargo:rustc-env=SUPERAGENT_TRAY_UI_DIGEST={}",
         digest_static_assets(Path::new("../ui")));
     println!("cargo:rerun-if-env-changed=GITHUB_SHA");
-    if let Ok(revision)=std::env::var("GITHUB_SHA") {
-        if revision.len()==40 && revision.bytes().all(|b|b.is_ascii_hexdigit()){
-            println!("cargo:rustc-env=SUPERAGENT_TRAY_SOURCE_REVISION={}",revision.to_ascii_lowercase());
-        }
+    let package_root=PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repository_root=package_root.join("../../..");
+    let repository_root=fs::canonicalize(&repository_root).unwrap_or(repository_root);
+    let revision=std::env::var("GITHUB_SHA").ok().and_then(|v|valid_revision(&v))
+        .or_else(||git_revision(&repository_root));
+    if let Some(revision)=revision{
+        println!("cargo:rustc-env=SUPERAGENT_TRAY_SOURCE_REVISION={revision}");
     }
     // Numeric build identifier is fixed when this particular binary is compiled.
     // SOURCE_DATE_EPOCH allows reproducible build pipelines to pin the value.

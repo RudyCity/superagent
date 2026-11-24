@@ -39,6 +39,32 @@ describe("owner_status fail-closed parity",()=>{
       sourceRevision:"c".repeat(40),loadedSourceRevision:"c".repeat(40)}})]).ready)
       .toBe(true);
   });
+  it("does not compare a local workspace build with the immutable release-slot digest",()=>{
+    const row=summarizeServiceOwnerAttestation([status({service:"tray",details:{
+      installedReleaseDigest:a,sourceBuildDigest:b,runtimeKind:"workspace-build",
+      webviewBundleDigest:b,sourceRevision:"c".repeat(40),
+      loadedSourceRevision:"c".repeat(40),
+    }})]).services[0];
+    expect(row).toMatchObject({code:"OWNER_BUILD_ATTESTED",ready:true,
+      build:{runtimeDigest:a,sourceDigest:b,runtimeKind:"workspace-build"}});
+  });
+  it("still rejects an active release whose running binary differs from the active slot",()=>{
+    const row=summarizeServiceOwnerAttestation([status({service:"tray",details:{
+      installedReleaseDigest:a,sourceBuildDigest:b,runtimeKind:"active-release",
+      webviewBundleDigest:b,sourceRevision:"c".repeat(40),
+      loadedSourceRevision:"c".repeat(40),
+    }})]).services[0];
+    expect(row.code).toBe("SOURCE_CHANGED_NOT_LOADED");
+    expect(row.ready).toBe(false);
+  });
+  it("still detects a workspace binary compiled from a different checkout revision",()=>{
+    const row=summarizeServiceOwnerAttestation([status({service:"tray",details:{
+      installedReleaseDigest:a,sourceBuildDigest:b,runtimeKind:"workspace-build",
+      webviewBundleDigest:b,sourceRevision:"c".repeat(40),
+      loadedSourceRevision:"d".repeat(40),
+    }})]).services[0];
+    expect(row.code).toBe("SOURCE_CHANGED_NOT_LOADED");
+  });
   it("never leaks arbitrary paths, tokens, private details or operation IDs",()=>{
     const result=summarizeServiceOwnerAttestation([status({details:{
       sourceBuildDigest:a,activeBuildDigest:a,exePath:"DO_NOT_ECHO_PATH",
