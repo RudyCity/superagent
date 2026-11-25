@@ -819,6 +819,9 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         const sessionAudit = (info: McpAuditInfo) => audit({ ...info, sessionHash: sessionCtx.sessionHash });
         // Bind Delegate-CDP actor identity to the verified credential so multi-turn
         // Streamable HTTP reconnects retain ownership of claimed browser tabs.
+        const principalSessionKey = deriveStatelessDelegatePrincipalSessionId(identity as McpIdentity);
+        const principalWorkspaces = (globalThis as any).__superagentPrincipalWorkspaces ??= new Map();
+        const savedWs = principalWorkspaces.get(principalSessionKey);
         const newServer = createSuperagentMcpServer({
           toolExposure: opts.toolExposure,
           allowedTools,
@@ -827,8 +830,12 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           allowDangerous: opts.allowDangerous,
           lockSafeTools: Boolean(opts.lockSafeTools),
           getIdentity: () => identity,
-          delegatePrincipalSessionId: deriveStatelessDelegatePrincipalSessionId(identity as McpIdentity),
+          delegatePrincipalSessionId: principalSessionKey,
           workspace: process.cwd(),
+          initialWorkspace: savedWs?.workspace,
+          initialProjectId: savedWs?.projectId ?? null,
+          initialProjectGrantRequired: savedWs?.requiresProjectGrant ?? false,
+          onWorkspaceChanged: (state: unknown) => principalWorkspaces.set(principalSessionKey, state),
         } as McpServerOptions);
         await newServer.connect(newTransport);
         try {
@@ -885,6 +892,9 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
       const sessionAudit = (info: McpAuditInfo) => audit({ ...info, sessionHash: sessionCtx.sessionHash });
       const requestMethod = typeof (rb.body as any)?.method === "string" ? (rb.body as any).method : "";
       const isToolOnlyRequest = requestMethod.startsWith("tools/");
+      const statelessPrincipalKey = deriveStatelessDelegatePrincipalSessionId(identity as McpIdentity);
+      const statelessPrincipalWorkspaces = (globalThis as any).__superagentPrincipalWorkspaces ??= new Map();
+      const savedStatelessWs = statelessPrincipalWorkspaces.get(statelessPrincipalKey);
       const statelessServer = createSuperagentMcpServer({
         toolExposure: opts.toolExposure,
         allowedTools,
@@ -893,8 +903,12 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         allowDangerous: opts.allowDangerous,
         lockSafeTools: ownerStatelessLockSafeTools,
         getIdentity: () => identity,
-        delegatePrincipalSessionId: deriveStatelessDelegatePrincipalSessionId(identity as McpIdentity),
+        delegatePrincipalSessionId: statelessPrincipalKey,
         workspace: process.cwd(),
+        initialWorkspace: savedStatelessWs?.workspace,
+        initialProjectId: savedStatelessWs?.projectId ?? null,
+        initialProjectGrantRequired: savedStatelessWs?.requiresProjectGrant ?? false,
+        onWorkspaceChanged: (state: unknown) => statelessPrincipalWorkspaces.set(statelessPrincipalKey, state),
         skipResourcesAndPrompts: isToolOnlyRequest,
       } as McpServerOptions);
       await statelessServer.connect(statelessTransport);

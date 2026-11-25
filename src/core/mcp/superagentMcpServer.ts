@@ -738,9 +738,9 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   });
 
   const scopedWorkspaceAnchor = workspace || process.cwd();
-  let activeWorkspace = scopedWorkspaceAnchor;
-  let activeProjectId: string | null = null;
-  let activeProjectGrantRequired = false;
+  let activeWorkspace = (options as any).initialWorkspace || scopedWorkspaceAnchor;
+  let activeProjectId: string | null = (options as any).initialProjectId ?? null;
+  let activeProjectGrantRequired = Boolean((options as any).initialProjectGrantRequired && activeProjectId);
   // Stable for this server/transport session; never derived from a project cwd.
   const connectionBrainSessionId = crypto.randomUUID();
   // Delegate leases are multi-call capabilities. Stateful MCP servers keep the
@@ -1003,6 +1003,11 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
               activeWorkspace = nextWorkspace;
               activeProjectId = projectId ?? null;
               activeProjectGrantRequired = Boolean(requiresProjectGrant && projectId);
+              (options as any).onWorkspaceChanged?.({
+                workspace: activeWorkspace,
+                projectId: activeProjectId,
+                requiresProjectGrant: activeProjectGrantRequired,
+              });
             },
             (projectId) => Boolean(identityForProjectAccess?.subject && hasProjectAccess(
               identityForProjectAccess, projectId, "read",

@@ -15,10 +15,29 @@ import {
   sanitizeDesktopUiLogText,
 } from "../../src/core/tools/desktopUiTools.js";
 import { setFullYoloMode, setYoloMode } from "../../src/core/permissions.js";
-import { grantProjectAccess } from "../../src/core/project/projectAccessPolicy.js";
+import { grantProjectAccess, revokeProjectAccess } from "../../src/core/project/projectAccessPolicy.js";
 import { MCP_CONNECTION_PROJECT_ID } from "../../src/core/project/projectAccessRequestStore.js";
+import { getProject, registerProject, removeProject } from "../../src/core/project/projectRegistry.js";
 
 const desktopIdentity = { mode: "static-bearer" as const, subject: "tester", credentialHash: "c".repeat(64) };
+const testProjectId = "mcp-security-desktop-fixture";
+
+function ensureTestProjectGrant(): () => void {
+  const existing = getProject(testProjectId);
+  const createdProject = existing ? null : registerProject({
+    id: testProjectId,
+    name: "MCP Security Desktop Fixture",
+    type: "local",
+    root: process.cwd(),
+  });
+  grantProjectAccess(desktopIdentity, testProjectId, ["execute"]);
+  return () => {
+    revokeProjectAccess(desktopIdentity, testProjectId);
+    if (createdProject) {
+      removeProject(testProjectId);
+    }
+  };
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -148,70 +167,80 @@ describe("desktop UI MCP security integration", () => {
   it("forwards screenshot image blocks through the MCP gateway without audit leakage", async () => {
     setYoloMode(true);
     grantProjectAccess(desktopIdentity, MCP_CONNECTION_PROJECT_ID, ["execute"]);
-    const png = Buffer.from("89504e470d0a1a0a0000000049454e44", "hex").toString("base64");
-    vi.spyOn(desktopUiSessionManager, "snapshot").mockResolvedValue({
-      schema: { version: 1 } as any,
-      screenshotImage: png,
-    });
-    const observed: any[] = [];
-    const server = createSuperagentMcpServer({
-      toolExposure: "gateway",
-      allowDangerous: true,
-      authMode: "static-bearer",
-      getIdentity: () => desktopIdentity,
-      onToolCall: (info) => observed.push(info),
-    });
-    const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
-    const result = await call({
-      method: "tools/call",
-      params: {
-        name: "superagent_tool_execute",
-        arguments: {
-          name: "superagent_desktop_ui",
-          arguments: { command: "snapshot", sessionToken: "a".repeat(64), includeScreenshotImage: true },
+    const cleanupGrant = ensureTestProjectGrant();
+    try {
+      const png = Buffer.from("89504e470d0a1a0a0000000049454e44", "hex").toString("base64");
+      vi.spyOn(desktopUiSessionManager, "snapshot").mockResolvedValue({
+        schema: { version: 1 } as any,
+        screenshotImage: png,
+      });
+      const observed: any[] = [];
+      const server = createSuperagentMcpServer({
+        toolExposure: "gateway",
+        allowDangerous: true,
+        authMode: "static-bearer",
+        getIdentity: () => desktopIdentity,
+        onToolCall: (info) => observed.push(info),
+      });
+      const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+      const result = await call({
+        method: "tools/call",
+        params: {
+          name: "superagent_tool_execute",
+          arguments: {
+            name: "superagent_desktop_ui",
+            arguments: { command: "snapshot", sessionToken: "a".repeat(64), includeScreenshotImage: true },
+          },
         },
-      },
-    });
-    expect(result.isError).not.toBe(true);
-    expect(result.content).toContainEqual({ type: "image", data: png, mimeType: "image/png" });
-    expect(JSON.stringify(observed)).not.toContain(png);
-    expect(JSON.stringify(observed)).not.toContain("a".repeat(64));
+      });
+      expect(result.isError).not.toBe(true);
+      expect(result.content).toContainEqual({ type: "image", data: png, mimeType: "image/png" });
+      expect(JSON.stringify(observed)).not.toContain(png);
+      expect(JSON.stringify(observed)).not.toContain("a".repeat(64));
+    } finally {
+      cleanupGrant();
+    }
   });
 
   it("sanitizes desktop args before the server audit hook sees them", async () => {
     setYoloMode(true);
     grantProjectAccess(desktopIdentity, MCP_CONNECTION_PROJECT_ID, ["execute"]);
-    const observed: any[] = [];
-    const server = createSuperagentMcpServer({
-      toolExposure: "full",
-      allowDangerous: true,
-      authMode: "static-bearer",
-      getIdentity: () => desktopIdentity,
-      onToolCall: (info) => observed.push(info),
-    });
-    const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
-    const token = "a".repeat(64);
-    const result = await call({
-      method: "tools/call",
-      params: {
-        name: "superagent_desktop_ui",
-        arguments: {
-          command: "action",
-          action: "type",
-          sessionToken: token,
-          expectedRevision: 1,
-          expectedHash: "b".repeat(64),
-          elementId: "a1",
-          text: "DO_NOT_LOG_ME",
-          x: 10,
+    const cleanupGrant = ensureTestProjectGrant();
+    try {
+      const observed: any[] = [];
+      const server = createSuperagentMcpServer({
+        toolExposure: "full",
+        allowDangerous: true,
+        authMode: "static-bearer",
+        getIdentity: () => desktopIdentity,
+        onToolCall: (info) => observed.push(info),
+      });
+      const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+      const token = "a".repeat(64);
+      const result = await call({
+        method: "tools/call",
+        params: {
+          name: "superagent_desktop_ui",
+          arguments: {
+            command: "action",
+            action: "type",
+            sessionToken: token,
+            expectedRevision: 1,
+            expectedHash: "b".repeat(64),
+            elementId: "a1",
+            text: "DO_NOT_LOG_ME",
+            x: 10,
+          },
         },
-      },
-    });
-    expect(result.isError).toBe(true);
-    const audit = JSON.stringify(observed.at(-1)?.args);
-    expect(audit).not.toContain(token);
-    expect(audit).not.toContain("DO_NOT_LOG_ME");
-    expect(audit).toContain("[REDACTED_TOKEN]");
-    expect(audit).toContain("[REDACTED_TEXT]");
+      });
+      expect(result.isError).toBe(true);
+      const audit = JSON.stringify(observed.at(-1)?.args);
+      expect(audit).not.toContain(token);
+      expect(audit).not.toContain("DO_NOT_LOG_ME");
+      expect(audit).toContain("[REDACTED_TOKEN]");
+      expect(audit).toContain("[REDACTED_TEXT]");
+    } finally {
+      cleanupGrant();
+    }
   });
 });

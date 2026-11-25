@@ -251,8 +251,13 @@ const EXPLICIT_EFFECT_TOOLS = new Set([
 function certifiedRegistryAwareDiscovery(name:string,args:Args|undefined):boolean{
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
   if(name==="superagent_list_files"){
-    return Object.keys(args).every(key=>["dirPath","workspace","cwd","projectId"].includes(key)) &&
-      (args.dirPath===undefined||typeof args.dirPath==="string");
+    if(Object.keys(args).some(key=>!["dirPath","path","maxDepth","limit","workspace","cwd","projectId"].includes(key)))return false;
+    if(args.maxDepth!==undefined&&(!Number.isSafeInteger(args.maxDepth)||Number(args.maxDepth)<0||Number(args.maxDepth)>32))
+      return false;
+    if(args.limit!==undefined&&(!Number.isSafeInteger(args.limit)||Number(args.limit)<1||Number(args.limit)>5000))
+      return false;
+    return ["dirPath","path","workspace","cwd","projectId"].every(key=>
+      args[key]===undefined||typeof args[key]==="string");
   }
   if(name==="superagent_find_files"){
     if(Object.keys(args).some(key=>!["pattern","query","name","path","extension","maxDepth",
@@ -725,8 +730,10 @@ function certifiedGitWorkspaceAction(
   const overlapsDenied=policy.rules.some(rule=>rule.kind==="file" &&
     rule.effect==="deny" && sameGitApp(rule.app,identity) &&
     rule.operations.some(op=>operations.includes(op)) &&
-    (gitPathWithin(root,rule.scope.path,identity.platform) ||
-     gitPathWithin(rule.scope.path,root,identity.platform)));
+    (action === "status"
+      ? gitPathWithin(rule.scope.path,root,identity.platform)
+      : (gitPathWithin(root,rule.scope.path,identity.platform) ||
+         gitPathWithin(rule.scope.path,root,identity.platform))));
   if(overlapsDenied)return false;
   if(!isTargeted)return true;
   for(const file of args.files as unknown[]) {

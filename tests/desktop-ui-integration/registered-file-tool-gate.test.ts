@@ -188,10 +188,16 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     expect(gate({action:"status"},rootFull)).toMatch(/recursive native file grants/);
     fs.rmSync(path.join(a.root,".git"),{force:true});
     fs.mkdirSync(path.join(a.root,".git"));
-    // Explicit host deny wins over a broad workspace allow.
+    // Explicit host deny on a child file blocks content/mutation actions (diff/add)
+    // while allowing path-only status discovery, whereas denying the root itself blocks status.
     const protectedFile=a.rule("protected","deny",path.join(a.root,".env"),["read"]);
-    expect(gate({action:"status"},rootFull,protectedFile)).toMatch(/recursive native file grants/);
+    const deniedRoot=a.rule("denied-root","deny",a.root,["read"],true);
+    expect(gate({action:"status"},rootFull,protectedFile)).toBeNull();
+    expect(gate({action:"status"},rootFull,deniedRoot)).toMatch(/recursive native file grants/);
+    expect(gate({action:"diff"},rootFull,protectedFile)).toMatch(/recursive native file grants/);
     expect(gate({action:"add",files:["src/main.ts"]},rootFull,protectedFile)).toMatch(/recursive native file grants/);
+    expect(registeredFileToolGate({name:"superagent_list_files",args:{maxDepth:1}},a.root,
+      {registry:()=>a.p(rootRead,protectedFile),identity:a.identity})).toBeNull();
     // The gateway wrapper cannot bypass the same host check.
     expect(registeredFileToolGate({name:"superagent_tool_execute",args:{
       name:"superagent_git_action",arguments:{action:"diff"},
