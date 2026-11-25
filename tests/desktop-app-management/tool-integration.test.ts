@@ -6,9 +6,12 @@ import {
 } from "../../src/core/mcp/tools/desktopUiMcpTools.js";
 import {
   desktopAppManager,
+  desktopUiSessionManager,
   desktopUiTool,
   sanitizeDesktopUiLogPayload,
 } from "../../src/core/tools/desktopUiTools.js";
+import { DesktopAppManager } from "../../src/core/desktopApp/service.js";
+import { resolveWindowsStartAppExecutable } from "../../src/core/desktopApp/windows.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -20,6 +23,7 @@ describe("desktop app management tool integration", () => {
     const localSchema = desktopUiTool.parameters as any;
     const expected = [
       "list_installed_apps",
+      "list_monitors",
       "launch_app",
       "focus_window",
       "close_app",
@@ -109,5 +113,102 @@ describe("desktop app management tool integration", () => {
     expect(serialized).not.toContain("a".repeat(64));
     expect(serialized).toContain("[REDACTED_APP_METADATA]");
     expect(serialized).toContain("[REDACTED_APPROVAL_BINDING]");
+  });
+
+  it("dispatches list_monitors via MCP and verifies DesktopAppManager permanentConsentVerifier", async () => {
+    vi.spyOn(desktopUiSessionManager, "listMonitors").mockResolvedValue({
+      monitors: [
+        {
+          index: 0,
+          deviceName: "\\\\.\\DISPLAY1",
+          primary: true,
+          bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+          workingArea: { x: 0, y: 0, width: 1920, height: 1040 },
+        },
+      ],
+      count: 1,
+    });
+    const res = await dispatchDesktopUiMcpTool(
+      "superagent_desktop_ui",
+      { command: "list_monitors" },
+      { principalId: "principal-a", workspace: "D:/workspace" },
+    );
+    expect(res?.isError).not.toBe(true);
+    expect(JSON.parse(res!.content[0].text)).toMatchObject({ success: true, count: 1 });
+
+    const focusExact = vi.fn(async () => ({ focused: true as const }));
+    const deniedMgr = new DesktopAppManager({
+      platform: "win32",
+      appProvider: { focusExact } as any,
+      consentVerifier: () => false,
+      permanentConsentVerifier: async () => false,
+    });
+    await expect(deniedMgr.focusWindow({ pid: 123, nativeId: "1" })).rejects.toMatchObject({
+      code: "INPUT_DISABLED",
+      message: expect.stringMatching(/exact host consent/i),
+    });
+    expect(focusExact).not.toHaveBeenCalled();
+
+    const allowedMgr = new DesktopAppManager({
+      platform: "win32",
+      appProvider: { focusExact } as any,
+      consentVerifier: () => false,
+      permanentConsentVerifier: async () => true,
+    });
+    await expect(allowedMgr.focusWindow({ pid: 123, nativeId: "1" })).resolves.toEqual({ focused: true });
+    expect(focusExact).toHaveBeenCalledTimes(1);
+
+    const launchVerified = vi.fn(async (appId: string) => ({ launched: true as const, appId }));
+    const deniedLaunchMgr = new DesktopAppManager({
+      platform: "win32",
+      appProvider: { launchVerified } as any,
+      launchConsentVerifier: async () => false,
+    });
+    await expect(deniedLaunchMgr.launchApp("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App")).rejects.toMatchObject({
+      code: "INPUT_DISABLED",
+    });
+    expect(launchVerified).not.toHaveBeenCalled();
+
+    const allowedLaunchMgr = new DesktopAppManager({
+      platform: "win32",
+      appProvider: { launchVerified } as any,
+      launchConsentVerifier: async () => true,
+    });
+    await expect(allowedLaunchMgr.launchApp("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App")).resolves.toEqual({
+      launched: true,
+      appId: "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App",
+    });
+    expect(launchVerified).toHaveBeenCalledTimes(1);
+
+    if (process.platform === "win32") {
+      const validIdentity = await resolveWindowsStartAppExecutable("Contoso.App!Main", {
+        run: async () => ({
+          stdout: JSON.stringify({
+            executablePath: "C:\\Program Files\\Contoso\\app.exe",
+            sha256: "b".repeat(64),
+          }),
+          stderr: "",
+          exitCode: 0,
+        }),
+      });
+      expect(validIdentity).toEqual({
+        platform: "win32",
+        executablePath: "C:\\Program Files\\Contoso\\app.exe",
+        sha256: "b".repeat(64),
+      });
+
+      const rejectedNonExe = await resolveWindowsStartAppExecutable("Contoso.App!Main", {
+        run: async () => ({
+          stdout: JSON.stringify({
+            executablePath: "C:\\Program Files\\Contoso\\launcher.bat",
+            sha256: "b".repeat(64),
+          }),
+          stderr: "",
+          exitCode: 0,
+        }),
+      });
+      expect(rejectedNonExe).toBeNull();
+      expect(await resolveWindowsStartAppExecutable("C:\\Windows\\notepad.exe")).toBeNull();
+    }
   });
 });

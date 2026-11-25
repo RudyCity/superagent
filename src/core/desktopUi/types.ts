@@ -37,6 +37,20 @@ export interface DesktopWindowDiscoveryResult {
   skippedAmbiguous?: number;
 }
 
+export interface DesktopMonitor {
+  index: number;
+  deviceName: string;
+  primary: boolean;
+  bounds: DesktopBounds;
+  workingArea: DesktopBounds;
+  bitsPerPixel?: number;
+}
+
+export interface DesktopMonitorDiscoveryResult {
+  monitors: DesktopMonitor[];
+  count: number;
+}
+
 export interface DesktopUiElement {
   id: string;
   role: string;
@@ -158,6 +172,7 @@ export interface DesktopUiAdapter {
   readonly platform: DesktopPlatform;
   probe(): Promise<DesktopUiCapabilities>;
   listWindows?(limit: number): Promise<DesktopWindowDiscoveryResult>;
+  listMonitors?(): Promise<DesktopMonitorDiscoveryResult>;
   getActiveWindow?(): Promise<DesktopDiscoveredWindow | null>;
   capture(target: DesktopWindowTarget): Promise<NativeCapture>;
   /** Optional Windows native fast path; unimplemented backends retain

@@ -28,6 +28,7 @@ import {
   type DesktopDiscoveredWindow,
   type DesktopKey,
   type DesktopModifier,
+  type DesktopMonitorDiscoveryResult,
   type DesktopPoint,
   type DesktopScreenshotIdentity,
   type DesktopUiAdapter,
@@ -41,6 +42,7 @@ import {
 } from "../desktopUi/index.js";
 import type { Tool } from "./types.js";
 import { DesktopAppManager } from "../desktopApp/index.js";
+import { resolveWindowsStartAppExecutable } from "../desktopApp/windows.js";
 import { inspectSecurityPrompts } from "../desktopSecurity/index.js";
 import {readTrustedInputPolicy,trustedWindowMatch,
   type TrustedInputPolicy,type TrustedInputTarget} from "./desktopTrustedInput.js";
@@ -66,6 +68,7 @@ export const DESKTOP_UI_DISCOVERY_COMMANDS = [
   "list_windows",
   "get_active_window",
   "find_window",
+  "list_monitors",
   "inspect_window",
 ] as const;
 
@@ -84,6 +87,7 @@ export const DISCOVERY_COMMAND_FIELDS: Record<string, ReadonlySet<string>> = {
   list_windows: new Set(["command", "action", "limit"]),
   get_active_window: new Set(["command", "action"]),
   find_window: new Set(["command", "action", "query", "pid", "limit"]),
+  list_monitors: new Set(["command", "action"]),
   inspect_window: new Set(["command", "action", "pid", "nativeId", "includeScreenshotImage", "maxImageBytes", "approvalRequestId", "reason", "ttlMs"]),
   list_installed_apps: new Set(["command", "action", "limit"]),
   launch_app: new Set(["command", "action", "appId"]),
@@ -254,6 +258,34 @@ export class DesktopUiConsentManager {
 export const desktopUiConsentManager = new DesktopUiConsentManager();
 export const desktopAppManager = new DesktopAppManager({
   consentVerifier: (target) => desktopUiConsentManager.hasConsent(target),
+  permanentConsentVerifier: async (target) => {
+    const permanent = readPermanentAccessRegistry();
+    if (!permanent || !Number.isInteger(target.pid) || target.pid <= 0 || typeof target.nativeId !== "string" || !target.nativeId) {
+      return false;
+    }
+    try {
+      const discovery = await desktopUiSessionManager.listWindows({ limit: MAX_WINDOW_DISCOVERY_LIMIT });
+      const observed = requireFreshWindowTarget(discovery, target.pid, target.nativeId);
+      const identity = await resolveNativeDesktopExecutable(target.pid);
+      if (!identity || !hasRegisteredDesktopInputCandidate(permanent, identity, observed.title)) {
+        return false;
+      }
+      const fresh = readPermanentAccessRegistry();
+      return Boolean(fresh && hasRegisteredDesktopInputCandidate(fresh, identity, observed.title));
+    } catch {
+      return false;
+    }
+  },
+  launchConsentVerifier: async (appId) => {
+    const permanent = readPermanentAccessRegistry();
+    if (!permanent) return true;
+    const identity = await resolveWindowsStartAppExecutable(appId);
+    if (!identity || !hasRegisteredDesktopInputCandidate(permanent, identity, appId)) {
+      return false;
+    }
+    const fresh = readPermanentAccessRegistry();
+    return Boolean(fresh && hasRegisteredDesktopInputCandidate(fresh, identity, appId));
+  },
 });
 
 export interface ActiveSessionRecord {
@@ -448,6 +480,14 @@ export class DesktopUiSessionManager {
   async listWindows(params: { limit?: number; adapter?: DesktopUiAdapter } = {}): Promise<DesktopWindowDiscoveryResult> {
     const adapter = params.adapter ?? createNativeDesktopUiAdapter();
     return listDiscoveredWindows(adapter, params.limit);
+  }
+
+  async listMonitors(adapter?: DesktopUiAdapter): Promise<DesktopMonitorDiscoveryResult> {
+    const activeAdapter = adapter ?? createNativeDesktopUiAdapter();
+    if (typeof activeAdapter.listMonitors !== "function") {
+      throw new DesktopUiError("DESKTOP_UI_UNAVAILABLE", "Monitor discovery is not supported on this platform adapter.");
+    }
+    return activeAdapter.listMonitors();
   }
 
   async getActiveWindow(adapter?: DesktopUiAdapter): Promise<DesktopDiscoveredWindow | null> {
@@ -1195,6 +1235,8 @@ export const desktopUiTool: Tool = {
           return JSON.stringify({ success: true, capabilities: await desktopUiSessionManager.probe() }, null, 2);
         case "list_windows":
           return JSON.stringify({ success: true, ...(await desktopUiSessionManager.listWindows({ limit: typeof args.limit === "number" ? args.limit : undefined })) }, null, 2);
+        case "list_monitors":
+          return JSON.stringify({ success: true, ...(await desktopUiSessionManager.listMonitors()) }, null, 2);
         case "get_active_window":
           return JSON.stringify({ success: true, window: await desktopUiSessionManager.getActiveWindow() }, null, 2);
         case "find_window":

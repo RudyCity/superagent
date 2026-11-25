@@ -255,6 +255,9 @@ export async function dispatchDesktopUiMcpTool(
       case "list_windows":
         result = { success: true, ...(await desktopUiSessionManager.listWindows({ limit: typeof rawArgs.limit === "number" ? rawArgs.limit : undefined })) };
         break;
+      case "list_monitors":
+        result = { success: true, ...(await desktopUiSessionManager.listMonitors()) };
+        break;
       case "get_active_window":
         result = { success: true, window: await desktopUiSessionManager.getActiveWindow() };
         break;

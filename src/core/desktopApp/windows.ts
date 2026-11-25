@@ -1,6 +1,7 @@
 import path from "node:path";
 import { DesktopUiError } from "../desktopUi/errors.js";
 import { createRestrictedProcessRunner, type DesktopProcessRunner } from "../desktopUi/processRunner.js";
+import type { ExecutableIdentity } from "../desktopUi/persistentAccessPolicy.js";
 import type {
   DesktopAppLifecycleProvider,
   ExactWindowIdentity,
@@ -98,6 +99,68 @@ if ($payload.action -eq "exists") {
 throw "INVALID_ACTION: unsupported window action"
 `;
 
+const RESOLVE_START_APP_EXECUTABLE_SCRIPT = String.raw`
+$ErrorActionPreference = "Stop"
+$payload = ConvertFrom-Json $env:SUPERAGENT_DESKTOP_APP_PAYLOAD
+$appId = [string]$payload.appId
+if ([string]::IsNullOrWhiteSpace($appId)) { throw "INVALID_ACTION: missing appId" }
+$matchedApp = @(Get-StartApps | Where-Object { [string]$_.AppID -eq $appId } | Select-Object -First 1)
+if ($matchedApp.Count -eq 0) { throw "TARGET_NOT_FOUND: appId not present in StartApps" }
+
+$resolvedExe = $null
+if ($appId -match '^([^!]+)!([^!]+)$') {
+  $family = $Matches[1]
+  $entryId = $Matches[2]
+  $pkg = @(Get-AppxPackage | Where-Object { $_.PackageFamilyName -eq $family } | Select-Object -First 1)
+  if ($pkg.Count -gt 0 -and $pkg[0].InstallLocation) {
+    $pkgRoot = (Resolve-Path -LiteralPath $pkg[0].InstallLocation -ErrorAction Stop).ProviderPath
+    $manifestPath = Join-Path $pkgRoot "AppxManifest.xml"
+    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+      [xml]$xml = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8
+      $appNode = @($xml.Package.Applications.Application | Where-Object { $_.Id -eq $entryId } | Select-Object -First 1)
+      if ($appNode.Count -gt 0 -and $appNode[0].Executable) {
+        $candidate = Join-Path $pkgRoot ([string]$appNode[0].Executable)
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+          $canonicalCandidate = (Resolve-Path -LiteralPath $candidate -ErrorAction Stop).ProviderPath
+          $prefix = if ($pkgRoot.EndsWith("\")) { $pkgRoot } else { $pkgRoot + "\" }
+          if ($canonicalCandidate.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $resolvedExe = $canonicalCandidate
+          }
+        }
+      }
+    }
+  }
+}
+
+if (-not $resolvedExe) {
+  $shell = New-Object -ComObject Shell.Application
+  $appsFolder = $shell.NameSpace("shell:AppsFolder")
+  if ($appsFolder) {
+    foreach ($item in $appsFolder.Items()) {
+      $itemAumid = $null
+      try { $itemAumid = [string]$item.ExtendedProperty("System.AppUserModel.ID") } catch {}
+      if ([string]$item.Path -eq $appId -or $itemAumid -eq $appId) {
+        $targetPath = $null
+        try { $targetPath = [string]$item.ExtendedProperty("System.Link.TargetParsingPath") } catch {}
+        if ([string]::IsNullOrWhiteSpace($targetPath) -and $item.Path -match '^[a-zA-Z]:\\') {
+          $targetPath = [string]$item.Path
+        }
+        if (-not [string]::IsNullOrWhiteSpace($targetPath) -and (Test-Path -LiteralPath $targetPath -PathType Leaf)) {
+          $resolvedExe = (Resolve-Path -LiteralPath $targetPath -ErrorAction Stop).ProviderPath
+        }
+        break
+      }
+    }
+  }
+}
+
+if (-not $resolvedExe -or -not ($resolvedExe -match '\.exe$') -or -not (Test-Path -LiteralPath $resolvedExe -PathType Leaf)) {
+  throw "EXECUTABLE_UNVERIFIED: appId did not resolve to a canonical .exe binary"
+}
+$sha = (Get-FileHash -LiteralPath $resolvedExe -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+[pscustomobject]@{ executablePath = $resolvedExe; sha256 = $sha } | ConvertTo-Json -Compress
+`;
+
 function encodePowerShell(script: string): string {
   return Buffer.from(script, "utf16le").toString("base64");
 }
@@ -122,6 +185,46 @@ function requireTarget(target: ExactWindowIdentity): ExactWindowIdentity {
     throw new DesktopUiError("INVALID_ACTION", "Windows nativeId must be an exact decimal HWND identity.");
   }
   return { pid: target.pid, nativeId };
+}
+
+/**
+ * Resolve a Start AppsFolder AUMID to a canonical local .exe path and SHA-256
+ * without launching it. Returns null (fail-closed) when unresolvable or non-.exe.
+ */
+export async function resolveWindowsStartAppExecutable(
+  appId: string,
+  runner: DesktopProcessRunner = createRestrictedProcessRunner([WINDOWS_POWERSHELL]),
+): Promise<ExecutableIdentity | null> {
+  if (process.platform !== "win32") return null;
+  let id: string;
+  try {
+    id = requireAppId(appId);
+  } catch {
+    return null;
+  }
+  try {
+    const result = await runner.run({
+      executable: WINDOWS_POWERSHELL,
+      args: ["-NoProfile", "-NonInteractive", "-EncodedCommand",
+        encodePowerShell("[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n" + RESOLVE_START_APP_EXECUTABLE_SCRIPT)],
+      env: { SUPERAGENT_DESKTOP_APP_PAYLOAD: JSON.stringify({ appId: id }) },
+      timeoutMs: 10_000,
+    });
+    const parsed: unknown = JSON.parse(result.stdout.trim());
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const v = parsed as Record<string, unknown>;
+    if (Object.keys(v).sort().join(",") !== "executablePath,sha256"
+      || typeof v.executablePath !== "string" || typeof v.sha256 !== "string"
+      || !/^[a-z]:\\/i.test(v.executablePath)
+      || !/\.exe$/i.test(v.executablePath)
+      || v.executablePath.includes("/") || v.executablePath.includes("..")
+      || !/^[a-f0-9]{64}$/i.test(v.sha256)) {
+      return null;
+    }
+    return { platform: "win32", executablePath: v.executablePath, sha256: v.sha256.toLowerCase() };
+  } catch {
+    return null;
+  }
 }
 
 export function createWindowsDesktopAppProvider(

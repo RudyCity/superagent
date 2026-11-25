@@ -6,6 +6,8 @@ import { createRestrictedProcessRunner, type DesktopProcessRunner } from "../pro
 import type {
   AccessibilitySnapshot,
   DesktopDiscoveredWindow,
+  DesktopMonitor,
+  DesktopMonitorDiscoveryResult,
   DesktopUiAdapter,
   DesktopUiCapabilities,
   DesktopWindow,
@@ -135,6 +137,42 @@ $windows = @($items | Select-Object -First $limit)
   windows = $windows
   limit = $limit
   truncated = $truncated
+} | ConvertTo-Json -Depth 6 -Compress
+`;
+
+const MONITOR_DISCOVERY_SCRIPT = String.raw`
+$ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class DesktopUiMonitorDpi {
+  [DllImport("user32.dll", SetLastError=true)]
+  public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr value);
+}
+"@
+$previous = [DesktopUiMonitorDpi]::SetThreadDpiAwarenessContext([IntPtr](-4))
+if ($previous -eq [IntPtr]::Zero) {
+  throw "DPI_CONTEXT_UNAVAILABLE: PER_MONITOR_AWARE_V2 could not be established"
+}
+$screens = @([System.Windows.Forms.Screen]::AllScreens)
+$monitors = New-Object System.Collections.Generic.List[object]
+for ($i = 0; $i -lt $screens.Count; $i++) {
+  $s = $screens[$i]
+  $name = [regex]::Replace([string]$s.DeviceName, '[\x00-\x1F\x7F]', '')
+  if ($name.Length -gt 128) { $name = $name.Substring(0, 128) }
+  $monitors.Add([pscustomobject]@{
+    index = $i
+    deviceName = $name
+    primary = [bool]$s.Primary
+    bitsPerPixel = [int]$s.BitsPerPixel
+    bounds = [pscustomobject]@{ x = [int]$s.Bounds.X; y = [int]$s.Bounds.Y; width = [int]$s.Bounds.Width; height = [int]$s.Bounds.Height }
+    workingArea = [pscustomobject]@{ x = [int]$s.WorkingArea.X; y = [int]$s.WorkingArea.Y; width = [int]$s.WorkingArea.Width; height = [int]$s.WorkingArea.Height }
+  })
+}
+[pscustomobject]@{
+  monitors = @($monitors)
+  count = $monitors.Count
 } | ConvertTo-Json -Depth 6 -Compress
 `;
 
@@ -601,6 +639,41 @@ export function createWindowsDesktopUiAdapter(
         return discoveryResultFrom(parseJson(result.stdout, "Windows window discovery"), boundedLimit);
       } catch (error) {
         throw mapWindowsError(error, "ACCESSIBILITY_UNAVAILABLE", "Windows window discovery failed");
+      }
+    },
+
+    async listMonitors(): Promise<DesktopMonitorDiscoveryResult> {
+      try {
+        const result = await runPowerShell(MONITOR_DISCOVERY_SCRIPT);
+        const parsed = parseJson<{ monitors?: Array<Record<string, any>>; count?: unknown }>(
+          result.stdout,
+          "Windows monitor discovery",
+        );
+        const monitors: DesktopMonitor[] = [];
+        for (const item of Array.isArray(parsed.monitors) ? parsed.monitors : []) {
+          if (!item || typeof item !== "object" || !item.bounds || !item.workingArea) continue;
+          monitors.push({
+            index: Number.isInteger(item.index) ? Number(item.index) : monitors.length,
+            deviceName: typeof item.deviceName === "string" ? item.deviceName.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 128) : `DISPLAY${monitors.length + 1}`,
+            primary: item.primary === true,
+            ...(Number.isInteger(item.bitsPerPixel) ? { bitsPerPixel: Number(item.bitsPerPixel) } : {}),
+            bounds: {
+              x: Number(item.bounds.x) || 0,
+              y: Number(item.bounds.y) || 0,
+              width: Number(item.bounds.width) || 0,
+              height: Number(item.bounds.height) || 0,
+            },
+            workingArea: {
+              x: Number(item.workingArea.x) || 0,
+              y: Number(item.workingArea.y) || 0,
+              width: Number(item.workingArea.width) || 0,
+              height: Number(item.workingArea.height) || 0,
+            },
+          });
+        }
+        return { monitors, count: monitors.length };
+      } catch (error) {
+        throw mapWindowsError(error, "ACCESSIBILITY_UNAVAILABLE", "Windows monitor discovery failed");
       }
     },
 

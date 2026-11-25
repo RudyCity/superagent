@@ -128,6 +128,8 @@ export interface DesktopAppManagerOptions {
   approvalManager?: DesktopHumanApprovalManager;
   hostApprovalPrompt?: HostPackageApprovalPrompt;
   consentVerifier?: (target: DesktopWindowTarget) => boolean;
+  permanentConsentVerifier?: (target: DesktopWindowTarget) => Promise<boolean>;
+  launchConsentVerifier?: (appId: string) => Promise<boolean>;
 }
 
 export class DesktopAppManager {
@@ -137,6 +139,8 @@ export class DesktopAppManager {
   private readonly approvalManager: DesktopHumanApprovalManager;
   private readonly hostApprovalPrompt: HostPackageApprovalPrompt;
   private readonly consentVerifier: (target: DesktopWindowTarget) => boolean;
+  private readonly permanentConsentVerifier?: (target: DesktopWindowTarget) => Promise<boolean>;
+  private readonly launchConsentVerifier?: (appId: string) => Promise<boolean>;
   private readonly plans = new Map<string, { plan: PackageChangePlan; expiresAt: number }>();
 
   constructor(options: DesktopAppManagerOptions = {}) {
@@ -150,6 +154,8 @@ export class DesktopAppManager {
     this.approvalManager = options.approvalManager ?? desktopPackageApprovalManager;
     this.hostApprovalPrompt = options.hostApprovalPrompt ?? createHostPackageApprovalPrompt({ platform: this.platform });
     this.consentVerifier = options.consentVerifier ?? (() => false);
+    this.permanentConsentVerifier = options.permanentConsentVerifier;
+    this.launchConsentVerifier = options.launchConsentVerifier;
   }
 
   private requireAppProvider(): DesktopAppLifecycleProvider {
@@ -162,13 +168,13 @@ export class DesktopAppManager {
     return this.appProvider;
   }
 
-  private requireHostConsent(target: ExactWindowIdentity): void {
-    if (!this.consentVerifier(target)) {
-      throw new DesktopUiError(
-        "INPUT_DISABLED",
-        "This application lifecycle action requires exact host consent for the pid/nativeId target.",
-      );
-    }
+  private async requireHostConsent(target: ExactWindowIdentity): Promise<void> {
+    if (this.consentVerifier(target)) return;
+    if (this.permanentConsentVerifier && await this.permanentConsentVerifier(target)) return;
+    throw new DesktopUiError(
+      "INPUT_DISABLED",
+      "This application lifecycle action requires exact host consent for the pid/nativeId target.",
+    );
   }
 
   private prunePlans(): void {
@@ -223,28 +229,41 @@ export class DesktopAppManager {
     };
   }
 
+  private async requireLaunchConsent(appId: unknown): Promise<string> {
+    const id = requireAppId(appId);
+    if (this.launchConsentVerifier && !(await this.launchConsentVerifier(id))) {
+      throw new DesktopUiError(
+        "INPUT_DISABLED",
+        "Launching this application requires a matching permanent desktop input rule in Tray Active Rules for its verified executable.",
+      );
+    }
+    return id;
+  }
+
   async launchApp(appId: unknown) {
-    return this.requireAppProvider().launchVerified(requireAppId(appId));
+    const id = await this.requireLaunchConsent(appId);
+    return this.requireAppProvider().launchVerified(id);
   }
 
   async focusWindow(target: ExactWindowIdentity) {
-    this.requireHostConsent(target);
+    await this.requireHostConsent(target);
     return this.requireAppProvider().focusExact(target);
   }
 
   async closeApp(target: ExactWindowIdentity) {
-    this.requireHostConsent(target);
+    await this.requireHostConsent(target);
     return this.requireAppProvider().closeExact(target);
   }
 
   async restartApp(appId: unknown, target: ExactWindowIdentity) {
-    this.requireHostConsent(target);
+    const id = await this.requireLaunchConsent(appId);
+    await this.requireHostConsent(target);
     const provider = this.requireAppProvider();
     await provider.closeExact(target);
     if (!await provider.waitUntilClosed(target, 5_000)) {
       throw new DesktopUiError("PROCESS_FAILED", "Graceful close did not complete; restart aborted without killing the process.");
     }
-    return provider.launchVerified(requireAppId(appId));
+    return provider.launchVerified(id);
   }
 
   async planPackageChange(input: {

@@ -396,8 +396,10 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     for(const args of [
       {command:"probe"}, {command:"list_windows",limit:50},
       {action:"get_active_window"}, {command:"find_window",query:"Chrome",pid:2345},
-      {command:"list_installed_apps",limit:50},
+      {command:"list_monitors"}, {command:"list_installed_apps",limit:50},
       {command:"live_inventory"}, {command:"inspect_security_prompts"},
+      {command:"live_stop",liveId:"native:123:456",leaseToken:"a".repeat(32)},
+      {command:"close",sessionToken:"a".repeat(64)},
     ])expect(gate(args)).toBeNull();
     for(const args of [
       {command:"snapshot",sessionToken:"a".repeat(64)},
@@ -567,5 +569,54 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       .toMatch(/not certified/i);
     expect(registeredFileToolGate({name:"superagent_git_action",args:{action:"status"}},a.root,opts))
       .toMatch(/requires an exact project workspace/i);
+  });
+
+  it("permits desktop UI view/input/lifecycle commands only when permanent desktop allow rules are registered",()=>{
+    const a=setup();
+    const viewRule={
+      id:"desktop-view",kind:"desktop" as const,effect:"allow" as const,
+      app:a.identity(),operations:["view" as const],scope:{},
+    };
+    const inputRule={
+      id:"desktop-input",kind:"desktop" as const,effect:"allow" as const,
+      app:a.identity(),operations:["view" as const,"input" as const],scope:{},
+    };
+    const viewGate=(args:Record<string,unknown>)=>
+      registeredFileToolGate({name:"superagent_desktop_ui",args},a.root,{registry:()=>a.p(viewRule),identity:a.identity});
+    expect(viewGate({command:"open",pid:5344,nativeId:"12345",title:"Calc",allowInput:false})).toBeNull();
+    expect(viewGate({command:"snapshot",sessionToken:"a".repeat(64)})).toBeNull();
+    expect(viewGate({command:"inspect_window",pid:5344,nativeId:"12345"})).toBeNull();
+    expect(viewGate({command:"open",pid:5344,nativeId:"12345",title:"Calc",allowInput:true})).toMatch(/not certified/);
+    expect(viewGate({command:"action",action:"click",sessionToken:"a".repeat(64),expectedRevision:1,expectedHash:"b".repeat(64),elementId:"btn"})).toMatch(/not certified/);
+    expect(viewGate({command:"focus_window",pid:5344,nativeId:"12345"})).toMatch(/not certified/);
+
+    const inputGate=(args:Record<string,unknown>)=>
+      registeredFileToolGate({name:"superagent_desktop_ui",args},a.root,{registry:()=>a.p(inputRule),identity:a.identity});
+    expect(inputGate({command:"open",pid:5344,nativeId:"12345",title:"Calc",allowInput:true})).toBeNull();
+    expect(inputGate({command:"action",action:"click",sessionToken:"a".repeat(64),expectedRevision:1,expectedHash:"b".repeat(64),elementId:"btn"})).toBeNull();
+    expect(inputGate({command:"action",action:"click",sessionToken:"a".repeat(64),expectedRevision:1,expectedHash:"b".repeat(64),x:10,y:20})).toMatch(/not certified/);
+    expect(inputGate({command:"focus_window",pid:5344,nativeId:"12345"})).toBeNull();
+    expect(inputGate({command:"close_app",pid:5344,nativeId:"12345"})).toBeNull();
+    expect(inputGate({command:"restart_app",pid:5344,nativeId:"12345",appId:"Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"})).toBeNull();
+    expect(inputGate({command:"launch_app",appId:"Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"})).toBeNull();
+    expect(inputGate({command:"launch_app",appId:"C:\\Windows\\notepad.exe"})).toMatch(/not certified/);
+    expect(viewGate({command:"launch_app",appId:"Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"})).toMatch(/not certified/);
+  });
+
+  it("mediates superagent_manage_worktrees removal using recursive host file grants",()=>{
+    const a=setup();
+    const denyOnly={registry:()=>a.p(),identity:a.identity};
+    expect(registeredFileToolGate({name:"superagent_manage_worktrees",args:{action:"list"}},a.root,denyOnly)).toBeNull();
+    expect(registeredFileToolGate({name:"superagent_manage_worktrees",args:{action:"remove",id:"wt-1"}},a.root,denyOnly))
+      .toMatch(/recursive native host/);
+
+    const fullRule=a.rule("ws-all","allow",a.root,["read","write","delete"],true);
+    const denyChild=a.rule("ws-deny","deny",path.join(a.root,"src"),["delete"],false);
+    expect(registeredFileToolGate({name:"superagent_manage_worktrees",args:{action:"remove",id:"wt-1"}},a.root,{
+      registry:()=>a.p(fullRule),identity:a.identity,
+    })).toBeNull();
+    expect(registeredFileToolGate({name:"superagent_manage_worktrees",args:{action:"remove",id:"wt-1"}},a.root,{
+      registry:()=>a.p(fullRule,denyChild),identity:a.identity,
+    })).toMatch(/recursive native host/);
   });
 });

@@ -293,7 +293,7 @@ export function certifiedServiceInspection(args:Args|undefined):boolean {
 }
 export const CERTIFIED_DESKTOP_DISCOVERY = new Set([
   "probe","list_windows","get_active_window","find_window",
-  "list_installed_apps","live_inventory","inspect_security_prompts",
+  "list_monitors","list_installed_apps","live_inventory","inspect_security_prompts",
 ]);
 /**
  * Metadata-only desktop commands cannot target a window session, return
@@ -317,6 +317,104 @@ function certifiedDesktopDiscovery(args:Args|undefined):boolean {
   if (args.query !== undefined && (typeof args.query !== "string" ||
       args.query.length<1 || args.query.length>256)) return false;
   return true;
+}
+
+const RAW_COORDINATE_KEYS = new Set(["x", "y", "point", "coordinates", "rawX", "rawY"]);
+function desktopCommandName(args: Args | undefined): string {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return "";
+  const rawCmd = typeof args.command === "string" ? args.command.trim().toLowerCase() : "";
+  if (rawCmd) return rawCmd;
+  const rawAction = typeof args.action === "string" ? args.action.trim().toLowerCase() : "";
+  if (["click", "type", "key", "scroll"].includes(rawAction)) return "action";
+  return rawAction;
+}
+function certifiedDesktopSessionCleanup(args: Args | undefined): boolean {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+  const cmd = desktopCommandName(args);
+  if (cmd === "live_stop") {
+    return Object.keys(args).every(k => ["command", "action", "liveId", "leaseToken"].includes(k)) &&
+      typeof args.liveId === "string" && args.liveId.length >= 1 && args.liveId.length <= 210 &&
+      !/[\u0000-\u001f\u007f]/.test(args.liveId) &&
+      typeof args.leaseToken === "string" && /^[a-zA-Z0-9_-]{32,128}$/.test(args.leaseToken);
+  }
+  if (cmd === "close") {
+    return Object.keys(args).every(k => ["command", "action", "sessionToken"].includes(k)) &&
+      typeof args.sessionToken === "string" && /^[a-fA-F0-9]{64}$/.test(args.sessionToken);
+  }
+  return false;
+}
+function certifiedRegisteredDesktopCommand(
+  args: Args | undefined,
+  policy: PersistentAccessPolicy,
+): boolean {
+  if (!args || typeof args !== "object" || Array.isArray(args) || !Array.isArray(policy.rules)) return false;
+  const hasRule = (op: "view" | "input") =>
+    policy.rules.some(rule => rule.kind === "desktop" && rule.effect === "allow" && rule.operations.includes(op));
+  const cmd = desktopCommandName(args);
+  const keys = Object.keys(args);
+  if (keys.some(k => RAW_COORDINATE_KEYS.has(k))) return false;
+  const validHex64 = (v: unknown) => typeof v === "string" && /^[a-fA-F0-9]{64}$/.test(v);
+  const validPid = (v: unknown) => Number.isSafeInteger(v) && Number(v) >= 1;
+  const validNonEmpty = (v: unknown, max = 256) =>
+    typeof v === "string" && v.trim().length > 0 && v.length <= max && !/[\u0000-\u001f\u007f]/.test(v);
+
+  if (cmd === "open") {
+    if (!hasRule("view")) return false;
+    if (args.allowInput === true && !hasRule("input")) return false;
+    if (args.enableVision === true) return false;
+    const allowed = new Set(["command", "action", "pid", "nativeId", "title", "allowInput", "enableVision", "visionEndpoint", "ttlMs", "approvalRequestId", "reason"]);
+    return keys.every(k => allowed.has(k)) && validPid(args.pid) && validNonEmpty(args.nativeId) && validNonEmpty(args.title, 512);
+  }
+  if (cmd === "inspect_window") {
+    if (!hasRule("view")) return false;
+    const allowed = new Set(["command", "action", "pid", "nativeId", "includeScreenshotImage", "maxImageBytes", "approvalRequestId", "reason", "ttlMs"]);
+    return keys.every(k => allowed.has(k)) && validPid(args.pid) && validNonEmpty(args.nativeId);
+  }
+  if (cmd === "snapshot") {
+    if (!hasRule("view")) return false;
+    const allowed = new Set(["command", "action", "sessionToken", "includeScreenshotImage", "maxImageBytes"]);
+    return keys.every(k => allowed.has(k)) && validHex64(args.sessionToken);
+  }
+  if (cmd === "action") {
+    if (!hasRule("input")) return false;
+    const actionKind = typeof args.subAction === "string" ? args.subAction
+      : typeof args.action === "string" && args.action !== "action" ? args.action : "";
+    if (!["click", "type", "key", "scroll"].includes(actionKind)) return false;
+    const allowed = new Set(["command", "action", "subAction", "sessionToken", "expectedRevision", "expectedHash", "elementId", "text", "key", "modifiers", "deltaX", "deltaY"]);
+    return keys.every(k => allowed.has(k)) && validHex64(args.sessionToken) &&
+      Number.isSafeInteger(args.expectedRevision) && Number(args.expectedRevision) >= 1 &&
+      validHex64(args.expectedHash);
+  }
+  if (cmd === "focus_window" || cmd === "close_app") {
+    if (!hasRule("input")) return false;
+    return keys.every(k => ["command", "action", "pid", "nativeId"].includes(k)) &&
+      validPid(args.pid) && validNonEmpty(args.nativeId);
+  }
+  if (cmd === "restart_app") {
+    if (!hasRule("input")) return false;
+    return keys.every(k => ["command", "action", "pid", "nativeId", "appId"].includes(k)) &&
+      validPid(args.pid) && validNonEmpty(args.nativeId) && validNonEmpty(args.appId, 512);
+  }
+  if (cmd === "launch_app") {
+    if (!hasRule("input")) return false;
+    return keys.every(k => ["command", "action", "appId"].includes(k)) &&
+      validNonEmpty(args.appId, 512) && !/[\\/]/.test(String(args.appId)) &&
+      !/^[a-z][a-z0-9+.-]*:/i.test(String(args.appId)) && !String(args.appId).includes("..");
+  }
+  if (cmd === "plan_package_change") {
+    if (!hasRule("input")) return false;
+    const allowed = new Set(["command", "action", "packageAction", "packageId", "source", "version"]);
+    return keys.every(k => allowed.has(k)) &&
+      ["install", "uninstall", "reinstall", "update"].includes(String(args.packageAction ?? "")) &&
+      validNonEmpty(args.packageId, 128);
+  }
+  if (cmd === "apply_package_change") {
+    if (!hasRule("input")) return false;
+    const allowed = new Set(["command", "action", "approvalRequestId", "operationDigest", "invocationId"]);
+    return keys.every(k => allowed.has(k)) && validNonEmpty(args.approvalRequestId, 128) &&
+      validHex64(args.operationDigest) && validNonEmpty(args.invocationId, 128);
+  }
+  return false;
 }
 const CERTIFIED_LAN_INVENTORY = new Set([
   "superagent_lan_list_devices", "superagent_device_list",
@@ -824,8 +922,40 @@ function certifiedManagedChromeLaunch(args:Args|undefined):boolean {
 }
 function certifiedWorktreeMetadata(args:Args|undefined):boolean {
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
-  if(args.action!=="list")return false;
+  const action=args.action===undefined?"list":args.action;
+  if(action!=="list")return false;
   return Object.keys(args).every(key=>["action","workspace","projectId"].includes(key));
+}
+function certifiedWorktreeWorkspaceAction(
+  args: Args | undefined,
+  workspace: string,
+  policy: PersistentAccessPolicy,
+  identity: ExecutableIdentity,
+): boolean {
+  if (!args || typeof args !== "object" || Array.isArray(args) || !Array.isArray(policy.rules)) return false;
+  const action = typeof args.action === "string" ? args.action : "";
+  if (action !== "remove" && action !== "delete") return false;
+  if (Object.keys(args).some(key => !["action", "id", "superagentId", "workspace", "projectId"].includes(key))) return false;
+  const id = typeof args.id === "string" ? args.id : typeof args.superagentId === "string" ? args.superagentId : "";
+  if (!id || id.length > 128 || /[\\/]|\.\.|[\u0000-\u001f\u007f]/.test(id)) return false;
+  const targetDirRaw = typeof args.workspace === "string" && args.workspace ? args.workspace : workspace;
+  if (!path.isAbsolute(targetDirRaw)) return false;
+  const root = absoluteCanonical(".", targetDirRaw);
+  if (!root) return false;
+  const requiredOps: FileOperation[] = ["read", "write", "delete"];
+  const allowed = requiredOps.every(op => policy.rules.some(rule =>
+    rule.kind === "file" && rule.effect === "allow" && sameGitApp(rule.app, identity) &&
+    rule.scope.recursive && rule.operations.includes(op) &&
+    gitPathWithin(rule.scope.path, root, identity.platform),
+  ));
+  if (!allowed) return false;
+  const overlapsDenied = policy.rules.some(rule =>
+    rule.kind === "file" && rule.effect === "deny" && sameGitApp(rule.app, identity) &&
+    rule.operations.some(op => requiredOps.includes(op)) &&
+    (gitPathWithin(root, rule.scope.path, identity.platform) ||
+     gitPathWithin(rule.scope.path, root, identity.platform)),
+  );
+  return !overlapsDenied;
 }
 function certifiedDelegateHistorySync(args: Args | undefined): boolean {
   if (!args || typeof args !== "object" || Array.isArray(args)) return false;
@@ -850,7 +980,7 @@ export function describePermanentFileToolReadiness(name:string):string {
   if(name==="superagent_tool_execute")
     return "Depends on the exact nested target and its arguments; the target is reauthorized independently.";
   if(name==="superagent_desktop_ui")
-    return "Only probe, get_active_window, bounded list_windows/find_window/list_installed_apps, live_inventory, and inspect_security_prompts (without extra arguments) are certified. inspect_window returns UI content even without an image; open, snapshot, focus_window and input remain blocked under v2 until host-native file-aware mediation is implemented. MCP Execute approval is separate.";
+    return "Only probe, get_active_window, list_monitors, bounded list_windows/find_window/list_installed_apps, live_inventory, inspect_security_prompts, and owned live_stop/close are certified without app rules. Window session/content/input/lifecycle commands (including launch_app after AUMID executable SHA-256 verification) require matching permanent desktop allow rules in Tray Active Rules (and MCP Execute approval does not replace host-native mediation).";
   if(name==="superagent_chrome_cdp_observe")
     return "Only list_targets or transport_status with exact managed/Delegate arguments; HTTP(S) tab metadata is filtered, with no DOM read, navigation, evaluate, upload, or file:// access.";
   if(name==="superagent_chrome_cdp_web")
@@ -1020,7 +1150,11 @@ export function registeredFileToolGate(
   if(call.name==="superagent_use_skill"&&certifiedSkillAccess(call.name,call.args))return null;
   if((call.name==="superagent_list_files"||call.name==="superagent_find_files") &&
      certifiedRegistryAwareDiscovery(call.name,call.args))return null;
-  if(call.name==="superagent_manage_worktrees"&&certifiedWorktreeMetadata(call.args))return null;
+  if(call.name==="superagent_manage_worktrees"){
+    if(certifiedWorktreeMetadata(call.args))return null;
+    if(certifiedWorktreeWorkspaceAction(call.args,workspace,policy,identity))return null;
+    return "Worktree management requires action='list' or recursive native host read/write/delete grants on the workspace root (with no overlapping deny rules) for removal.";
+  }
   if(call.name==="superagent_launch_chrome"&&certifiedManagedChromeLaunch(call.args))return null;
   if(MIXED_ACTION_TOOLS.has(call.name)&&certifiedMixedAction(call.name,call.args))return null;
   if(call.name==="superagent_git_action"){
@@ -1068,14 +1202,14 @@ export function registeredFileToolGate(
   if(certifiedSupervisedCoreMutation(call.name,call.args))return null;
   if(call.name === "superagent_desktop_ui"){
     if(certifiedDesktopDiscovery(call.args))return null;
+    if(certifiedDesktopSessionCleanup(call.args))return null;
+    if(certifiedRegisteredDesktopCommand(call.args,policy))return null;
     // A human-granted MCP Execute capability cannot override the independent
     // host permanent-file policy. Distinguish a malformed metadata command
     // from an inherently uncertified content/input command without echoing
     // potentially sensitive caller arguments or paths.
-    const command=call.args && typeof call.args.command==="string"
-      ? call.args.command : call.args && typeof call.args.action==="string"
-        ? call.args.action : "";
-    if(CERTIFIED_DESKTOP_DISCOVERY.has(command))
+    const command=desktopCommandName(call.args);
+    if(CERTIFIED_DESKTOP_DISCOVERY.has(command)||command==="live_stop"||command==="close")
       return "Desktop UI metadata command has unsupported arguments for permanent file-policy certification; use only the documented fields.";
     return "Desktop UI window content, session, lifecycle and input commands are not certified for permanent file access restrictions; MCP Execute approval does not replace host-native file-aware mediation.";
   }
