@@ -437,6 +437,41 @@ foreach ($item in $paths) {
     }
   }
 }
+$pkgs = @{}
+Get-AppxPackage -ErrorAction SilentlyContinue | Where-Object { -not $_.IsFramework -and $_.InstallLocation } | ForEach-Object {
+  if ($_.PackageFamilyName) { $pkgs[$_.PackageFamilyName] = $_.InstallLocation }
+}
+Get-StartApps -ErrorAction SilentlyContinue | ForEach-Object {
+  $aid = [string]$_.AppID
+  $idx = $aid.IndexOf('!')
+  if ($idx -gt 0) {
+    $fam = $aid.Substring(0, $idx)
+    $loc = $pkgs[$fam]
+    if ($loc) {
+      $mf = Join-Path $loc 'AppxManifest.xml'
+      if (Test-Path -LiteralPath $mf -PathType Leaf) {
+        try {
+          [xml]$x = Get-Content -LiteralPath $mf -Raw -ErrorAction Stop
+          $appIdPart = $aid.Substring($idx + 1)
+          $nodes = @($x.Package.Applications.Application)
+          $match = $nodes | Where-Object { $_.Id -eq $appIdPart -and $_.Executable } | Select-Object -First 1
+          if (-not $match) { $match = $nodes | Where-Object { $_.Executable } | Select-Object -First 1 }
+          if ($match -and $match.Executable) {
+            $exe = Join-Path $loc $match.Executable
+            if ($exe.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $exe -PathType Leaf)) {
+              $s = [System.IO.File]::OpenRead($exe)
+              $s.Dispose()
+              $appName = ([string]$_.Name).Trim()
+              if ($appName) {
+                $list += [pscustomobject]@{ name = $appName; executablePath = $exe }
+              }
+            }
+          }
+        } catch {}
+      }
+    }
+  }
+}
 $list | ConvertTo-Json -Compress
 "#;
         if let Ok(output) = std::process::Command::new("powershell.exe")

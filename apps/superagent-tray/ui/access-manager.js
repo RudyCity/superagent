@@ -1391,21 +1391,26 @@
       const buttons = make("div", "access-mcp-tool-actions");
       if (tool.approvalKind === "project") {
         let actionSelect = null;
-        if (tool.capabilitiesByAction) {
-          actionSelect = select("access-mcp-tool-git-action", [
-            ["status","Git status (Read)"], ["diff","Git diff (Read)"], ["log","Git log (Read)"],
-            ["add","Git add (Git)"], ["commit","Git commit (Git)"],
-            ["restore","Git restore (Git)"], ["clean","Git clean (Git)"],
-          ]);
-          actionSelect.id = "access-mcp-tool-git-action-" + tool.name;
+        const actionEntries = tool.capabilitiesByAction && typeof tool.capabilitiesByAction === "object"
+          ? Object.entries(tool.capabilitiesByAction).filter(([, cap]) => typeof cap === "string" && cap)
+          : [];
+        if (actionEntries.length) {
+          const isGitTool = tool.name.includes("git");
+          actionSelect = select(
+            "access-mcp-tool-git-action-" + tool.name,
+            actionEntries.map(([act, cap]) => [
+              act,
+              (isGitTool ? "Git " : "") + act + " (" + cap.charAt(0).toUpperCase() + cap.slice(1) + ")",
+            ])
+          );
           actionSelect.setAttribute("aria-label", "Pilih operasi untuk " + tool.name);
           const showAction = () => {
-            const action = actionSelect.value;
-            const cap = tool.capabilitiesByAction[action];
-            const state = tool.actionGrantStates?.[action] || tool.grantState;
-            grant.textContent = "Git " + action + " memerlukan " + cap + ". " +
-              (state === "granted" ? "Akses proyek aktif dalam scope proyek; Aturan Aktif berlaku sebagai perlindungan kedua." :
-                state === "missing" ? "Akses proyek untuk tindakan ini belum diberikan (default ditolak)." :
+            const act = actionSelect.value;
+            const cap = tool.capabilitiesByAction[act];
+            const st = tool.actionGrantStates?.[act] || tool.grantState;
+            grant.textContent = (isGitTool ? "Git " : "Aksi ") + act + " memerlukan " + cap + ". " +
+              (st === "granted" ? "Akses proyek aktif dalam scope proyek; Aturan Aktif berlaku sebagai perlindungan kedua." :
+                st === "missing" ? "Akses proyek untuk tindakan ini belum diberikan (default ditolak)." :
                   toolGrantMessage(tool));
           };
           actionSelect.addEventListener("change", showAction);
@@ -1421,8 +1426,10 @@
         buttons.append(review);
       }
       if (tool.hostBlocked || tool.operationStatus === "file_rules_required") {
+        const isDesktopTool = tool.name === "superagent_desktop_ui" ||
+          String(tool.hostRequirement || "").toLowerCase().includes("desktop");
         const inspect = action("Periksa Kebijakan Host", "access-audit-refresh", () => {
-          setRuleFilter("file");
+          setRuleFilter(isDesktopTool ? "desktop" : "file");
           setActiveTab("rules");
           status("Aturan host terpisah dari grant proyek. Tool uncertified memerlukan implementasi sertifikasi; membuat aturan Allow tidak otomatis memperbaikinya.", "warning");
         });
@@ -2100,7 +2107,7 @@
     ]);
     const reqPathInput = make("input", "access-search");
     reqPathInput.id = "access-req-rule-path";
-    reqPathInput.placeholder = "Pilih folder, file, atau aplikasi...";
+    reqPathInput.placeholder = "Pilih folder atau file...";
     const pickDirBtn = action("Pilih Folder", "access-revoke", async () => {
       const chosen = await invoke("pick_permanent_access_path", { directory: true }).catch(() => null);
       if (typeof chosen === "string" && chosen) {
@@ -2108,6 +2115,7 @@
         reqRecCheck.firstChild.checked = true;
       }
     });
+    pickDirBtn.id = "access-req-pick-dir";
     const pickFileBtn = action("Pilih File", "access-revoke", async () => {
       const chosen = await invoke("pick_permanent_access_path", { directory: false }).catch(() => null);
       if (typeof chosen === "string" && chosen) {
@@ -2115,8 +2123,17 @@
         reqRecCheck.firstChild.checked = false;
       }
     });
+    pickFileBtn.id = "access-req-pick-file";
+    const pickExeBtn = action("Pilih .exe", "access-revoke", async () => {
+      const chosen = await invoke("pick_permanent_access_executable").catch(() => null);
+      if (typeof chosen === "string" && chosen) {
+        reqPathInput.value = chosen;
+      }
+    });
+    pickExeBtn.id = "access-req-pick-exe";
+    pickExeBtn.hidden = true;
     const pathRow = make("div", "access-project-target access-req-span-all");
-    pathRow.append(reqPathInput, pickDirBtn, pickFileBtn);
+    pathRow.append(reqPathInput, pickDirBtn, pickFileBtn, pickExeBtn);
 
     const reqRecCheck = checkbox("access-req-rule-recursive", "Berlaku rekursif untuk subfolder", true);
     const reqReasonInput = make("input", "access-search");
@@ -2124,21 +2141,60 @@
     reqReasonInput.placeholder = "Alasan permintaan aturan aktif...";
 
     const opsRow = make("div", "access-req-rule-ops access-req-span-all");
+    const fileOpsWrap = make("div", "access-req-rule-ops");
+    fileOpsWrap.id = "access-req-ops-file";
     const opRead = checkbox("access-req-op-read", "read", true);
     const opWrite = checkbox("access-req-op-write", "write", true);
     const opDelete = checkbox("access-req-op-delete", "delete", false);
-    opsRow.append(opRead, opWrite, opDelete);
+    fileOpsWrap.append(opRead, opWrite, opDelete);
+
+    const desktopOpsWrap = make("div", "access-req-rule-ops");
+    desktopOpsWrap.id = "access-req-ops-desktop";
+    desktopOpsWrap.hidden = true;
+    const opView = checkbox("access-req-op-view", "view", true);
+    const opInput = checkbox("access-req-op-input", "input", false);
+    desktopOpsWrap.append(opView, opInput);
+    opsRow.append(fileOpsWrap, desktopOpsWrap);
+
+    const syncReqFormKind = () => {
+      const isDesktop = reqKindSelect.value === "desktop";
+      pickDirBtn.hidden = isDesktop;
+      pickFileBtn.hidden = isDesktop;
+      pickExeBtn.hidden = !isDesktop;
+      reqRecCheck.hidden = isDesktop;
+      if (isDesktop) {
+        reqRecCheck.firstChild.checked = false;
+      }
+      fileOpsWrap.hidden = isDesktop;
+      desktopOpsWrap.hidden = !isDesktop;
+      reqPathInput.placeholder = isDesktop
+        ? "Pilih file .exe aplikasi desktop..."
+        : "Pilih folder atau file...";
+    };
+    reqKindSelect.addEventListener("change", () => {
+      reqPathInput.value = "";
+      syncReqFormKind();
+    });
+    syncReqFormKind();
 
     const submitRuleReqBtn = action("Kirim ke Pusat Permintaan & Notifikasi OS", "access-submit access-req-span-all", async () => {
+      const isDesktop = reqKindSelect.value === "desktop";
       const targetPath = reqPathInput.value.trim();
       if (!targetPath) {
-        status("Pilih path folder/file terlebih dahulu.", "warning");
+        status(isDesktop
+          ? "Pilih file .exe aplikasi terlebih dahulu."
+          : "Pilih path folder/file terlebih dahulu.", "warning");
         return;
       }
       const ops = [];
-      if (opRead.firstChild.checked) ops.push("read");
-      if (opWrite.firstChild.checked) ops.push("write");
-      if (opDelete.firstChild.checked) ops.push("delete");
+      if (isDesktop) {
+        if (opView.firstChild.checked) ops.push("view");
+        if (opInput.firstChild.checked) ops.push("input");
+      } else {
+        if (opRead.firstChild.checked) ops.push("read");
+        if (opWrite.firstChild.checked) ops.push("write");
+        if (opDelete.firstChild.checked) ops.push("delete");
+      }
       if (!ops.length) {
         status("Pilih minimal satu operasi.", "warning");
         return;
@@ -2150,12 +2206,14 @@
           kind: reqKindSelect.value,
           effect: "allow",
           targetPath,
-          recursive: Boolean(reqRecCheck.firstChild.checked),
+          recursive: isDesktop ? false : Boolean(reqRecCheck.firstChild.checked),
           operations: ops,
           reason: reqReasonInput.value.trim() || "Permintaan aturan aktif baru",
         });
         reqPathInput.value = "";
         reqReasonInput.value = "";
+        reqKindSelect.value = "file";
+        syncReqFormKind();
         ruleReqForm.hidden = true;
         toggleNewRuleReq.textContent = "+ Ajukan Permintaan Aturan Aktif";
         await refreshPendingRuleRequests();

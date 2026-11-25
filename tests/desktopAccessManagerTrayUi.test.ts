@@ -1709,4 +1709,116 @@ describe("Access history placement and responsive layout", () => {
     await flush();
     expect(ui.document.getElementById("access-req-subtab-all")!.textContent).toBe("Semua (0)");
   });
+
+  it("switches Request Center active-rule form to view/input and exe picker for desktop rules", async () => {
+    const ui = boot(true, { pendingRuleRequests: [] });
+    await flush();
+
+    ui.document.getElementById("access-nav-tab-requests")!.click();
+    ui.document.getElementById("access-req-new-rule-toggle")!.click();
+
+    const kindSelect = ui.document.getElementById("access-req-rule-kind")!;
+    const pickDir = ui.document.getElementById("access-req-pick-dir")!;
+    const pickFile = ui.document.getElementById("access-req-pick-file")!;
+    const pickExe = ui.document.getElementById("access-req-pick-exe")!;
+    const fileOps = ui.document.getElementById("access-req-ops-file")!;
+    const desktopOps = ui.document.getElementById("access-req-ops-desktop")!;
+    const recWrap = ui.document.getElementById("access-req-rule-recursive")!.parentNode!;
+
+    expect(pickDir.hidden).toBe(false);
+    expect(pickExe.hidden).toBe(true);
+    expect(desktopOps.hidden).toBe(true);
+
+    kindSelect.value = "desktop";
+    kindSelect.change();
+
+    expect(pickDir.hidden).toBe(true);
+    expect(pickFile.hidden).toBe(true);
+    expect(pickExe.hidden).toBe(false);
+    expect(fileOps.hidden).toBe(true);
+    expect(desktopOps.hidden).toBe(false);
+    expect(recWrap.hidden).toBe(true);
+
+    pickExe.click();
+    await flush();
+    expect(ui.document.getElementById("access-req-rule-path")!.value).toBe("C:\\Apps\\Notepad.exe");
+
+    ui.document.getElementById("access-req-op-input")!.checked = true;
+    ui.document.getElementById("access-req-rule-reason")!.value = "Allow Notepad desktop launch";
+
+    const form = ui.document.getElementById("access-req-rule-form")!;
+    const submitBtn = form.children[form.children.length - 1];
+    submitBtn.click();
+    await flush();
+
+    const submitCall = ui.calls.find(c => c.name === "submit_active_rule_request");
+    expect(submitCall?.args).toMatchObject({
+      kind: "desktop",
+      targetPath: "C:\\Apps\\Notepad.exe",
+      recursive: false,
+      operations: ["view", "input"],
+    });
+  });
+
+  it("renders dynamic capabilitiesByAction dropdowns for non-Git tools and routes desktop host policy button to desktop filter", async () => {
+    const ui = boot(true, {
+      identities: [{
+        identityHandle: "agent-1",
+        subject: "Gemini MCP",
+        ownerConnectionName: "Gemini",
+      }],
+      projects: [{ projectId: "superagent", name: "SuperAgent", type: "local", target: "D:/superagent", enabled: true }],
+      tools: [
+        {
+          name: "superagent_manage_worktrees",
+          description: "Manage git worktrees",
+          risk: "dangerous",
+          approvalKind: "project",
+          capability: null,
+          capabilitiesByAction: { list: "read", create: "worktree", merge: "git" },
+          hostReadiness: "certified",
+          hostRequirement: "Project root scope.",
+          hostBlocked: false,
+          operationStatus: "check_action_arguments",
+          oauthScopesRequired: ["mcp:tools", "mcp:tools:write"],
+          grantState: "action_dependent",
+        },
+        {
+          name: "superagent_desktop_ui",
+          description: "Desktop perception and app lifecycle",
+          risk: "dangerous",
+          approvalKind: "project",
+          capability: "execute",
+          hostReadiness: "action_dependent",
+          hostRequirement: "Requires permanent desktop rule for open/input/launch_app.",
+          hostBlocked: true,
+          operationStatus: "check_action_arguments",
+          oauthScopesRequired: ["mcp:tools", "mcp:tools:write"],
+          grantState: "choose_identity_project",
+        },
+      ],
+    });
+    await flush();
+
+    const identity = ui.document.getElementById("access-mcp-ident-select")!;
+    const project = ui.document.getElementById("access-mcp-proj-select")!;
+    identity.value = "agent-1";
+    project.value = "superagent";
+    identity.change();
+    project.change();
+    await flush();
+
+    const wtSelect = ui.document.getElementById("access-mcp-tool-git-action-superagent_manage_worktrees")!;
+    expect(wtSelect.children.map(o => o.value)).toEqual(["list", "create", "merge"]);
+    wtSelect.value = "create";
+    wtSelect.change();
+
+    ui.document.getElementById("access-mcp-tool-review-superagent_manage_worktrees")!.click();
+    expect(ui.document.getElementById("access-cap-worktree")!.checked).toBe(true);
+    expect(ui.document.getElementById("access-cap-read")!.checked).toBe(false);
+
+    ui.document.getElementById("access-mcp-tool-host-superagent_desktop_ui")!.click();
+    expect(ui.document.getElementById("access-pane-rules")!.hidden).toBe(false);
+    expect(ui.document.getElementById("access-tab-desktop")!.className).toContain("active");
+  });
 });
