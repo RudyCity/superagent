@@ -594,6 +594,7 @@ function certifiedGitWorkspaceAction(
   args:Args|undefined,workspace:string,policy:PersistentAccessPolicy,identity:ExecutableIdentity,
 ):boolean {
   if(!args||typeof args!=="object"||Array.isArray(args))return false;
+  if(!Array.isArray(policy.rules))return false;
   const action=typeof args.action==="string"?args.action:"";
   const operations=Object.prototype.hasOwnProperty.call(GIT_WORKSPACE_EFFECTS,action)
     ? GIT_WORKSPACE_EFFECTS[action] : undefined;
@@ -654,6 +655,7 @@ function certifiedExecCommandWorkspaceAction(
   identity: ExecutableIdentity,
 ): boolean {
   if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+  if (!Array.isArray(policy.rules)) return false;
 
   if (typeof args.commandId === "string" && args.commandId.trim()) {
     if (!path.isAbsolute(workspace)) return false;
@@ -718,6 +720,7 @@ function certifiedWorkspaceGrepAction(
   identity: ExecutableIdentity,
 ): boolean {
   if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+  if (!Array.isArray(policy.rules)) return false;
   if (Array.isArray(args.filePaths)) return false;
 
   const query = typeof args.query === "string" ? args.query
@@ -765,6 +768,7 @@ function certifiedCliBridgeWorkspaceAction(
   identity: ExecutableIdentity,
 ): boolean {
   if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+  if (!Array.isArray(policy.rules)) return false;
 
   const targetDirRaw = typeof args.cwd === "string" && args.cwd
     ? args.cwd

@@ -556,4 +556,16 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     expect(registeredFileToolGate({name:"read",args:{filePaths:["src/main.ts"]}},a.root,opts))
       .toMatch(/identity/);
   });
+  it("fails closed without throwing when a registry object omits rules",()=>{
+    const a=setup();
+    const opts={registry:()=>({version:2,defaultEffect:"deny"} as any),identity:a.identity};
+    expect(registeredFileToolGate({name:"superagent_exec_command",args:{command:"echo hi"}},a.root,opts))
+      .toMatch(/not certified/i);
+    expect(registeredFileToolGate({name:"superagent_cli_bridge",args:{action:"run",prompt:"hi"}},a.root,opts))
+      .toMatch(/not certified/i);
+    expect(registeredFileToolGate({name:"superagent_grep_search",args:{query:"needle"}},a.root,opts))
+      .toMatch(/not certified/i);
+    expect(registeredFileToolGate({name:"superagent_git_action",args:{action:"status"}},a.root,opts))
+      .toMatch(/requires an exact project workspace/i);
+  });
 });

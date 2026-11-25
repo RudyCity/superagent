@@ -8,6 +8,14 @@ import {
 import { generateBootstrapCode } from "../src/core/mcp/mcpOAuthRoutes.js";
 import { randomToken } from "../src/core/mcp/mcpOAuthStore.js";
 import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
+import { ACTIVE_RULE_REQUESTS_FILENAME } from "../src/core/desktopUi/activeFileAccessRequestStore.js";
+import { PERMANENT_ACCESS_FILENAME } from "../src/core/desktopUi/permanentRegistryStore.js";
+import {
+  approveProjectAccessRequest,
+  listProjectAccessRequests,
+} from "../src/core/project/projectAccessRequestStore.js";
+import { registerProject } from "../src/core/project/projectRegistry.js";
+import { identityOfSelf } from "../src/core/tools/registeredFileToolGate.js";
 
 const BASE = "http://127.0.0.1";
 const CALLBACK = "http://127.0.0.1/oauth-test-callback";
@@ -322,4 +330,233 @@ describe("Hermes Phase 5 OAuth over loopback HTTP/MCP", () => {
     expect(handle.oauthStore!.verifyAccessToken(token)?.resource).toBe(BASE + "/mcp");
     expect(handle.oauthStore!.verifyAccessToken(token,"https://foreign.example/mcp")).toBeNull();
   });
+
+  it("advertises all three access-request tools at connection start and queues pending Tray requests without auto-granting", async () => {
+    const previousConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
+    const configDir = path.join(root, "access-e2e-config");
+    const projectDir = path.join(root, "access-e2e-project");
+    const targetFile = path.join(projectDir, "artifact.txt");
+    const targetExe = path.join(configDir, process.platform === "win32" ? "viewer.exe" : "viewer");
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.writeFileSync(targetFile, "protected-e2e-content", "utf8");
+    process.env.SUPERAGENT_CONFIG_DIR = configDir;
+
+    const parseSseResult = (body: string) => {
+      const data = body.split(/\r?\n/).find((line) => line.startsWith("data: "));
+      expect(data, "MCP response must contain a JSON-RPC SSE message").toBeDefined();
+      const response = JSON.parse(data!.slice(6));
+      expect(response.error).toBeUndefined();
+      return response.result;
+    };
+
+    try {
+      registerProject({
+        id: "e2e-access-proj",
+        name: "E2E Access Project",
+        type: "local",
+        root: projectDir,
+      });
+
+      const reader = await issue("client-a", ["mcp:tools"]);
+      const sessionId = await initialize(reader);
+
+      const listRes = await post(reader, rpc(70, "tools/list"), sessionId);
+      expect(listRes.status).toBe(200);
+      const listedNames = (parseSseResult(listRes.body).tools as Array<{ name: string }>).map((t) => t.name);
+      expect(listedNames).toEqual(expect.arrayContaining([
+        "superagent_request_project_access",
+        "superagent_request_file_access",
+        "superagent_request_application_access",
+      ]));
+
+      const projCall = await post(reader, rpc(71, "tools/call", {
+        name: "superagent_request_project_access",
+        arguments: {
+          projectId: "e2e-access-proj",
+          capabilities: ["read"],
+          reason: "Inspect project files after operator approval.",
+        },
+      }), sessionId);
+      expect(projCall.status).toBe(200);
+      const projPayload = JSON.parse(parseSseResult(projCall.body).content[0].text);
+      expect(projPayload).toMatchObject({
+        projectId: "e2e-access-proj",
+        status: "pending",
+        code: "APPROVAL_PENDING",
+      });
+
+      const fileCall = await post(reader, rpc(72, "tools/call", {
+        name: "superagent_request_file_access",
+        arguments: {
+          filePath: targetFile,
+          operations: ["read"],
+          reason: "Read one selected artifact after Tray approval.",
+        },
+      }), sessionId);
+      expect(fileCall.status).toBe(200);
+      const filePayload = JSON.parse(parseSseResult(fileCall.body).content[0].text);
+      expect(filePayload).toMatchObject({
+        status: "pending",
+        kind: "file",
+        grantCreated: false,
+        filePath: targetFile,
+      });
+
+      const appCall = await post(reader, rpc(73, "tools/call", {
+        name: "superagent_request_application_access",
+        arguments: {
+          executablePath: targetExe,
+          operations: ["view"],
+          reason: "Inspect the selected desktop application window.",
+        },
+      }), sessionId);
+      expect(appCall.status).toBe(200);
+      const appPayload = JSON.parse(parseSseResult(appCall.body).content[0].text);
+      expect(appPayload).toMatchObject({
+        status: "pending",
+        kind: "desktop",
+        grantCreated: false,
+        executablePath: targetExe,
+      });
+
+      const pendingProjectRequests = listProjectAccessRequests();
+      expect(pendingProjectRequests).toHaveLength(1);
+      expect(pendingProjectRequests[0]).toMatchObject({
+        projectId: "e2e-access-proj",
+        status: "pending",
+      });
+
+      const queueEntries = JSON.parse(
+        fs.readFileSync(path.join(configDir, ACTIVE_RULE_REQUESTS_FILENAME), "utf8"),
+      ) as Array<{ kind: string; status: string }>;
+      expect(queueEntries).toHaveLength(2);
+      expect(queueEntries.map((entry) => ({
+        kind: entry.kind,
+        status: entry.status,
+      }))).toEqual(expect.arrayContaining([
+        { kind: "file", status: "pending" },
+        { kind: "desktop", status: "pending" },
+      ]));
+
+      const readBeforeApproval = await post(reader, rpc(74, "tools/call", {
+        name: "superagent_read_files",
+        arguments: { files: [targetFile] },
+      }), sessionId);
+      expect(readBeforeApproval.body).not.toContain("protected-e2e-content");
+    } finally {
+      if (previousConfigDir === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+      else process.env.SUPERAGENT_CONFIG_DIR = previousConfigDir;
+    }
+  }, 30000);
+
+  it("allows reading an approved file after operator project approval and permanent rule, while keeping unapproved files and writes denied", async () => {
+    const previousConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
+    const configDir = path.join(root, "approved-e2e-config");
+    const projectDir = path.join(root, "approved-e2e-project");
+    const allowedFile = path.join(projectDir, "allowed.txt");
+    const unapprovedFile = path.join(projectDir, "blocked.txt");
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.writeFileSync(allowedFile, "approved-e2e-secret", "utf8");
+    fs.writeFileSync(unapprovedFile, "blocked-e2e-secret", "utf8");
+    process.env.SUPERAGENT_CONFIG_DIR = configDir;
+
+    const parseSseResult = (body: string) => {
+      const data = body.split(/\r?\n/).find((line) => line.startsWith("data: "));
+      expect(data, "MCP response must contain a JSON-RPC SSE message").toBeDefined();
+      const response = JSON.parse(data!.slice(6));
+      expect(response.error).toBeUndefined();
+      return response.result;
+    };
+
+    try {
+      const selfIdentity = identityOfSelf();
+      expect(selfIdentity).not.toBeNull();
+      const canonicalAllowedFile = fs.realpathSync.native(allowedFile).replace(/^\\\\\?\\/, "");
+
+      registerProject({
+        id: "e2e-approved-proj",
+        name: "E2E Approved Project",
+        type: "local",
+        root: projectDir,
+      });
+
+      const writer = await issue("client-a", ["mcp:tools", "mcp:tools:write"]);
+      const sessionId = await initialize(writer);
+
+      const projReq = await post(writer, rpc(80, "tools/call", {
+        name: "superagent_request_project_access",
+        arguments: {
+          projectId: "e2e-approved-proj",
+          capabilities: ["read"],
+          reason: "Read approved artifact in E2E workflow.",
+        },
+      }), sessionId);
+      expect(projReq.status).toBe(200);
+      const reqPayload = JSON.parse(parseSseResult(projReq.body).content[0].text);
+      expect(reqPayload.status).toBe("pending");
+
+      const approval = approveProjectAccessRequest(reqPayload.requestId);
+      expect(approval.success).toBe(true);
+      expect(approval.grant.capabilities).toEqual(["read"]);
+
+      fs.writeFileSync(
+        path.join(configDir, PERMANENT_ACCESS_FILENAME),
+        JSON.stringify({
+          version: 2,
+          defaultEffect: "deny",
+          rules: [
+            {
+              id: "allow-e2e-read",
+              kind: "file",
+              effect: "allow",
+              app: selfIdentity,
+              operations: ["read"],
+              scope: { path: canonicalAllowedFile, recursive: false },
+            },
+          ],
+        }),
+        "utf8",
+      );
+
+      const allowedRead = await post(writer, rpc(81, "tools/call", {
+        name: "superagent_tool_execute",
+        arguments: {
+          name: "superagent_read_files",
+          arguments: { projectId: "e2e-approved-proj", files: [allowedFile] },
+        },
+      }), sessionId);
+      expect(allowedRead.status).toBe(200);
+      expect(allowedRead.body).toContain("approved-e2e-secret");
+
+      const unapprovedRead = await post(writer, rpc(82, "tools/call", {
+        name: "superagent_tool_execute",
+        arguments: {
+          name: "superagent_read_files",
+          arguments: { projectId: "e2e-approved-proj", files: [unapprovedFile] },
+        },
+      }), sessionId);
+      expect(unapprovedRead.body).not.toContain("blocked-e2e-secret");
+
+      const ungrantedWrite = await post(writer, rpc(83, "tools/call", {
+        name: "superagent_tool_execute",
+        arguments: {
+          name: "superagent_write_files",
+          arguments: {
+            projectId: "e2e-approved-proj",
+            files: [{ filePath: allowedFile, content: "mutated" }],
+          },
+        },
+      }), sessionId);
+      expect(ungrantedWrite.body).toMatch(
+        /PROJECT_GRANT_MISSING|HOST_POLICY_BLOCKED|Access denied by host permanent file policy/i,
+      );
+      expect(JSON.parse(ungrantedWrite.body.split(/\r?\n/).find((l) => l.startsWith("data: "))!.slice(6)).result?.isError).toBe(true);
+      expect(fs.readFileSync(allowedFile, "utf8")).toBe("approved-e2e-secret");
+    } finally {
+      if (previousConfigDir === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+      else process.env.SUPERAGENT_CONFIG_DIR = previousConfigDir;
+    }
+  }, 30000);
 });
