@@ -1,14 +1,19 @@
-import {describe,it,expect,afterEach} from "vitest";
+import {describe,it,expect,afterEach,beforeEach} from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {createSuperagentMcpServer,MCP_TOOL_CLASSIFICATION,MCP_TOOL_DEFINITIONS} from "../src/core/mcp/superagentMcpServer.js";
 import {setFullYoloMode,setYoloMode} from "../src/core/permissions.js";
 import {CallToolRequestSchema,ListToolsRequestSchema} from "@modelcontextprotocol/sdk/types.js";
 import {getToolSecuritySchemes} from "../src/core/mcp/mcpToolPolicy.js";
 import {grantProjectAccess} from "../src/core/project/projectAccessPolicy.js";
-import {MCP_CONNECTION_PROJECT_ID} from "../src/core/project/projectAccessRequestStore.js";
+import {registerProject} from "../src/core/project/projectRegistry.js";
 
 const names=["superagent_core_status","superagent_core_plan","superagent_core_restart",
   "superagent_core_rollback","superagent_core_drain"];
 const operator={mode:"oauth" as const,subject:"operator",scopes:["mcp:tools","mcp:tools:write"]};
+let tempConfigDir:string|undefined;
+let previousConfigDir:string|undefined;
 
 function handlers(config:Parameters<typeof createSuperagentMcpServer>[0]){
   const server=createSuperagentMcpServer({authMode:"oauth",getIdentity:()=>operator,...config});
@@ -16,7 +21,25 @@ function handlers(config:Parameters<typeof createSuperagentMcpServer>[0]){
   return {server,list:map.get(ListToolsRequestSchema.shape.method.value),
     call:map.get(CallToolRequestSchema.shape.method.value)};
 }
-afterEach(()=>{setFullYoloMode(false);setYoloMode(false);});
+function registerGrantedWorkspace(){
+  const ws=path.join(tempConfigDir!,"ws");
+  fs.mkdirSync(ws,{recursive:true});
+  registerProject({id:"core-lifecycle-ws",name:"Core Lifecycle WS",type:"local",root:ws});
+  grantProjectAccess(operator,"core-lifecycle-ws",["execute"]);
+  return ws;
+}
+beforeEach(()=>{
+  previousConfigDir=process.env.SUPERAGENT_CONFIG_DIR;
+  tempConfigDir=fs.mkdtempSync(path.join(os.tmpdir(),"sa-core-lifecycle-mcp-"));
+  process.env.SUPERAGENT_CONFIG_DIR=tempConfigDir;
+});
+afterEach(()=>{
+  setFullYoloMode(false);setYoloMode(false);
+  if(previousConfigDir===undefined)delete process.env.SUPERAGENT_CONFIG_DIR;
+  else process.env.SUPERAGENT_CONFIG_DIR=previousConfigDir;
+  if(tempConfigDir)fs.rmSync(tempConfigDir,{recursive:true,force:true});
+  tempConfigDir=undefined;
+});
 describe("Core MCP control: independent auth, gateway, supervisor guard",()=>{
   it("has five classified tools and write-scope for mutating calls",()=>{
     for(const name of names) expect(MCP_TOOL_DEFINITIONS.some(t=>t.name===name)).toBe(true);
@@ -62,9 +85,9 @@ describe("Core MCP control: independent auth, gateway, supervisor guard",()=>{
   });
   it("OAuth write principals may see Core lifecycle tools but still require confirmation",async()=>{
     setYoloMode(true);
-    grantProjectAccess(operator,MCP_CONNECTION_PROJECT_ID,["execute"]);
+    const ws=registerGrantedWorkspace();
     const {server,list,call}=handlers({
-      allowDangerous:true,toolExposure:"gateway",authMode:"oauth",
+      allowDangerous:true,toolExposure:"gateway",authMode:"oauth",workspace:ws,
       getIdentity:()=>({mode:"oauth",subject:"operator",scopes:["mcp:tools","mcp:tools:write"]}),
     });
     try {
@@ -85,8 +108,8 @@ describe("Core MCP control: independent auth, gateway, supervisor guard",()=>{
   });
   it("refuses mutation without confirm or supervised owner; never falls back to process kill",async()=>{
     setYoloMode(true);
-    grantProjectAccess(operator,MCP_CONNECTION_PROJECT_ID,["execute"]);
-    const {server,call}=handlers({allowDangerous:true,toolExposure:"full"});
+    const ws=registerGrantedWorkspace();
+    const {server,call}=handlers({allowDangerous:true,toolExposure:"full",workspace:ws});
     try {
       const denied=await call({method:"tools/call",params:{name:"superagent_core_restart",arguments:{port:19997,operationId:"sample-operation-id-0001",expectedBuildDigest:"a".repeat(64)}}});
       expect(denied.isError).toBe(true);
@@ -101,7 +124,11 @@ describe("Core MCP control: independent auth, gateway, supervisor guard",()=>{
   });
   it("read-only status works with YOLO off and reports missing owner safely",async()=>{
     setYoloMode(false);
-    const {server,call}=handlers({toolExposure:"gateway",
+    const ws=path.join(tempConfigDir!,"ws-read");
+    fs.mkdirSync(ws,{recursive:true});
+    registerProject({id:"core-lifecycle-read",name:"Core Lifecycle Read",type:"local",root:ws});
+    grantProjectAccess(operator,"core-lifecycle-read",["read"]);
+    const {server,call}=handlers({toolExposure:"gateway",workspace:ws,
       getIdentity:()=>({...operator,scopes:["mcp:tools"]})});
     try {
       const result=await call({method:"tools/call",params:{name:names[0],arguments:{port:19997}}});

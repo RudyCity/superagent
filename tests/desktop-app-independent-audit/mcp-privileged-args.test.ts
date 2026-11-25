@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createSuperagentMcpServer } from "../../src/core/mcp/superagentMcpServer.js";
 import { desktopUiSessionManager } from "../../src/core/tools/desktopUiTools.js";
 import { onMcpActivity } from "../../src/core/mcp/mcpActivityBus.js";
@@ -12,6 +15,11 @@ afterEach(() => {
 
 describe("privileged desktop caller data cannot enter telemetry", () => {
   it("redacts top-level and nested operator secrets, installer paths, and app titles", async () => {
+    const prevConfig = process.env.SUPERAGENT_CONFIG_DIR;
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sa-priv-args-"));
+    const ws = path.join(tempRoot, "ws");
+    fs.mkdirSync(ws, { recursive: true });
+    process.env.SUPERAGENT_CONFIG_DIR = tempRoot;
     setYoloMode(true);
     const credentialHash = crypto.randomBytes(32).toString("hex");
     const audits: any[] = [];
@@ -21,6 +29,7 @@ describe("privileged desktop caller data cannot enter telemetry", () => {
       toolExposure: "full",
       allowDangerous: true,
       authMode: "static-bearer",
+      workspace: ws,
       getIdentity: () => ({ mode: "static-bearer", subject: "operator-test", credentialHash }),
       onToolCall: (entry) => audits.push(entry),
     });
@@ -49,7 +58,7 @@ describe("privileged desktop caller data cannot enter telemetry", () => {
             title: secrets[3],
           },
         },
-      })).rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
+      })).rejects.toThrow(/PROJECT_GRANT_MISSING/);
       expect(audits.length).toBeGreaterThan(0);
       for (const event of [...audits, ...activity]) {
         const record = JSON.stringify(event);
@@ -58,6 +67,9 @@ describe("privileged desktop caller data cannot enter telemetry", () => {
     } finally {
       unsubscribe();
       await server.close();
+      if (prevConfig === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+      else process.env.SUPERAGENT_CONFIG_DIR = prevConfig;
+      fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 });

@@ -7,6 +7,8 @@ import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.j
 import { registerProject, updateProject } from "../src/core/project/projectRegistry.js";
 import { hasProjectAccess } from "../src/core/project/projectAccessPolicy.js";
 import { createProjectAccessRequest, approveProjectAccessRequest } from "../src/core/project/projectAccessRequestStore.js";
+import { PERMANENT_ACCESS_FILENAME } from "../src/core/desktopUi/permanentRegistryStore.js";
+import { identityOfSelf } from "../src/core/tools/registeredFileToolGate.js";
 import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
 
 describe("MCP independent project Security Approval", () => {
@@ -49,6 +51,35 @@ describe("MCP independent project Security Approval", () => {
     fs.writeFileSync(path.join(projectA, "from-a.txt"), "alpha");
     fs.writeFileSync(path.join(projectB, "from-b.txt"), "bravo");
     fs.writeFileSync(path.join(projectB, ".env.local"), "TEST_SECRET=private");
+    const selfIdentity = identityOfSelf();
+    if (!selfIdentity) throw new Error("Expected executable identity in test.");
+    const canonical = (p: string) => fs.realpathSync.native(p).replace(/^\\\\\?\\/, "");
+    fs.writeFileSync(
+      path.join(configDir, PERMANENT_ACCESS_FILENAME),
+      JSON.stringify({
+        version: 2,
+        defaultEffect: "deny",
+        rules: [
+          {
+            id: "allow-project-a",
+            kind: "file",
+            effect: "allow",
+            app: selfIdentity,
+            operations: ["read", "write"],
+            scope: { path: canonical(projectA), recursive: true },
+          },
+          {
+            id: "allow-project-b",
+            kind: "file",
+            effect: "allow",
+            app: selfIdentity,
+            operations: ["read", "write"],
+            scope: { path: canonical(projectB), recursive: true },
+          },
+        ],
+      }),
+      "utf8",
+    );
     registerProject({ id: projectAId, name: "Project A", type: "local", root: projectA });
     registerProject({ id: projectBId, name: "Project B", type: "local", root: projectB });
     setYoloMode(false);

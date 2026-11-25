@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createSuperagentMcpServer } from "../../src/core/mcp/superagentMcpServer.js";
 import { MCP_GATEWAY_TOOL_NAMES } from "../../src/core/mcp/mcpToolGateway.js";
 import { onMcpActivity } from "../../src/core/mcp/mcpActivityBus.js";
 import { setYoloMode } from "../../src/core/permissions.js";
 import { desktopUiSessionManager } from "../../src/core/tools/desktopUiTools.js";
 import { grantProjectAccess } from "../../src/core/project/projectAccessPolicy.js";
-import { MCP_CONNECTION_PROJECT_ID } from "../../src/core/project/projectAccessRequestStore.js";
+import { registerProject } from "../../src/core/project/projectRegistry.js";
 
 const privateTitle = "Private-Window-Document";
 const privateQuery = "Private-Search-Text";
@@ -25,16 +28,23 @@ describe("desktop MCP activity privacy", () => {
   for (const routed of [false, true]) {
     it(routed ? "redacts gateway-routed desktop output and caller arguments" :
       "redacts directly invoked desktop output and caller arguments", async () => {
+      const prevConfig = process.env.SUPERAGENT_CONFIG_DIR;
+      const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sa-desktop-audit-privacy-"));
+      const ws = path.join(tempRoot, "ws");
+      fs.mkdirSync(ws, { recursive: true });
+      process.env.SUPERAGENT_CONFIG_DIR = tempRoot;
       setYoloMode(true);
       const audit: any[] = [];
       const activity: any[] = [];
       const unsubscribe = onMcpActivity((event) => activity.push(event));
       const identity = {mode:"static-bearer" as const,subject:"privacy-test",credentialHash:"d".repeat(64)};
-      grantProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,["execute"]);
+      registerProject({id:"desktop-privacy-ws",name:"Desktop Privacy WS",type:"local",root:ws});
+      grantProjectAccess(identity,"desktop-privacy-ws",["execute"]);
       const server = createSuperagentMcpServer({
         toolExposure: routed ? "gateway" : "full",
         allowDangerous: true,
         authMode: "static-bearer",
+        workspace: ws,
         getIdentity: () => identity,
         onToolCall: (event) => audit.push(event),
       });
@@ -80,6 +90,9 @@ describe("desktop MCP activity privacy", () => {
       } finally {
         unsubscribe();
         await server.close();
+        if (prevConfig === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+        else process.env.SUPERAGENT_CONFIG_DIR = prevConfig;
+        fs.rmSync(tempRoot, { recursive: true, force: true });
       }
     });
   }

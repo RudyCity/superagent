@@ -420,20 +420,27 @@ describe("per-session transport isolation", () => {
   });
 
   it("persists workspace switches for one initialized session without changing another session", async () => {
+    const prevConfig = process.env.SUPERAGENT_CONFIG_DIR;
+    const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "mcp-session-workspaces-")));
+    const configDir = path.join(root, "config");
+    const projectA = path.join(root, "project-a");
+    const projectB = path.join(root, "project-b");
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.mkdirSync(projectA, { recursive: true });
+    fs.mkdirSync(projectB, { recursive: true });
+    process.env.SUPERAGENT_CONFIG_DIR = configDir;
     setYoloMode(true);
     const testHandle = await startMcpHttpServer({ port: 0, bearerToken: token, allowDangerous: true });
     const testUrl = `http://127.0.0.1:${testHandle.port}${MCP_HTTP_PATH}`;
-    const root = fs.mkdtempSync(path.join(process.cwd(), ".tmp-mcp-session-workspaces-"));
-    const projectA = path.join(root, "project-a");
-    const projectB = path.join(root, "project-b");
+    const projectIdDefault = `session-cwd-${process.pid}-${Date.now()}`;
     const projectIdA = `session-a-${process.pid}-${Date.now()}`;
     const projectIdB = `session-b-${process.pid}-${Date.now()}`;
-    fs.mkdirSync(projectA, { recursive: true });
-    fs.mkdirSync(projectB, { recursive: true });
+    registerProject({ id: projectIdDefault, name: "Session CWD", type: "local", root: process.cwd() });
     registerProject({ id: projectIdA, name: "Session Workspace A", type: "local", root: projectA });
     registerProject({ id: projectIdB, name: "Session Workspace B", type: "local", root: projectB });
     const bearerIdentity = { mode: "static-bearer" as const, subject: "bearer",
       credentialHash: crypto.createHash("sha256").update(token).digest("hex") };
+    grantProjectAccess(bearerIdentity, projectIdDefault, ["read"]);
     grantProjectAccess(bearerIdentity, projectIdA, ["read"]);
     grantProjectAccess(bearerIdentity, projectIdB, ["read"]);
 
@@ -496,10 +503,13 @@ describe("per-session transport isolation", () => {
       expect(concurrentB).toContain(process.cwd());
       expect(concurrentB).not.toContain(projectA);
     } finally {
+      removeProject(projectIdDefault);
       removeProject(projectIdA);
       removeProject(projectIdB);
-      fs.rmSync(root, { recursive: true, force: true });
       await testHandle.close();
+      if (prevConfig === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+      else process.env.SUPERAGENT_CONFIG_DIR = prevConfig;
+      fs.rmSync(root, { recursive: true, force: true });
       setYoloMode(false);
     }
   });

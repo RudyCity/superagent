@@ -206,8 +206,18 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
   });
 
   it("audits fail-closed MCP dispatch without logging the message body", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { registerProject } = await import("../src/core/project/projectRegistry.js");
+    const prevConfig = process.env.SUPERAGENT_CONFIG_DIR;
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sa-delegate-audit-"));
+    const ws = path.join(tempRoot, "ws");
+    fs.mkdirSync(ws, { recursive: true });
+    process.env.SUPERAGENT_CONFIG_DIR = tempRoot;
     setYoloMode(true);
-    grantProjectAccess({mode:"oauth",subject:"author"},MCP_CONNECTION_PROJECT_ID,["execute"]);
+    registerProject({ id: "delegate-audit-ws", name: "Delegate Audit WS", type: "local", root: ws });
+    grantProjectAccess({ mode: "oauth", subject: "author" }, "delegate-audit-ws", ["execute"]);
     const privateMessage = "sensitive-outgoing-chat-text";
     const traces: unknown[] = [];
     vi.stubGlobal("fetch", async () => ({
@@ -215,7 +225,7 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
       json: async () => ({ success: true, result: JSON.stringify({ delivery: "sent" }) }),
     }));
     const server = createSuperagentMcpServer({
-      authMode: "oauth", toolExposure: "gateway", allowDangerous: true,
+      authMode: "oauth", toolExposure: "gateway", allowDangerous: true, workspace: ws,
       getIdentity: () => ({ mode: "oauth", subject: "author", scopes: ["mcp:tools", "mcp:tools:write"] }),
       onToolCall: entry => traces.push(entry),
     });
@@ -227,6 +237,9 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
       expect(audit).not.toContain(privateMessage);
     } finally {
       await server.close();
+      if (prevConfig === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+      else process.env.SUPERAGENT_CONFIG_DIR = prevConfig;
+      fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 
