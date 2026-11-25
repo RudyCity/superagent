@@ -170,9 +170,10 @@ for ($i = 0; $i -lt $screens.Count; $i++) {
     workingArea = [pscustomobject]@{ x = [int]$s.WorkingArea.X; y = [int]$s.WorkingArea.Y; width = [int]$s.WorkingArea.Width; height = [int]$s.WorkingArea.Height }
   })
 }
+$monitorArray = $monitors.ToArray()
 [pscustomobject]@{
-  monitors = @($monitors)
-  count = $monitors.Count
+  monitors = $monitorArray
+  count = $monitorArray.Length
 } | ConvertTo-Json -Depth 6 -Compress
 `;
 

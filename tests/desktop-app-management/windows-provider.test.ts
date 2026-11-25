@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createWindowsDesktopAppProvider } from "../../src/core/desktopApp/windows.js";
+import { createWindowsDesktopUiAdapter } from "../../src/core/desktopUi/adapters/windows.js";
 import type { DesktopProcessRunner, SafeProcessRequest } from "../../src/core/desktopUi/processRunner.js";
 
 function decodedPowerShell(request: SafeProcessRequest): string {
@@ -96,6 +97,67 @@ describe("Windows desktop application provider", () => {
 
     await expect(provider.closeExact({ pid: 4242, nativeId: "123;Remove-Item" })).rejects.toMatchObject({
       code: "INVALID_ACTION",
+    });
+  });
+
+  it("discovers active monitors via ToArray() without PowerShell PSCustomObject ArgumentException", async () => {
+    let capturedScript = "";
+    const runner: DesktopProcessRunner = {
+      run: vi.fn(async (request) => {
+        capturedScript = decodedPowerShell(request);
+        return {
+          stdout: JSON.stringify({
+            monitors: [
+              {
+                index: 0,
+                deviceName: "\\\\.\\DISPLAY1",
+                primary: true,
+                bitsPerPixel: 32,
+                bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+                workingArea: { x: 0, y: 0, width: 1920, height: 1032 },
+              },
+              {
+                index: 1,
+                deviceName: "\\\\.\\DISPLAY2",
+                primary: false,
+                bitsPerPixel: 32,
+                bounds: { x: 1920, y: 0, width: 1280, height: 720 },
+                workingArea: { x: 1920, y: 0, width: 1280, height: 720 },
+              },
+            ],
+            count: 2,
+          }),
+          stderr: "",
+          exitCode: 0,
+        };
+      }),
+    };
+
+    const adapter = createWindowsDesktopUiAdapter(runner);
+    const result = await adapter.listMonitors!();
+
+    expect(capturedScript).toContain("$monitorArray = $monitors.ToArray()");
+    expect(capturedScript).not.toContain("monitors = @($monitors)");
+    expect(result).toEqual({
+      count: 2,
+      monitors: [
+        {
+          index: 0,
+          deviceName: "\\\\.\\DISPLAY1",
+          primary: true,
+          bitsPerPixel: 32,
+          bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+          workingArea: { x: 0, y: 0, width: 1920, height: 1032 },
+        },
+        {
+          index: 1,
+          deviceName: "\\\\.\\DISPLAY2",
+          primary: false,
+          bitsPerPixel: 32,
+          bounds: { x: 1920, y: 0, width: 1280, height: 720 },
+          workingArea: { x: 1920, y: 0, width: 1280, height: 720 },
+        },
+      ],
     });
   });
 });
