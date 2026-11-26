@@ -3646,133 +3646,6 @@ async fn mcp_project_access_action(
         }
         Ok(Value::Object(result))
     };
-    if mutating {
-        // JavaScript can request an approval, but only this native dialog can
-        // accept it. The dialog reads the current Core record, not any
-        // caller-provided display label, and never exposes the Core token.
-        let clean = |value: &str| -> String {
-            value.chars().filter(|c| !c.is_control()).take(140).collect()
-        };
-        let prompt = if matches!(action.as_str(), "register_project" | "update_project" | "remove_project") {
-            let input = project_mutation()?;
-            let verb = match action.as_str() {
-                "register_project" => "REGISTER",
-                "update_project" => "UPDATE",
-                _ => "REMOVE",
-            };
-            let (name, id, target) = if action == "register_project" {
-                (clean(input.get("name").and_then(Value::as_str).unwrap_or("")),
-                 clean(input.get("id").and_then(Value::as_str).unwrap_or("(auto from name)")),
-                 clean(input.get("root").or_else(|| input.get("target"))
-                     .and_then(Value::as_str).unwrap_or("")))
-            } else {
-                let inventory = core_request(Method::GET,
-                    "/api/desktop/access/projects/inventory", None).await?;
-                let id = input.get("projectId").and_then(Value::as_str).ok_or("Missing project ID")?;
-                let projects = inventory.get("projects").and_then(Value::as_array)
-                    .ok_or("Unable to verify project inventory")?;
-                let current = projects.iter().find(|p|
-                    p.get("projectId").and_then(Value::as_str) == Some(id))
-                    .ok_or("Project no longer registered")?;
-                if current.get("updatedAt").and_then(Value::as_u64) !=
-                    input.get("expectedUpdatedAt").and_then(Value::as_u64) {
-                    return Err("Project changed. Reload the inventory before editing".into());
-                }
-                (clean(current.get("name").and_then(Value::as_str).unwrap_or("")),
-                 clean(id),
-                 clean(current.get("target").and_then(Value::as_str).unwrap_or("")))
-            };
-            format!("{} PROJECT?\\n\\nName: {}\\nID: {}\\nCurrent target: {}\\nNew data: {}\\n\\nChanging a target, disabling or removing revokes existing MCP grants. Registration never grants access. Review the exact action.",
-                verb, name, id, target,
-                clean(&serde_json::to_string(&input).unwrap_or_default()))
-        } else if action == "direct_grant" {
-            let identity_handle = text_field("identityHandle", 96)?;
-            let project_id = text_field("projectId", 63)?;
-            if project_id == "mcp-connection" {
-                return Err("Koneksi MCP hanya untuk autentikasi OAuth; izin operasi harus diberikan pada proyek terdaftar".into());
-            }
-            let caps = checked_capabilities()?;
-            let inventory = core_request(Method::GET, "/api/desktop/access/identities", None).await?;
-            let identities = inventory.get("identities").and_then(Value::as_array)
-                .ok_or("Unable to verify the selected MCP identity")?;
-            let identity = identities.iter().find(|entry|
-                entry.get("identityHandle").and_then(Value::as_str) == Some(identity_handle.as_str())
-            ).ok_or("Selected MCP identity is no longer verified")?;
-            let subject = clean(identity.get("subject").and_then(Value::as_str).unwrap_or("Unknown agent"));
-            let agent_display = match identity.get("ownerConnectionName").and_then(Value::as_str)
-                .map(str::trim).filter(|s| !s.is_empty()) {
-                Some(conn_name) => format!("{} ({})", subject, clean(conn_name)),
-                None => subject,
-            };
-            let registry = core_request(Method::GET, "/api/desktop/access/projects", None).await?;
-            let projects = registry.get("projects").and_then(Value::as_array)
-                .ok_or("Unable to verify registered project targets")?;
-            let project = projects.iter().find(|entry|
-                entry.get("projectId").and_then(Value::as_str) == Some(project_id.as_str())
-            ).ok_or("Project is not an enabled registered target")?;
-            let target = format!("{} ({})", clean(project.get("name").and_then(Value::as_str).unwrap_or(&project_id)),
-                clean(project.get("target").and_then(Value::as_str).unwrap_or("")));
-            format!("APPROVE MCP ACCESS?\n\nAgent: {}\nIdentity: {}\nTarget: {}\nCapabilities: {}\n\nExecute/Git may run commands with OS-user privileges. This is independent from Chat Agent YOLO. Permissions remain active until revoked.",
-                agent_display, identity_handle, target, caps.join(", "))
-        } else {
-            let request_id = text_field("requestId", 96)?;
-            let inventory = core_request(Method::GET, "/api/desktop/access/requests", None).await?;
-            let requests = inventory.get("requests").and_then(Value::as_array)
-                .ok_or("Unable to verify the MCP access request")?;
-            let request = requests.iter().find(|entry|
-                entry.get("requestId").and_then(Value::as_str) == Some(request_id.as_str())
-            ).ok_or("MCP access request no longer exists")?;
-            let current_status = request.get("status").and_then(Value::as_str).unwrap_or("");
-            if (action == "approve" || action == "deny") && current_status != "pending" {
-                return Err("Access request is no longer pending".into());
-            }
-            if action == "approve" && request.get("projectId").and_then(Value::as_str) == Some("mcp-connection") {
-                return Err("Permintaan Execute koneksi lama tidak dapat disetujui; gunakan Akses Proyek".into());
-            }
-            if action == "revoke" && current_status != "approved" {
-                return Err("Only an approved access request may be revoked".into());
-            }
-            let selected = if action == "approve" && data.get("capabilities").is_some() {
-                checked_capabilities()?
-            } else {
-                request.get("capabilities").and_then(Value::as_array)
-                    .ok_or("Access request capabilities are unavailable")?
-                    .iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>()
-            };
-            let verb = match action.as_str() {
-                "approve" => "APPROVE",
-                "deny" => "DENY",
-                "revoke" => "REVOKE",
-                _ => return Err("Unsupported native MCP approval action".into()),
-            };
-            format!("{} MCP ACCESS?\n\nAgent: {}\nTarget: {}\nPath: {}\nCapabilities: {}\nReason: {}\nRequest: {}\n\nReview this exact scope before confirming.",
-                verb,
-                clean(request.get("subject").and_then(Value::as_str).unwrap_or("Unknown")),
-                clean(request.get("projectName").and_then(Value::as_str).unwrap_or("Unknown")),
-                clean(request.get("projectPath").and_then(Value::as_str).unwrap_or("")),
-                selected.join(", "),
-                clean(request.get("reason").and_then(Value::as_str).unwrap_or("Not provided")),
-                request_id)
-        };
-        if !window.is_focused().unwrap_or(false) || !window.is_visible().unwrap_or(false) {
-            return Err("Native Tray lost focus while resolving the MCP access request".into());
-        }
-        let dialog_app = window.app_handle().clone();
-        let approved = tauri::async_runtime::spawn_blocking(move || {
-            use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
-            dialog_app.dialog().message(prompt).buttons(
-                MessageDialogButtons::OkCancelCustom(
-                    "Confirm MCP action".into(), "Cancel".into(),
-                )
-            ).blocking_show()
-        }).await.map_err(|_| "Native MCP approval dialog failed")?;
-        if !approved {
-            return Err("MCP access operation was not approved in the native Tray dialog".into());
-        }
-        if !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(true) {
-            return Err("Tray was hidden before MCP approval completed".into());
-        }
-    }
     match action.as_str() {
         "requests" => core_request(Method::GET, "/api/desktop/access/requests", None).await,
         "identities" => core_request(Method::GET, "/api/desktop/access/identities", None).await,
@@ -3839,6 +3712,9 @@ async fn mcp_project_access_action(
         "direct_grant" => {
             let identity_handle = text_field("identityHandle", 96)?;
             let project_id = text_field("projectId", 63)?;
+            if project_id == "mcp-connection" {
+                return Err("Koneksi MCP hanya untuk autentikasi OAuth; izin operasi harus diberikan pada proyek terdaftar".into());
+            }
             core_request(Method::POST, "/api/desktop/access/direct-grant", Some(json!({
                 "identityHandle": identity_handle,
                 "projectId": project_id,
@@ -4501,6 +4377,7 @@ fn main() {
         .manage(muse_file_transfer::MuseFileSelection::default())
         .setup(|app| {
             tray_lifecycle::install(app.handle().clone(), &config_dir()?)?;
+            notifications::ensure_windows_aumid_registered(app.handle());
             // OS toast click is a native event, not a caller-supplied URL or
             // HTML title. An ID maps to one published, unexpired incident.
             // An Action Center click outside the OS provider's delivery window

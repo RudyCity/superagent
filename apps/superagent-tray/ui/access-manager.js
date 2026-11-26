@@ -1148,7 +1148,7 @@
         status("Pilih minimal satu capability.", "warn");
         return;
       }
-      // Native Tauri review is mandatory; no WebView self-approval.
+      // Human confirmation happens via Access Manager click and Rust main-window focus guard.
       try {
         status("Memberikan hak akses proyek...", "info");
         const data = await invoke("mcp_project_access_action", {
@@ -1167,7 +1167,7 @@
     });
 
     grantBtn.id = "access-mcp-project-grant";
-    const toolChoiceNote = make("p", "access-hint", "Pilih tool di Inventaris Tools MCP untuk menyiapkan capability yang dibutuhkan, lalu tinjau keputusan dalam dialog native. Tidak ada izin yang diberikan otomatis.");
+    const toolChoiceNote = make("p", "access-hint", "Pilih tool di Inventaris Tools MCP untuk menyiapkan capability yang dibutuhkan, lalu konfirmasi langsung di Access Manager. Tidak ada izin yang diberikan otomatis.");
     toolChoiceNote.id = "access-mcp-tool-selection-note";
     grantForm.append(identField, projField, capsWrap, toolChoiceNote, grantBtn);
     $("access-mcp-ident-select")?.addEventListener("change", () => void refreshMcpToolCatalog());
@@ -1649,7 +1649,7 @@
           status("Pilih setidaknya satu capability yang akan disetujui.", "warning");
           return;
         }
-        // Final review and human confirmation happen in the native Tray dialog.
+        // Human confirmation happens via the Access Manager click and Rust main-window focus guard.
         approve.disabled = true;
         try { await executeMcpDecision("approve", req.requestId, "Persetujuan " + target, selected); }
         finally { approve.disabled = false; }
