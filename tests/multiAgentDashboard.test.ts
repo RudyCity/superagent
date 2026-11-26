@@ -11,11 +11,13 @@ if (!console.Console) {
 }
 
 let inputCallback: any = null;
+let mouseHandler: any = null;
 
 describe("MultiAgentDashboard UI Component", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     inputCallback = null;
+    mouseHandler = null;
     vi.spyOn(inkModule, "useApp").mockReturnValue({ exit: vi.fn() } as any);
     vi.spyOn(inkModule, "useInput").mockImplementation((cb: any) => {
       inputCallback = cb;
@@ -25,7 +27,9 @@ describe("MultiAgentDashboard UI Component", () => {
       isRawMode: false,
       setRawMode: vi.fn(),
       internal_eventEmitter: {
-        on: vi.fn(),
+        on: vi.fn((event: string, cb: any) => {
+          if (event === "input") mouseHandler = cb;
+        }),
         off: vi.fn(),
       },
     } as any);
@@ -139,18 +143,7 @@ describe("MultiAgentDashboard UI Component", () => {
 
   it("should focus agents or procs on mouse click", async () => {
     const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
-
-    const originalOn = process.stdin.on;
-    const originalOff = process.stdin.off;
-    const originalWrite = process.stdout.write;
-
-    let mouseHandler: any = null;
-    process.stdin.on = vi.fn((event, cb) => {
-      if (event === "data") mouseHandler = cb;
-      return process.stdin;
-    }) as any;
-    process.stdin.off = vi.fn() as any;
-    process.stdout.write = vi.fn() as any;
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
     const mockSetFocusArea = vi.fn();
 
@@ -207,28 +200,13 @@ describe("MultiAgentDashboard UI Component", () => {
 
     unmount();
 
-    process.stdin.on = originalOn;
-    process.stdin.off = originalOff;
-    process.stdout.write = originalWrite;
-
     subagentInstances.clear();
     backgroundTasks.clear();
   });
 
   it("should select wizard option on click", async () => {
     const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
-
-    const originalOn = process.stdin.on;
-    const originalOff = process.stdin.off;
-    const originalWrite = process.stdout.write;
-
-    let mouseHandler: any = null;
-    process.stdin.on = vi.fn((event, cb) => {
-      if (event === "data") mouseHandler = cb;
-      return process.stdin;
-    }) as any;
-    process.stdin.off = vi.fn() as any;
-    process.stdout.write = vi.fn() as any;
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
     const mockHandleWizardSubmit = vi.fn();
     const mockSetWizardSelectedIndex = vi.fn();
@@ -274,26 +252,11 @@ describe("MultiAgentDashboard UI Component", () => {
     expect(mockSetFocusArea).toHaveBeenCalledWith("input");
 
     unmount();
-
-    process.stdin.on = originalOn;
-    process.stdin.off = originalOff;
-    process.stdout.write = originalWrite;
   });
 
   it("should NOT move wizard selection when clicking a permission dialog option (focus-only)", async () => {
     const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
-
-    const originalOn = process.stdin.on;
-    const originalOff = process.stdin.off;
-    const originalWrite = process.stdout.write;
-
-    let mouseHandler: any = null;
-    process.stdin.on = vi.fn((event, cb) => {
-      if (event === "data") mouseHandler = cb;
-      return process.stdin;
-    }) as any;
-    process.stdin.off = vi.fn() as any;
-    process.stdout.write = vi.fn() as any;
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
     const mockHandleWizardSubmit = vi.fn();
     const mockSetWizardSelectedIndex = vi.fn();
@@ -341,26 +304,11 @@ describe("MultiAgentDashboard UI Component", () => {
     expect(mockSetFocusArea).toHaveBeenCalledWith("input");
 
     unmount();
-
-    process.stdin.on = originalOn;
-    process.stdin.off = originalOff;
-    process.stdout.write = originalWrite;
   });
 
   it("should focus input area and select suggestion on click", async () => {
     const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
-
-    const originalOn = process.stdin.on;
-    const originalOff = process.stdin.off;
-    const originalWrite = process.stdout.write;
-
-    let mouseHandler: any = null;
-    process.stdin.on = vi.fn((event, cb) => {
-      if (event === "data") mouseHandler = cb;
-      return process.stdin;
-    }) as any;
-    process.stdin.off = vi.fn() as any;
-    process.stdout.write = vi.fn() as any;
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
     const mockSetFocusArea = vi.fn();
     const mockSetQuery = vi.fn();
@@ -417,10 +365,6 @@ describe("MultiAgentDashboard UI Component", () => {
     expect(mockSetFocusArea).toHaveBeenCalledWith("input");
 
     unmount();
-
-    process.stdin.on = originalOn;
-    process.stdin.off = originalOff;
-    process.stdout.write = originalWrite;
   });
 
   it("should refocus input and append character when a printable key is typed while a panel is focused", async () => {
@@ -579,18 +523,7 @@ describe("MultiAgentDashboard UI Component", () => {
   it("should trigger toggleGroupCollapse when a collapsible log line is clicked", async () => {
     const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
     const { computeLogGroupBoundaries, computeWrappedLogs } = await import("../src/utils/dashboardLogFormatter.js");
-
-    const originalOn = process.stdin.on;
-    const originalOff = process.stdin.off;
-    const originalWrite = process.stdout.write;
-
-    let mouseHandler: any = null;
-    process.stdin.on = vi.fn((event, cb) => {
-      if (event === "data") mouseHandler = cb;
-      return process.stdin;
-    }) as any;
-    process.stdin.off = vi.fn() as any;
-    process.stdout.write = vi.fn() as any;
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
     const mockToggleGroupCollapse = vi.fn();
     const mockSetFocusArea = vi.fn();
@@ -658,10 +591,6 @@ describe("MultiAgentDashboard UI Component", () => {
 
     expect(mockToggleGroupCollapse).toHaveBeenCalledWith(0);
     unmount();
-
-    process.stdin.on = originalOn;
-    process.stdin.off = originalOff;
-    process.stdout.write = originalWrite;
   });
 });
 

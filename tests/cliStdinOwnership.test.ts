@@ -25,7 +25,8 @@ describe("CLI owns keyboard input for the whole interactive session", () => {
       expect(hook).not.toMatch(/process\.stdin\.setRawMode\s*\(/);
       expect(hook).not.toMatch(/process\.once\("(SIGINT|SIGTERM|uncaughtException)",\s*emergencyCleanup\)/);
       expect(hook).toContain('process.once("exit", emergencyCleanup)');
-      expect(hook).toContain('process.stdin.on("data", handleMouseInput)');
+      expect(hook).toContain('internal_eventEmitter?.on("input", handleMouseInput)');
+      expect(hook).not.toContain('process.stdin.on("data", handleMouseInput)');
     });
   }
 

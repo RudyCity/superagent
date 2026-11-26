@@ -203,6 +203,14 @@ export function resolveWindowsGitExecutable(
   return "git";
 }
 
+function joinWindowsOrPosixRoot(root: string, ...segments: string[]): string {
+  return root.startsWith("/") ? path.posix.join(root, ...segments) : path.win32.join(root, ...segments);
+}
+
+function dirnameWindowsOrPosix(targetPath: string): string {
+  return targetPath.startsWith("/") ? path.posix.dirname(targetPath) : path.win32.dirname(targetPath);
+}
+
 /** Resolve an installed Windows GitHub CLI executable from standard install locations. */
 export function resolveWindowsGhExecutable(
   env: NodeJS.ProcessEnv = process.env,
@@ -213,9 +221,9 @@ export function resolveWindowsGhExecutable(
   const programFilesX86 = env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
   const localAppData = env.LOCALAPPDATA;
   const candidates = [
-    path.win32.join(programFiles, "GitHub CLI", "gh.exe"),
-    path.win32.join(programFilesX86, "GitHub CLI", "gh.exe"),
-    ...(localAppData ? [path.win32.join(localAppData, "Programs", "GitHub CLI", "gh.exe")] : []),
+    joinWindowsOrPosixRoot(programFiles, "GitHub CLI", "gh.exe"),
+    joinWindowsOrPosixRoot(programFilesX86, "GitHub CLI", "gh.exe"),
+    ...(localAppData ? [joinWindowsOrPosixRoot(localAppData, "Programs", "GitHub CLI", "gh.exe")] : []),
   ];
   for (const executable of candidates) {
     if (exists(executable)) return executable;
@@ -235,8 +243,8 @@ export function augmentWindowsEnvPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   const toolDirs = [
     ...resolveWindowsPythonDirs(),
     ...(bunExecutable ? [path.dirname(bunExecutable)] : []),
-    ...(gitExecutable !== "git" ? [path.win32.dirname(gitExecutable)] : []),
-    ...(ghExecutable !== "gh" ? [path.win32.dirname(ghExecutable)] : []),
+    ...(gitExecutable !== "git" ? [dirnameWindowsOrPosix(gitExecutable)] : []),
+    ...(ghExecutable !== "gh" ? [dirnameWindowsOrPosix(ghExecutable)] : []),
   ];
   const existing = new Set(currentPath.split(";").filter(Boolean).map(d => path.win32.normalize(d).toLowerCase()));
   const dirsToAdd = toolDirs.filter(d => {
