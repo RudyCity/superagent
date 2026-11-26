@@ -564,8 +564,9 @@ export class DesktopUiSessionManager {
       policy.targets.some(entry => entry.pid === target.pid &&
         entry.nativeId === target.nativeId && entry.title === target.title &&
         entry.expiresAt > Date.now());
-    const inputRequested = params.allowInput === true ||
+    let inputRequested = params.allowInput === true ||
       (params.allowInput === undefined && (registeredCandidate || trustedCandidate));
+    let backgroundReadOnlyFallback = false;
     const baseAdapter = params.adapter ?? createNativeDesktopUiAdapter();
     let registeredViewIdentity: ExecutableIdentity | undefined;
     if (permanent) {
@@ -583,10 +584,14 @@ export class DesktopUiSessionManager {
         );
       }
       if (!observed.active) {
-        throw new DesktopUiError(
-          "TARGET_NOT_ACTIVE",
-          "Target window is not foreground. Call focus_window with its pid and nativeId first, then retry.",
-        );
+        if (params.allowInput === true) {
+          throw new DesktopUiError(
+            "TARGET_NOT_ACTIVE",
+            "Target window is not foreground. Call focus_window with its pid and nativeId first, then retry.",
+          );
+        }
+        if (inputRequested) backgroundReadOnlyFallback = true;
+        inputRequested = false;
       }
       try {
         const identity = await this.executableIdentity(target.pid);
@@ -748,7 +753,9 @@ export class DesktopUiSessionManager {
       ? "Session opened read-only for input. Host consent is required before this session can dispatch native input."
       : inputAllowed
         ? "Desktop UI session opened with scoped host consent for native input."
-        : "Desktop UI session opened with native input disabled.";
+        : backgroundReadOnlyFallback
+          ? "Desktop UI session opened read-only (view-only) for background window; call focus_window and open with allowInput=true for native input."
+          : "Desktop UI session opened with native input disabled.";
 
     return {
       sessionToken,
@@ -1115,7 +1122,7 @@ export const desktopUiTool: Tool = {
   description:
     "Perceive and automate native desktop application windows using bounded discovery and accessibility semantics. " +
     "Commands also expose installed-app inventory, verified Windows app lifecycle, guarded package planning/apply, and read-only security-prompt inspection. " +
-    "The open and inspect_window commands first create an exact-target one-shot session request in Tray Request Center; retry with approvalRequestId after native operator approval. Target windows must be foreground (use focus_window first if in background) and open requires the exact full title from find_window/list_windows. " +
+    "The open and inspect_window commands first create an exact-target one-shot session request in Tray Request Center; retry with approvalRequestId after native operator approval. View-only inspection (inspect_window and open with allowInput=false) captures by exact PID/window ID even when the target window is in the background (on Windows via PrintWindow and on macOS via screencapture -l <cgWindowId>); native input (open with allowInput=true and action) requires the target window to be foreground (use focus_window first if in background), and open requires the exact full title from find_window/list_windows. " +
     "This does not bypass Host File Policy or permanent host ACL. Lifecycle mutation requires exact host consent; package mutation additionally requires separate host-operator approval bound to the exact operation.",
   parameters: {
     type: "object",

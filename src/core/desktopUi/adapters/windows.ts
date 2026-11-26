@@ -190,6 +190,8 @@ public static class DesktopUiNativeWindow {
   [DllImport("user32.dll", SetLastError=true)] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr child);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
   [DllImport("user32.dll", SetLastError=true)] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
@@ -199,6 +201,8 @@ public static class DesktopUiNativeWindow {
   [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
   [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern int GetWindowTextLength(IntPtr hWnd);
   [DllImport("user32.dll", SetLastError=true)] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint flags);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool GetWindowDisplayAffinity(IntPtr hWnd, out uint affinity);
+  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hWnd, uint attribute, out int value, int size);
 }
 "@
 $previousDpiContext = [DesktopUiNativeWindow]::SetThreadDpiAwarenessContext([IntPtr](-4))
@@ -225,6 +229,21 @@ if ($root -eq [IntPtr]::Zero -or $root -ne $hwnd) {
 [void][DesktopUiNativeWindow]::GetWindowThreadProcessId($hwnd, [ref]$ownerPid)
 if ([int]$ownerPid -ne $requestedPid) {
   throw "TARGET_NOT_FOUND: supplied HWND is not owned by the requested PID"
+}
+if (-not [DesktopUiNativeWindow]::IsWindowVisible($hwnd)) {
+  throw "TARGET_NOT_FOUND: target window is not visible"
+}
+if ([DesktopUiNativeWindow]::IsIconic($hwnd)) {
+  throw "SCREENSHOT_UNAVAILABLE: target window is minimized"
+}
+$cloaked = 0
+$cloakResult = [DesktopUiNativeWindow]::DwmGetWindowAttribute($hwnd, 14, [ref]$cloaked, 4)
+if ($cloakResult -ne 0 -or $cloaked -ne 0) {
+  throw "SCREENSHOT_UNAVAILABLE: target window is cloaked"
+}
+[uint32]$affinity = 0
+if (-not [DesktopUiNativeWindow]::GetWindowDisplayAffinity($hwnd, [ref]$affinity) -or $affinity -ne 0) {
+  throw "SCREENSHOT_UNAVAILABLE: target window has protected display affinity"
 }
 $rect = New-Object DesktopUiNativeWindow+RECT
 if (-not [DesktopUiNativeWindow]::GetWindowRect($hwnd, [ref]$rect)) {
@@ -264,7 +283,16 @@ try {
   $bitmap.Dispose()
 }
 [uint32]$ownerPidAfter = 0
-if (-not [DesktopUiNativeWindow]::IsWindow($hwnd)) { throw "TARGET_NOT_FOUND: HWND disappeared during capture" }
+if (-not [DesktopUiNativeWindow]::IsWindow($hwnd) -or -not [DesktopUiNativeWindow]::IsWindowVisible($hwnd)) { throw "TARGET_NOT_FOUND: HWND disappeared during capture" }
+if ([DesktopUiNativeWindow]::IsIconic($hwnd)) { throw "SCREENSHOT_UNAVAILABLE: HWND was minimized during capture" }
+$cloakedAfter = 0
+if ([DesktopUiNativeWindow]::DwmGetWindowAttribute($hwnd, 14, [ref]$cloakedAfter, 4) -ne 0 -or $cloakedAfter -ne 0) {
+  throw "SCREENSHOT_UNAVAILABLE: HWND became cloaked during capture"
+}
+[uint32]$affinityAfter = 0
+if (-not [DesktopUiNativeWindow]::GetWindowDisplayAffinity($hwnd, [ref]$affinityAfter) -or $affinityAfter -ne 0) {
+  throw "SCREENSHOT_UNAVAILABLE: HWND gained protected display affinity during capture"
+}
 [void][DesktopUiNativeWindow]::GetWindowThreadProcessId($hwnd, [ref]$ownerPidAfter)
 if ([int]$ownerPidAfter -ne $requestedPid -or [DesktopUiNativeWindow]::GetAncestor($hwnd, 2) -ne $hwnd) {
   throw "TARGET_NOT_FOUND: HWND ownership changed during capture"
@@ -575,6 +603,9 @@ function mapWindowsError(error: unknown, fallbackCode: "SCREENSHOT_UNAVAILABLE" 
   }
   if (message.includes("TARGET_NOT_ACTIVE")) {
     return new DesktopUiError("TARGET_NOT_ACTIVE", message);
+  }
+  if (message.includes("SCREENSHOT_UNAVAILABLE")) {
+    return new DesktopUiError("SCREENSHOT_UNAVAILABLE", message);
   }
   if (message.includes("DPI_CONTEXT_UNAVAILABLE")) {
     return new DesktopUiError("DESKTOP_UI_UNAVAILABLE", message);

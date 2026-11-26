@@ -54,6 +54,10 @@ describe("system prompt runtime policy", () => {
     expect(ask).toContain("authorized tools");
     expect(full).toContain("replace_file_content");
     expect(full).toContain("apply_patch");
+    expect(full).toContain("Infer user intent automatically without waiting for explicit tool names");
+    const master = getToolDiscoveryGuidance("master", tools, "implement");
+    expect(master).toContain("Master routing:");
+    expect(master).toContain("invoke_superagent");
   });
 
   it("requires explicit completion evidence and preserves goal mode partial status", () => {

@@ -41,4 +41,17 @@ describe("Intent-aware tool discovery", () => {
     const indo = await runListTools(authorized, { intent: "perbaiki bug pada kode", limit: 4 });
     expect(indo).toContain("write_to_file");
   });
+
+  it("ranks Master and MCP orchestration, media, and history intents accurately", () => {
+    const mcpCatalog = [
+      fixture("superagent_media_compress", "Compress images and convert media files"),
+      fixture("superagent_delegate_search_history", "Search synced ChatGPT Delegate chat history"),
+      fixture("superagent_run_task", "Run a multi-agent Superagent orchestration task"),
+      fixture("superagent_services_status", "Inspect running Core and MCP background services"),
+    ];
+    expect(rankToolsForIntent(mcpCatalog, "kompres gambar", 2)[0].name).toBe("superagent_media_compress");
+    expect(rankToolsForIntent(mcpCatalog, "cari riwayat chatgpt", 2)[0].name).toBe("superagent_delegate_search_history");
+    expect(rankToolsForIntent(mcpCatalog, "orchestrate feature plan", 2)[0].name).toBe("superagent_run_task");
+    expect(rankToolsForIntent(mcpCatalog, "cek proses service", 2)[0].name).toBe("superagent_services_status");
+  });
 });

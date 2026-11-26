@@ -52,4 +52,12 @@ describe("tier reasoning prompt", () => {
     expect(SUBAGENT_SYSTEM_PROMPTS.coder).toContain("- Conclusion: [concise completion summary");
     expect(SUBAGENT_SYSTEM_PROMPTS.researcher).toContain("- Conclusion: [concise completion summary");
   });
+
+  it("enforces intent-based tool discovery and routing in MASTER_AGENT_SYSTEM_PROMPT", () => {
+    expect(MASTER_AGENT_SYSTEM_PROMPT).toContain("INTENT_TOOL_ROUTING");
+    expect(MASTER_AGENT_SYSTEM_PROMPT).toContain("NEVER wait for explicit tool names");
+    expect(MASTER_AGENT_SYSTEM_PROMPT).toContain("list_tools({intent");
+    expect(MASTER_AGENT_SYSTEM_PROMPT).toContain("describe_tool({names:[");
+    expect(MASTER_AGENT_SYSTEM_PROMPT).toContain("ANALYZE & ROUTE");
+  });
 });

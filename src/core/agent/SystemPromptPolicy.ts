@@ -31,13 +31,17 @@ export function getModeGuidance(mode: string, canSwitchMode: boolean): string {
 /** Discovery is conditional: never tell the model to call tools it cannot see. */
 export function getToolDiscoveryGuidance(tier: string, toolNames: string[], mode = "implement"): string {
   if (!["master", "single", "superagent"].includes(tier) || !toolNames.includes("describe_tool")) return "";
-  if (mode === "ask") return ["# TOOL ACCESS", "- If evidence needs tools, describe_tool known names first." + (toolNames.includes("list_tools") ? " Use list_tools with one keyword only if names are unknown." : "") + " Only authorized tools; avoid unnecessary calls."].join(String.fromCharCode(10));
+  if (mode === "ask") return ["# TOOL ACCESS", "- If evidence needs tools, describe_tool known names first." + (toolNames.includes("list_tools") ? " Otherwise infer intent with list_tools({intent}) or one keyword." : "") + " Only authorized tools; avoid unnecessary calls."].join(String.fromCharCode(10));
   const listNotice = toolNames.includes("list_tools")
-    ? "\n- For unknown capabilities, call list_tools({intent: task_summary}) for a short ranked list. Use query for one keyword or omit it for the catalog."
+    ? "\n- Infer user intent automatically without waiting for explicit tool names: call list_tools({intent: task_summary}) for unknown capabilities (or query for one keyword / omit for catalog), then describe_tool({names:[...]})."
+    : "";
+  const masterRoutingNotice = tier === "master"
+    ? "\n- Master routing: invoke authorized inspection/plan/memory/MCP tools directly, or delegate code changes via invoke_superagent."
     : "";
   return "\n# TOOL DISCOVERY"
     + "\n- Call describe_tool({names:[\"tool1\",\"tool2\"]}) once for known tools. Invoke only authorized/described tools; discovery is not permission."
     + listNotice
+    + masterRoutingNotice
     + "\n- File calls require arrays, even for one item: read({filePaths:[\"path\"]}), write_to_file({files:[{filePath,content}]}), replace_file_content({edits:[{filePath,targetContent,replacementContent,startLine,endLine}]}), apply_patch({patches:[{filePath,patchContent}]})."
     + "\n- Batch independent operations; serialize stateful and conflicting edits. Do not rediscover an already described tool.";
 }

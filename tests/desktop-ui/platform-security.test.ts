@@ -51,6 +51,10 @@ describe("native platform security contracts", () => {
     expect(captureScript).toContain("GetAncestor");
     expect(captureScript).toContain("supplied HWND is not owned by the requested PID");
     expect(captureScript).toContain("SetThreadDpiAwarenessContext");
+    expect(captureScript).toContain("IsWindowVisible");
+    expect(captureScript).toContain("IsIconic");
+    expect(captureScript).toContain("DwmGetWindowAttribute");
+    expect(captureScript).toContain("GetWindowDisplayAffinity");
     expect(captureScript).toContain("PrintWindow");
     expect(captureScript).not.toContain("CopyFromScreen");
   });
@@ -217,5 +221,54 @@ describe("native platform security contracts", () => {
     expect(script).toContain("proc.click({ at:");
     expect(script).not.toContain("se.click({ at:");
     expect(script).toContain("win.focused()");
+  });
+
+  it("macOS capture and accessibility inspection succeed on background windows via screencapture -l while checking per-window active state", async () => {
+    const calls: SafeProcessRequest[] = [];
+    const bgWindow = {
+      pid: 77,
+      nativeId: "cg:99",
+      title: "Background Target",
+      active: false,
+      bounds: { x: 10, y: 20, width: 100, height: 50 },
+    };
+    const runner: DesktopProcessRunner = {
+      run: vi.fn(async (request: SafeProcessRequest) => {
+        calls.push(request);
+        if (request.executable.endsWith("osascript")) {
+          const script = request.args.at(-1) ?? "";
+          if (script.includes("elements: items")) {
+            return {
+              stdout: JSON.stringify({ window: bgWindow, elements: [] }),
+              stderr: "",
+              exitCode: 0,
+            };
+          }
+          return {
+            stdout: JSON.stringify(bgWindow),
+            stderr: "",
+            exitCode: 0,
+          };
+        }
+        const outputPath = request.args.at(-1)!;
+        await writeFile(outputPath, fakePng());
+        return { stdout: "", stderr: "", exitCode: 0 };
+      }),
+    };
+
+    const adapter = createMacOsDesktopUiAdapter(runner);
+    const captured = await adapter.capture({ pid: 77, nativeId: "cg:99", title: "Background Target" });
+    expect(captured.targetWindow.active).toBe(false);
+    expect(captured.targetWindow.nativeId).toBe("cg:99");
+
+    const ax = await adapter.inspectAccessibility({ pid: 77, nativeId: "cg:99", title: "Background Target" }, captured);
+    expect(ax.window.active).toBe(false);
+
+    const osascriptScripts = calls
+      .filter((request) => request.executable.endsWith("osascript"))
+      .map((request) => request.args.at(-1) ?? "");
+    expect(osascriptScripts.every((script) => script.includes("isWindowActive(target.proc, target.win)"))).toBe(true);
+    const screenshot = calls.find((request) => request.executable.endsWith("screencapture"));
+    expect(screenshot?.args).toEqual(["-x", "-l99", "-t", "png", expect.any(String)]);
   });
 });

@@ -295,6 +295,8 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
     expect(agentic.messages[0].content.text).toContain("AUTONOMOUS MCP AGENTIC EXECUTION MANDATE");
     expect(agentic.messages[0].content.text).toContain("Fix authentication race condition");
     expect(agentic.messages[0].content.text).toContain("TOOL_FIRST");
+    expect(agentic.messages[0].content.text).toContain("INTENT-BASED DYNAMIC GATEWAY DISCOVERY & ROUTING");
+    expect(agentic.messages[0].content.text).toContain("NEVER wait for the user to name a tool");
   });
 
   it("advertises canonical system instructions during the initialize handshake", async () => {
@@ -315,7 +317,9 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
     expect(result.instructions).toContain("SUPERAGENT MCP AGENTIC INSTRUCTION PROTOCOL");
     expect(result.instructions).toContain("TOOL_FIRST");
     expect(result.instructions).toContain("ACTION OVER ADVICE");
-    expect(result.instructions).toContain("DYNAMIC TOOL DISCOVERY");
+    expect(result.instructions).toContain("INTENT-BASED DYNAMIC TOOL DISCOVERY & ROUTING");
+    expect(result.instructions).toContain("NEVER wait for the user to name a tool");
+    expect(result.instructions).toContain("superagent_tool_search({ intent:");
 
     // Custom instructions override
     const customServer = createSuperagentMcpServer({

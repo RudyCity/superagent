@@ -1,3 +1,9 @@
+## [1.14.110] - 2026-11-26
+### Intent-based tool discovery and background Desktop UI inspection
+- Instruct models and MCP clients to infer user intent automatically and resolve capabilities via `list_tools({ intent })` / `superagent_tool_search({ intent })` and batch `describe_tool` without waiting for explicit tool names; add Master routing guidance and expand bilingual intent synonyms.
+- Allow view-only Desktop UI inspection (`inspect_window` and `open` without explicit `allowInput: true`) on background windows by exact PID/window ID (`PrintWindow` on Windows, `screencapture -l <cgWindowId>` on macOS), while preserving foreground requirements (`focus_window`) for `allowInput: true` and native input actions.
+- Harden Windows Desktop UI capture against invisible, minimized, DWM-cloaked, and protected display-affinity windows before and after capture, and refine macOS active-window detection (`focused()` / `AXMain`).
+
 ## [1.14.109] - 2026-11-24
 ### Desktop Live Request Center integration
 - Add identity-bound, expiring one-shot Desktop UI session requests to the local Core approval broker.

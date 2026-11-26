@@ -116,6 +116,106 @@ describe("permanent registry Core authorization",()=>{
       code:"TARGET_NOT_FOUND",
     });
   });
+
+  it("allows view-only inspect_window and open(allowInput=false) on background windows while requiring foreground for input",async()=>{
+    const bgWindow={...window,active:false};
+    const base=mockAdapter();
+    base.adapter.listWindows=async(limit)=>({limit,truncated:false,windows:[bgWindow]});
+    base.adapter.capture=async()=>({image:png(),capturedAt:new Date().toISOString(),targetWindow:bgWindow});
+    base.adapter.inspectAccessibility=async()=>({window:bgWindow,elements:[{
+      role:"button",label:"OK",value:null,description:null,
+      bounds:{x:5,y:5,width:40,height:20},center:{x:25,y:15},actionable:true,nativeRef:"ok",
+    }]});
+    const manager=new DesktopUiSessionManager(new DesktopUiConsentManager(),{
+      permanentRegistry:()=>policy([allow]),
+      executableIdentity:async()=>app,
+    });
+
+    const inspected=await manager.inspectWindow({
+      pid:bgWindow.pid,nativeId:bgWindow.nativeId,ownerPrincipal:"test-agent",
+      includeScreenshotImage:true,adapter:base.adapter,
+    });
+    expect(inspected.window.active).toBe(false);
+    expect(inspected.screenshotImage).toBeTruthy();
+    expect(inspected.schema.elements[0]?.label).toBe("OK");
+    expect(base.dispatch).not.toHaveBeenCalled();
+
+    const readOnly=await manager.openSession({...request(base.adapter),allowInput:false});
+    expect(readOnly.inputAllowed).toBe(false);
+    const snap=(await manager.snapshot({sessionToken:readOnly.sessionToken,ownerPrincipal:"test-agent"})).schema;
+    await expect(manager.action({
+      sessionToken:readOnly.sessionToken,ownerPrincipal:"test-agent",action:"click",
+      elementId:"a1",expectedRevision:snap.screenshot.revision,expectedHash:snap.screenshot.sha256,
+    })).rejects.toMatchObject({code:"INPUT_DISABLED"});
+    manager.closeSession(readOnly.sessionToken,"test-agent");
+
+    const omitted=await manager.openSession({
+      pid:bgWindow.pid,nativeId:bgWindow.nativeId,title:bgWindow.title,
+      ownerPrincipal:"test-agent",adapter:base.adapter,
+    });
+    expect(omitted.inputAllowed).toBe(false);
+    manager.closeSession(omitted.sessionToken,"test-agent");
+
+    await expect(manager.openSession(request(base.adapter))).rejects.toMatchObject({
+      code:"TARGET_NOT_ACTIVE",
+      message:expect.stringMatching(/focus_window/i),
+    });
+
+    const unapprovedManager=new DesktopUiSessionManager(new DesktopUiConsentManager(),{
+      permanentRegistry:()=>policy([]),
+      executableIdentity:async()=>app,
+    });
+    await expect(unapprovedManager.inspectWindow({
+      pid:bgWindow.pid,nativeId:bgWindow.nativeId,ownerPrincipal:"test-agent",adapter:base.adapter,
+    })).rejects.toThrow(/viewing not registered/);
+  });
+
+  it("allows view-only inspect_window and open(allowInput=false) on background macOS cg windows while requiring foreground for input",async()=>{
+    const macApp:ExecutableIdentity={platform:"darwin",executablePath:"/Applications/Antigravity.app/Contents/MacOS/Electron",sha256:"c".repeat(64)};
+    const macBgWindow={pid:701,nativeId:"cg:99",title:"Antigravity Code",application:"Antigravity",
+      active:false,bounds:{x:0,y:0,width:1200,height:800}};
+    const macAllow={id:"permanent-mac-antigravity",kind:"desktop" as const,effect:"allow" as const,
+      app:macApp,operations:["view" as const,"input" as const],scope:{windowTitle:"Antigravity Code"}};
+    const dispatch=vi.fn(async()=>undefined);
+    const adapter:DesktopUiAdapter={
+      platform:"darwin",
+      probe:async()=>({platform:"darwin",available:true,screenshot:true,accessibility:true,input:true,scroll:false,
+        prerequisites:[],limitations:[],errors:[]}),
+      listWindows:async(limit)=>({windows:[macBgWindow],limit,truncated:false}),
+      capture:async()=>({image:png(),capturedAt:new Date().toISOString(),targetWindow:macBgWindow}),
+      inspectAccessibility:async()=>({window:macBgWindow,elements:[{
+        role:"button",label:"OK",value:null,description:null,
+        bounds:{x:5,y:5,width:40,height:20},center:{x:25,y:15},actionable:true,nativeRef:"axpath:0.0",
+      }]}),
+      dispatch,
+    };
+    const manager=new DesktopUiSessionManager(new DesktopUiConsentManager(),{
+      permanentRegistry:()=>policy([macAllow]),
+      executableIdentity:async()=>macApp,
+    });
+
+    const inspected=await manager.inspectWindow({
+      pid:macBgWindow.pid,nativeId:macBgWindow.nativeId,ownerPrincipal:"mac-agent",
+      includeScreenshotImage:true,adapter,
+    });
+    expect(inspected.window.active).toBe(false);
+    expect(inspected.schema.platform).toBe("darwin");
+    expect(inspected.screenshotImage).toBeTruthy();
+
+    const viewOnly=await manager.openSession({
+      pid:macBgWindow.pid,nativeId:macBgWindow.nativeId,title:macBgWindow.title,
+      ownerPrincipal:"mac-agent",allowInput:false,adapter,
+    });
+    expect(viewOnly.inputAllowed).toBe(false);
+    await manager.snapshot({sessionToken:viewOnly.sessionToken,ownerPrincipal:"mac-agent"});
+    manager.closeSession(viewOnly.sessionToken,"mac-agent");
+
+    await expect(manager.openSession({
+      pid:macBgWindow.pid,nativeId:macBgWindow.nativeId,title:macBgWindow.title,
+      ownerPrincipal:"mac-agent",allowInput:true,adapter,
+    })).rejects.toMatchObject({code:"TARGET_NOT_ACTIVE"});
+    expect(dispatch).not.toHaveBeenCalled();
+  });
 });
 
 describe("permanent application element scopes",()=>{

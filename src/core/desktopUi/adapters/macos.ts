@@ -147,6 +147,21 @@ function cgBounds(info) {
   };
 }
 
+function isWindowActive(proc, win) {
+  let frontmost = false;
+  try { frontmost = Boolean(proc.frontmost()); } catch (_) {}
+  if (!frontmost) return false;
+  let focused = false;
+  try { focused = Boolean(win.focused()); } catch (_) {}
+  if (focused) return true;
+  try {
+    for (const attr of win.attributes()) {
+      if (String(attr.name()) === "AXMain" && Boolean(attr.value())) return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
 function resolveTarget() {
   const processes = se.applicationProcesses();
   let proc = null;
@@ -240,7 +255,7 @@ JSON.stringify({
   pid: Number(payload.pid),
   nativeId: target.nativeId,
   title: target.title,
-  active: Boolean(target.proc.frontmost()),
+  active: isWindowActive(target.proc, target.win),
   bounds: target.bounds
 });
 `;
@@ -302,7 +317,7 @@ JSON.stringify({
     pid: Number(payload.pid),
     nativeId: target.nativeId,
     title: target.title,
-    active: Boolean(target.proc.frontmost()),
+    active: isWindowActive(target.proc, target.win),
     bounds: target.bounds
   },
   elements: items
@@ -491,7 +506,7 @@ export function createMacOsDesktopUiAdapter(
           scroll: false,
           prerequisites: ["macOS Accessibility permission for the SuperAgent host", "Screen Recording permission", "/usr/bin/osascript", "/usr/sbin/screencapture"],
           limitations: [
-            "Window capture requires an unambiguous CoreGraphics window ID owned by the requested PID.",
+            "Window capture uses screencapture -l <cgWindowId> for an unambiguous CoreGraphics window ID owned by the requested PID (supports background on-screen windows; requires Screen Recording permission).",
             "Input is restricted to the already-frontmost and focused target AX window.",
             "Modifier key chords and native scrolling are intentionally not enabled.",
           ],

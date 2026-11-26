@@ -3,6 +3,7 @@ import path from "node:path";
 import { execa } from "execa";
 import { describe, expect, it } from "vitest";
 import { createWindowsDesktopUiAdapter } from "../../src/core/desktopUi/adapters/windows.js";
+import { resolveNativeDesktopExecutable } from "../../src/core/desktopUi/nativeExecutableIdentity.js";
 import { DesktopUiConsentManager, DesktopUiSessionManager } from "../../src/core/tools/desktopUiTools.js";
 
 const isWindows = process.platform === "win32";
@@ -75,7 +76,7 @@ async function terminate(child: ReturnType<typeof execa>): Promise<void> {
   child.kill("SIGTERM");
   const exited = await Promise.race([
     child.then(() => true, () => true),
-    Bun.sleep(2500).then(() => false),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2500)),
   ]);
   if (!exited) child.kill("SIGKILL");
 }
@@ -139,4 +140,107 @@ describe.skipIf(!isWindows)("Windows native window discovery E2E", () => {
       await terminate(child);
     }
   }, 45000);
+
+  it("inspects and opens a view-only session on an occluded background window while rejecting background input", async () => {
+    const bgTitle = `SuperAgent BgView ${randomUUID()}`;
+    const fgTitle = `SuperAgent Occluder ${randomUUID()}`;
+    const encoded = Buffer.from(fixtureScript, "utf16le").toString("base64");
+    const bgChild = execa(powershell, ["-NoProfile", "-NonInteractive", "-STA", "-EncodedCommand", encoded], {
+      reject: false,
+      buffer: false,
+      windowsHide: false,
+      env: { SUPERAGENT_DESKTOP_UI_DISCOVERY_TITLE: bgTitle },
+    });
+    let fgChild: ReturnType<typeof execa> | null = null;
+    try {
+      const bgTarget = await awaitReady(bgChild);
+      fgChild = execa(powershell, ["-NoProfile", "-NonInteractive", "-STA", "-EncodedCommand", encoded], {
+        reject: false,
+        buffer: false,
+        windowsHide: false,
+        env: { SUPERAGENT_DESKTOP_UI_DISCOVERY_TITLE: fgTitle },
+      });
+      const fgTarget = await awaitReady(fgChild);
+      const adapter = createWindowsDesktopUiAdapter();
+      const identity = await resolveNativeDesktopExecutable(bgTarget.pid);
+      expect(identity).not.toBeNull();
+
+      let bgListed: Awaited<ReturnType<NonNullable<typeof adapter.listWindows>>>["windows"][number] | undefined;
+      await expect.poll(async () => {
+        const listed = await adapter.listWindows!(100);
+        bgListed = listed.windows.find(
+          (w) => w.pid === bgTarget.pid && w.nativeId === bgTarget.nativeId && w.title === bgTitle,
+        );
+        const fgListed = listed.windows.find(
+          (w) => w.pid === fgTarget.pid && w.nativeId === fgTarget.nativeId && w.title === fgTitle,
+        );
+        return Boolean(bgListed && !bgListed.active && fgListed);
+      }, { timeout: 12000, interval: 150 }).toBe(true);
+
+      await expect.poll(async () => {
+        const first = await adapter.capture(bgTarget);
+        const second = await adapter.capture(bgTarget);
+        return !first.targetWindow.active &&
+          first.targetWindow.nativeId === bgTarget.nativeId &&
+          createHash("sha256").update(first.image).digest("hex") ===
+            createHash("sha256").update(second.image).digest("hex");
+      }, { timeout: 12000, interval: 100 }).toBe(true);
+
+      const manager = new DesktopUiSessionManager(new DesktopUiConsentManager(), {
+        permanentRegistry: () => ({
+          version: 2,
+          defaultEffect: "deny",
+          rules: [{
+            id: "e2e-bg-view-input",
+            kind: "desktop",
+            effect: "allow",
+            app: identity!,
+            operations: ["view", "input"],
+            scope: { windowTitle: bgTitle },
+          }],
+        }),
+      });
+
+      const inspected = await manager.inspectWindow({
+        pid: bgTarget.pid,
+        nativeId: bgTarget.nativeId,
+        ownerPrincipal: "windows-bg-view-e2e",
+        includeScreenshotImage: true,
+        adapter,
+      });
+      expect(inspected.window.active).toBe(false);
+      expect(inspected.screenshotImage).toBeTruthy();
+      expect(inspected.schema.elements.some((element) =>
+        element.source === "accessibility" && element.role === "button" && element.label === "Inspect Me",
+      )).toBe(true);
+
+      const viewSession = await manager.openSession({
+        pid: bgTarget.pid,
+        nativeId: bgTarget.nativeId,
+        title: bgTitle,
+        ownerPrincipal: "windows-bg-view-e2e",
+        allowInput: false,
+        adapter,
+      });
+      expect(viewSession.inputAllowed).toBe(false);
+      const snap = await manager.snapshot({
+        sessionToken: viewSession.sessionToken,
+        ownerPrincipal: "windows-bg-view-e2e",
+      });
+      expect(snap.schema.screenshot.targetWindow.active).toBe(false);
+      manager.closeSession(viewSession.sessionToken, "windows-bg-view-e2e");
+
+      await expect(manager.openSession({
+        pid: bgTarget.pid,
+        nativeId: bgTarget.nativeId,
+        title: bgTitle,
+        ownerPrincipal: "windows-bg-view-e2e",
+        allowInput: true,
+        adapter,
+      })).rejects.toMatchObject({ code: "TARGET_NOT_ACTIVE" });
+    } finally {
+      if (fgChild) await terminate(fgChild);
+      await terminate(bgChild);
+    }
+  }, 60000);
 });
