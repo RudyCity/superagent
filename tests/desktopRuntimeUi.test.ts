@@ -271,6 +271,31 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.requested.some(entry=>entry.action==="configure_mcp")).toBe(false);
   });
 
+  it("closes the Edit Configuration title attribute cleanly without merging subsequent cards", async () => {
+    for (const canConfigureMcp of [true, false]) {
+      const ui = mountRuntime({
+        scannedAt: Date.now(), cores: [], processes: [], independentHosts: [],
+        remoteServices: [
+          {
+            kind: "mcp", source: "registry", state: "observed", port: 9227, pid: 8260,
+            toolMode: "safe", toolExposure: "gateway", canConfigureMcp,
+          },
+          {
+            kind: "muse-watch", source: "registry", state: "stale", port: 50885, pid: 2512,
+          },
+        ],
+      });
+      await new Promise(resolve => setImmediate(resolve));
+      const html = ui.byId("runtime-remote").innerHTML;
+      const expectedTitle = canConfigureMcp
+        ? "Edit this MCP owner's tool discovery and security policy"
+        : "Requires a verified reloadable Cloudflare owner with no active requests";
+      expect(html).toContain(`title="${expectedTitle}">Edit Configuration</button>`);
+      expect(html.match(/<article\b/g)).toHaveLength(2);
+      expect(html.match(/<\/article>/g)).toHaveLength(2);
+    }
+  });
+
   it("displays the password-protected Tray Quick URL separately and copies only allowlisted URLs", async () => {
     const gateway={active:true, configured:true, mode:"quick", connectorReady:true,
       publicUrl:"https://tray-demo.trycloudflare.com",originPort:19330,routeVerified:false};

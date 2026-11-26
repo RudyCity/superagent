@@ -510,7 +510,7 @@ const MULTI_ACTION_CAPABILITY_REGISTRY: Record<string, Record<string, Partial<Ac
       pathFileScope: "none",
       readiness: "approval_required",
       testStatus: "end_to_end_verified",
-      remediation: "Requires an approved permanent desktop rule in Tray Active Rules via superagent_request_application_access.",
+      remediation: "Requires an approved permanent desktop rule in Tray Active Rules via superagent_request_application_access, foreground focus (use focus_window first if needed), and exact full title.",
     },
     snapshot: {
       description: "Capture semantic accessibility tree and optional screenshot for an open session.",
@@ -538,7 +538,7 @@ const MULTI_ACTION_CAPABILITY_REGISTRY: Record<string, Record<string, Partial<Ac
       pathFileScope: "none",
       readiness: "approval_required",
       testStatus: "end_to_end_verified",
-      remediation: "Requires an approved permanent desktop view rule in Tray Active Rules via superagent_request_application_access.",
+      remediation: "Requires an approved permanent desktop view rule in Tray Active Rules via superagent_request_application_access, and foreground focus (call focus_window first if needed).",
     },
     action: {
       description: "Dispatch semantic click/type/key/scroll to an approved desktop window element.",

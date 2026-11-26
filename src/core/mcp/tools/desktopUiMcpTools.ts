@@ -55,7 +55,7 @@ const inputSchema = {
     query: { type: "string", minLength: 1, maxLength: 256, description: "Case-insensitive application/title query for find_window." },
     pid: { type: "integer", minimum: 1, description: "Exact process ID for open/inspect_window or optional find_window filter." },
     nativeId: { type: "string", minLength: 1, maxLength: 256, description: "Exact native window ID for open/inspect_window." },
-    title: { type: "string", minLength: 1, maxLength: 512, description: "Window title metadata; never authorization." },
+    title: { type: "string", minLength: 1, maxLength: 512, description: "Exact full window title returned by find_window/list_windows (never truncated); metadata only, never authorization." },
     allowInput: {
       type: "boolean",
       description: "true requests input; false forces read-only. Omission auto-requests only an exact currently Trusted window, and still requires a fresh native host approval.",
@@ -139,7 +139,7 @@ export const DESKTOP_UI_MCP_TOOL_DEFS = [
     name: "superagent_desktop_ui",
     description:
       "Dangerous host-local desktop perception, exact app lifecycle, package planning/apply, and read-only security-prompt inspection. "
-      + "The open command still creates only a scoped window session; launch_app separately launches a freshly verified installed application. "
+      + "The open command still creates only a scoped window session; open and inspect_window require the target window to be foreground (call focus_window first if needed) and open requires the exact full title from find_window/list_windows; launch_app separately launches a freshly verified installed application. "
       + "Lifecycle mutation requires exact host consent; package mutation requires one-shot host-operator approval bound to digest, principal, target, and invocation. "
       + "This tool is principal-bound and unavailable for SSH/chain workspaces; no raw shell, implicit elevation, or model-controlled approval is accepted.",
     inputSchema,

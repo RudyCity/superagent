@@ -83,6 +83,39 @@ describe("permanent registry Core authorization",()=>{
     const opened=await m.openSession({...request(adapter),allowInput:false});
     expect(opened.inputAllowed).toBe(false);
   });
+  it("distinguishes background window, title mismatch, and missing target from OS identity failures",async()=>{
+    const create=(active:boolean,observedTitle=window.title)=>{
+      const base=mockAdapter();
+      base.adapter.listWindows=async(limit)=>({
+        limit,truncated:false,windows:[{...window,active,title:observedTitle}],
+      });
+      return {
+        manager:new DesktopUiSessionManager(new DesktopUiConsentManager(),{
+          permanentRegistry:()=>policy([allow]),
+          executableIdentity:async()=>app,
+        }),
+        adapter:base.adapter,
+      };
+    };
+    const bg=create(false);
+    await expect(bg.manager.openSession(request(bg.adapter))).rejects.toMatchObject({
+      code:"TARGET_NOT_ACTIVE",
+      message:expect.stringMatching(/focus_window/i),
+    });
+    const renamed=create(true,"Different Title");
+    await expect(renamed.manager.openSession(request(renamed.adapter))).rejects.toMatchObject({
+      code:"INVALID_ACTION",
+      message:expect.stringMatching(/exact full title/i),
+    });
+    const missing=mockAdapter();
+    missing.adapter.listWindows=async(limit)=>({limit,truncated:false,windows:[]});
+    const m=new DesktopUiSessionManager(new DesktopUiConsentManager(),{
+      permanentRegistry:()=>policy([allow]),executableIdentity:async()=>app,
+    });
+    await expect(m.openSession(request(missing.adapter))).rejects.toMatchObject({
+      code:"TARGET_NOT_FOUND",
+    });
+  });
 });
 
 describe("permanent application element scopes",()=>{

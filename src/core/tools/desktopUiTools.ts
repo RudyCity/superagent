@@ -574,10 +574,21 @@ export class DesktopUiSessionManager {
       if (typeof baseAdapter.listWindows !== "function") {
         throw new DesktopUiError("INPUT_DISABLED", "Registered desktop view requires native OS window discovery.");
       }
+      const discovery = await listDiscoveredWindows(baseAdapter, MAX_WINDOW_DISCOVERY_LIMIT);
+      const observed = requireFreshWindowTarget(discovery, target.pid, target.nativeId);
+      if (observed.title !== target.title) {
+        throw new DesktopUiError(
+          "INVALID_ACTION",
+          "Target window title changed or does not match fresh OS discovery. Re-run find_window or list_windows and pass the exact full title.",
+        );
+      }
+      if (!observed.active) {
+        throw new DesktopUiError(
+          "TARGET_NOT_ACTIVE",
+          "Target window is not foreground. Call focus_window with its pid and nativeId first, then retry.",
+        );
+      }
       try {
-        const discovery = await listDiscoveredWindows(baseAdapter, MAX_WINDOW_DISCOVERY_LIMIT);
-        const observed = requireFreshWindowTarget(discovery, target.pid, target.nativeId);
-        if (!observed.active || observed.title !== target.title) throw Error("Window is not foreground");
         const identity = await this.executableIdentity(target.pid);
         if (!identity || evaluatePersistentAccess(permanent, {
           kind: "desktop", app: identity, operation: "view", windowTitle: observed.title,
@@ -1104,7 +1115,7 @@ export const desktopUiTool: Tool = {
   description:
     "Perceive and automate native desktop application windows using bounded discovery and accessibility semantics. " +
     "Commands also expose installed-app inventory, verified Windows app lifecycle, guarded package planning/apply, and read-only security-prompt inspection. " +
-    "The open and inspect_window commands first create an exact-target one-shot session request in Tray Request Center; retry with approvalRequestId after native operator approval. " +
+    "The open and inspect_window commands first create an exact-target one-shot session request in Tray Request Center; retry with approvalRequestId after native operator approval. Target windows must be foreground (use focus_window first if in background) and open requires the exact full title from find_window/list_windows. " +
     "This does not bypass Host File Policy or permanent host ACL. Lifecycle mutation requires exact host consent; package mutation additionally requires separate host-operator approval bound to the exact operation.",
   parameters: {
     type: "object",
@@ -1129,7 +1140,7 @@ export const desktopUiTool: Tool = {
       query: { type: "string", minLength: 1, maxLength: 256, description: "Case-insensitive application/title query for find_window." },
       pid: { type: "integer", minimum: 1, description: "Exact process ID for open/inspect_window or optional find_window filter." },
       nativeId: { type: "string", minLength: 1, maxLength: 256, description: "Exact native window ID for open/inspect_window." },
-      title: { type: "string", minLength: 1, maxLength: 512, description: "Window title metadata for 'open'; never used as authorization." },
+      title: { type: "string", minLength: 1, maxLength: 512, description: "Exact full window title from find_window/list_windows for 'open' (never truncated); metadata only, never used as authorization." },
       allowInput: {
         type: "boolean",
         description: "true requests one-session native input; false requests view-only. A Request Center native approval is required before session creation.",

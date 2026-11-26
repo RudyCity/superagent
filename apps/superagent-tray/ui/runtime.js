@@ -636,7 +636,7 @@ function runtimeRemoteCard(service) {
        ${service.canConfigureMcp === true ? "" : "disabled"}
        title="${service.canConfigureMcp === true
          ? "Edit this MCP owner's tool discovery and security policy"
-         : "Requires a verified reloadable Cloudflare owner with no active requests"}>Edit Configuration</button>`
+         : "Requires a verified reloadable Cloudflare owner with no active requests"}">Edit Configuration</button>`
     : "";
   const controls = isExternalTunnel
     ? '<div class="runtime-instance-footer"><span class="subtle-badge">Read-only · External process</span></div>'
