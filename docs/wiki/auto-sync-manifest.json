@@ -37,7 +37,7 @@
       "updatedAt": "2026-08-15T02:09:42.094Z"
     }
   },
-  "lastSync": "2026-11-27T07:19:38.808Z",
+  "lastSync": "2026-11-27T08:00:43.785Z",
   "workspaces": [
     {
       "name": "superagent",
@@ -48,7 +48,15 @@
       "path": "d:\\backup from pc asus\\Documents Development\\t-line"
     }
   ],
-  "lastModifiedFiles": [],
+  "lastModifiedFiles": [
+    "[t-line] desktop-tauri/src-tauri/src/lib.rs",
+    "[t-line] frontend/src/App.tsx",
+    "[t-line] frontend/src/components/RightSidebar.tsx",
+    "[t-line] frontend/src/components/SuperAgentInputContainer.tsx",
+    "[t-line] frontend/src/hooks/useAuth.ts",
+    "[t-line] frontend/src/styles/components.css",
+    "[t-line] frontend/src/hooks/__tests__/useAuth.test.ts"
+  ],
   "impactSummary": {
     "architecture": false,
     "domainData": false,
