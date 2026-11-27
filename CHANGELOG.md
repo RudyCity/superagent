@@ -1,3 +1,10 @@
+## [1.14.116] - 2026-11-27
+### Operator-scoped read-only Desktop UI discovery and registry v3 title policies
+- Add `desktop-ui-policy.json` (`version: 1`, `discoveryRequiresDangerousTool`). The strict default keeps discovery behind the dangerous-tool project Execute gate; when an operator explicitly sets it to `false`, only read-only commands (`probe`, `list_windows`, `list_monitors`, `get_active_window`, `find_window`, `inspect_window`, `list_installed_apps`, `inspect_security_prompts`, `live_inventory`, `snapshot`, `wait_ready`) skip that gate. `open`, `action`, `close`, lifecycle, package and live-stop commands always require it.
+- Fail closed on missing, malformed, oversized or symlinked policy files, and never let an MCP client supply the relaxation as an argument. Host file policy, window identity, permanent access rules and native consent remain independent per call.
+- Accept an explicit optional `titlePolicy: "app" | "exact"` on desktop registry rules. `app` ignores `scope.windowTitle` so a renamed live window stays usable; `exact` requires a bound `scope.windowTitle`; absent keeps legacy behaviour. Invalid combinations are rejected by the strict parser, and Core enforcement is unchanged for title-scoped rules.
+- Cover the policy reader, command classification, gate decision and registry title semantics with focused tests (11 new).
+
 ## [1.14.115] - 2026-11-27
 ### Fast-path capture now works for high-DPI Electron windows
 - Diagnosed why the persistent verified worker refused Electron and Explorer targets: at 150% display scaling, window discovery reported physical pixels while the worker reported DIPs, so the strict bounds equality failed and the worker closed. Explorer was additionally refused because it was genuinely minimized (correct fail-closed behavior, unchanged).

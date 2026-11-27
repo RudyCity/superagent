@@ -1,4 +1,4 @@
-import { registeredFileToolGate, fileRulesRegistered, getPermanentFileToolReadiness, describePermanentFileToolReadiness, CERTIFIED_DESKTOP_DISCOVERY } from "../tools/registeredFileToolGate.js";
+﻿import { registeredFileToolGate, fileRulesRegistered, getPermanentFileToolReadiness, describePermanentFileToolReadiness, CERTIFIED_DESKTOP_DISCOVERY } from "../tools/registeredFileToolGate.js";
 import {
   describeBoundedBrowserObservePermission,
   describeBoundedDesktopPermission,
@@ -6,7 +6,7 @@ import {
   describeBoundedServicePermission,
 } from "./mcpPermissionDecision.js";
 /**
- * superagentMcpServer.ts — Complete 3-Pillar (Tools, Resources, Prompts) MCP Server for Superagent.
+ * superagentMcpServer.ts â€” Complete 3-Pillar (Tools, Resources, Prompts) MCP Server for Superagent.
  *
  * Exposes full AI process inspection, live interruption/control, subagent delegation,
  * CLI bridge, workspace switching, file tools, search, command execution, presets,
@@ -111,6 +111,7 @@ import { PDF_MCP_TOOL_DEFS, PDF_MCP_TOOL_NAMES, dispatchPdfMcpTool } from "./too
 import { MEDIA_MCP_TOOL_DEFS, MEDIA_MCP_TOOL_NAMES, dispatchMediaMcpTool } from "./tools/mediaMcpTools.js";
 import { DESKTOP_UI_MCP_TOOL_DEFS, dispatchDesktopUiMcpTool } from "./tools/desktopUiMcpTools.js";
 import { DISCOVERY_COMMAND_FIELDS, sanitizeDesktopUiLogPayload, sanitizeDesktopUiLogText } from "../tools/desktopUiTools.js";
+import { desktopUiRequiresDangerousExecution } from "../desktopUi/desktopUiPolicy.js";
 import {
   DIAGNOSTICS_MCP_TOOL_DEFS,
   dispatchDiagnosticsMcpTool,
@@ -329,7 +330,7 @@ export const MCP_TOOL_DEFINITIONS = [
           taskPath: { type: "string" },
           planPath: { type: "string" },
           walkthroughPath: { type: "string" },
-          expectedArtifacts: { type: "array", items: { type: "string" }, description: "1–12 relative workspace artifact paths checked by SHA-256 on completion." },
+          expectedArtifacts: { type: "array", items: { type: "string" }, description: "1â€“12 relative workspace artifact paths checked by SHA-256 on completion." },
           timeoutMs: { type: "number", minimum: MIN_DELEGATE_TIMEOUT_MS, maximum: MAX_DELEGATE_TIMEOUT_MS },
           wait: { type: "boolean", description: "For delegate only: false starts a pollable job; true waits for CLI exit." },
           permissionMode: { type: "string", enum: ["accept-edits", "plan", "auto", "full-auto"], description: "AGY permission policy: 'accept-edits' (default, prompts for shell commands which causes headless background jobs to be permission_blocked), 'plan', 'auto', or 'full-auto' (passes --dangerously-skip-permissions to allow unrestricted autonomous shell execution in background jobs)." },
@@ -1466,7 +1467,14 @@ function extractMcpResultText(result: unknown): string {
     // The MCP OAuth flow authorizes connections, never host operations.
     // Dangerous non-project actions require Execute on the session's unique
     // enabled local project. Existing virtual mcp-connection grants are ignored.
-    if (isDangerous && !WORKSPACE_SCOPED_MCP_TOOLS.has(toolName)
+    // Read-only Desktop UI discovery may skip that project gate ONLY when the
+    // operator opted in through desktop-ui-policy.json; host file policy, window
+    // identity and native consent checks still apply to every call.
+    const desktopUiPolicyArgs = toolName === MCP_GATEWAY_TOOL_NAMES.execute
+      && rawArgs.name === "superagent_desktop_ui" ? rawArgs.arguments : rawArgs;
+    const readOnlyDesktopDiscovery = toolName === "superagent_desktop_ui"
+      && !desktopUiRequiresDangerousExecution(desktopUiPolicyArgs);
+    if (isDangerous && !readOnlyDesktopDiscovery && !WORKSPACE_SCOPED_MCP_TOOLS.has(toolName)
         && !PROJECT_REGISTRY_TOOL_NAMES.has(toolName)
         && toolName !== "superagent_grant_project_access"
         && toolName !== "superagent_revoke_project_access") {
@@ -2062,3 +2070,4 @@ export async function startSuperagentMcpServer(options: McpServerOptions = {}): 
   process.stdin.once("end", onEnd);
   process.stdin.once("close", onEnd);
 }
+

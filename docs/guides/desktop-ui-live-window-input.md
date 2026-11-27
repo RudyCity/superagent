@@ -79,6 +79,48 @@ Perception assembly now retries the settling frame up to three times before
 declaring `STALE_SCREENSHOT`. A single animated tick no longer discards a
 schema, while a genuinely changing window still fails closed.
 
+## Operator policy: read-only discovery
+
+`superagent_desktop_ui` is a dangerous tool, so every call normally needs an
+operator-approved Execute grant on the active project. Discovery returns window
+titles and process names, which is metadata-sensitive, so it stays strict by
+default. An operator may opt in with a bounded file in the SuperAgent config
+directory:
+
+`desktop-ui-policy.json`
+
+```json
+{ "version": 1, "discoveryRequiresDangerousTool": false }
+```
+
+When `discoveryRequiresDangerousTool` is `false`, only these commands skip the
+dangerous-tool project Execute gate: `probe`, `list_windows`, `list_monitors`,
+`get_active_window`, `find_window`, `inspect_window`, `list_installed_apps`,
+`inspect_security_prompts`, `live_inventory`, `snapshot`, `wait_ready`.
+`open`, `action`, `close`, `launch_app`, `restart_app`, `close_app`,
+`live_stop`, `plan_package_change` and `apply_package_change` always require it.
+
+Missing, malformed, oversized or symlinked policy files fail closed to the strict
+default. MCP clients cannot self-grant this: only the host-side file changes it.
+Host file policy, window identity, permanent access rules and native consent are
+unchanged and still evaluated per call.
+
+## Registry v3 title policies
+
+The v2 desktop access registry now also accepts an optional per-rule
+`titlePolicy` field (`"app"` or `"exact"`) so the semantics are explicit instead
+of inferred:
+
+- `"app"` — the approved application is in scope; a renamed window stays usable.
+  A `scope.windowTitle` on the same rule is ignored.
+- `"exact"` — the rule must carry `scope.windowTitle`, and only that title is
+  authorized.
+- absent — legacy behaviour: exact title only when `scope.windowTitle` exists.
+
+Core reads and enforces this field now; the Tray owner still writes the legacy
+`scope.windowTitle` form until the Rust registry and its UI surface are updated,
+so no operator workflow changes yet.
+
 ## Recovering from perception failures
 
 `wait_ready` polls perception with a bounded deadline (500-10000 ms, default

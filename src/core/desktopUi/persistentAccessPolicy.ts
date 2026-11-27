@@ -25,6 +25,13 @@ export interface DesktopAccessRule {
   effect: AccessEffect;
   app: ExecutableIdentity;
   operations: DesktopOperation[];
+  /**
+   * Optional explicit title semantics (registry v3). `app` treats the window
+   * title as volatile metadata, `exact` binds to `scope.windowTitle`. Absent
+   * keeps legacy behaviour (exact only when `scope.windowTitle` exists).
+   * Written by the Tray owner; Core only reads it.
+   */
+  titlePolicy?: "app" | "exact";
   scope: {
     windowTitle?: string;
     elementRole?: string;
@@ -110,11 +117,18 @@ function validScope(x: unknown, kind: "desktop" | "file", app: ExecutableIdentit
   return true;
 }
 function validRule(x: unknown): x is PersistentAccessRule {
-  if (!isObject(x) || !exactKeys(x, ["id","kind","effect","app","operations","scope"]) ||
+  if (!isObject(x) || !exactKeys(x, ["id","kind","effect","app","operations","scope"], ["titlePolicy"]) ||
     typeof x.id !== "string" || !RULE_ID.test(x.id) ||
     (x.kind !== "desktop" && x.kind !== "file") ||
     (x.effect !== "allow" && x.effect !== "deny") ||
     !validIdentity(x.app) || !validOps(x.operations, x.kind)) return false;
+  if (own(x, "titlePolicy")) {
+    if (x.kind !== "desktop") return false;
+    if (x.titlePolicy !== "app" && x.titlePolicy !== "exact") return false;
+    const scope = x.scope as Record<string, unknown> | null;
+    // "exact" is only meaningful when an approved title is bound to the rule.
+    if (x.titlePolicy === "exact" && !(scope && own(scope, "windowTitle"))) return false;
+  }
   return validScope(x.scope, x.kind, x.app);
 }
 
@@ -141,7 +155,10 @@ function matchRule(rule: PersistentAccessRule, request: PersistentAccessRequest)
   if (!((rule.operations as string[]).includes(request.operation))) return false;
   if (rule.kind === "desktop" && request.kind === "desktop") {
     const s = rule.scope;
-    return (!s.windowTitle || s.windowTitle === request.windowTitle) &&
+    // titlePolicy:"app" explicitly opts this approved application out of title
+    // scoping, so a live editor renaming itself does not invalidate the rule.
+    const titleScoped = s.windowTitle !== undefined && rule.titlePolicy !== "app";
+    return (!titleScoped || s.windowTitle === request.windowTitle) &&
       (!s.elementRole || s.elementRole === request.elementRole) &&
       (!s.elementLabel || s.elementLabel === request.elementLabel);
   }
@@ -196,7 +213,7 @@ export function hasRegisteredDesktopInputCandidate(
   return policy.rules.some(rule =>
     rule.kind === "desktop" && rule.effect === "allow" &&
     rule.operations.includes("input") && matchesApp(rule.app,app) &&
-    (!rule.scope.windowTitle || rule.scope.windowTitle === windowTitle));
+    (!rule.scope.windowTitle || rule.titlePolicy === "app" || rule.scope.windowTitle === windowTitle));
 }
 
 /**
@@ -220,5 +237,9 @@ export function desktopAccessRequiresExactTitle(
     rule.kind === "desktop" && rule.effect === "allow" &&
     rule.operations.includes(operation) && matchesApp(rule.app, app));
   if (allowRules.length === 0) return true;
-  return allowRules.some(rule => Boolean(rule.scope.windowTitle));
+  return allowRules.some(rule =>
+    rule.titlePolicy === "exact" ? true
+      : rule.titlePolicy === "app" ? false
+        : Boolean(rule.scope.windowTitle));
 }
+
