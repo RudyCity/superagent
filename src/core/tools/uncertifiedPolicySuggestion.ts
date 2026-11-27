@@ -11,6 +11,7 @@ type SuggestionSpec = {
 
 const DESKTOP_DISCOVERY_COMMANDS = [
   "probe",
+  "stats",
   "list_windows",
   "get_active_window",
   "find_window",

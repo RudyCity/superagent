@@ -103,7 +103,11 @@ describe("persistent capture source lifecycle", () => {
     expect(openVerifiedCapture).toHaveBeenCalledTimes(1);
     expect(openVerifiedCapture.mock.calls[0][0]).toMatchObject({ pid: window.pid, nativeId: window.nativeId });
 
+    // openSession pre-warms both carriers: one frame plus one UIA read.
+    expect(sourceCapture).toHaveBeenCalledTimes(1);
+
     await sessions.snapshot({ sessionToken: opened.sessionToken, ownerPrincipal: "mcp-agent" });
+    // The first snapshot reuses the warm worker: exactly one more frame.
     expect(sourceCapture).toHaveBeenCalledTimes(2);
 
     sessions.closeSession(opened.sessionToken, "mcp-agent");
@@ -141,6 +145,20 @@ describe("persistent capture source lifecycle", () => {
 
     expect(snapshot.schema.elements).toHaveLength(1);
     expect(adapter.capture).toHaveBeenCalled();
+  });
+
+  it("does not waste a carrier warm-up on one-shot inspect_window", async () => {
+    const { adapter, sourceCapture } = harness();
+    const sessions = manager();
+
+    const inspected = await sessions.inspectWindow({
+      pid: window.pid, nativeId: window.nativeId, adapter,
+    });
+
+    expect(inspected.schema.elements).toHaveLength(1);
+    // One-shot inspection snapshots once and closes; pre-warming would only
+    // duplicate that single perception, so exactly one frame is paid.
+    expect(sourceCapture).toHaveBeenCalledTimes(1);
   });
 
   it("does not require the optional fast path", async () => {

@@ -53,12 +53,16 @@ function boot(nativeEnabled=true, mcpData?: {
   failActions?: string[];
   decisionResults?: Record<string, any>;
   desktopUiDecisionResults?: Record<string, any>;
+  registryRules?: any[];
+  discoveryRequiresDangerous?: boolean;
 }){
   const parent=new Element("section");parent.id="settings-subpage-security";
   const old=new Element("section");old.id="desktop-trust-panel";parent.append(old);
   const listeners=new Map<string,Function>();
   const nativeEvents=new Map<string,Function>();
-  let policy:any={version:2,defaultEffect:"deny",rules:[]};
+  let policy:any={version:2,defaultEffect:"deny",
+    rules:(mcpData?.registryRules || []).map(rule=>({...rule}))};
+  let discoveryRequiresDangerous=mcpData?.discoveryRequiresDangerous ?? true;
   let auditLogs:any[]=[];
   const calls:{name:string,args:any}[]=[];
   const notifications:any[]=[];
@@ -99,11 +103,15 @@ function boot(nativeEnabled=true, mcpData?: {
         ? {platform:"win32",executablePath:args.executablePath,sha256:"e".repeat(64)}
         : app;
       const ruleId = policy.rules.length === 0 ? "abc" : ("abc-" + (policy.rules.length + 1));
+      const titlePolicy = args.kind === "desktop"
+        ? (args.titlePolicy === "exact" || (!args.titlePolicy && args.exactWindow) ? "exact" : "app")
+        : undefined;
       const rule={
         id:ruleId,kind:args.kind,effect:args.effect,app:ruleApp,operations:args.operations,
+        ...(titlePolicy ? {titlePolicy} : {}),
         scope:args.kind==="file"
           ?{path:args.filePath,recursive:args.recursive}
-          :args.exactWindow?{windowTitle:discovered.title}:{},
+          :titlePolicy==="exact"?{windowTitle:discovered.title}:{},
       };
       policy={...policy,rules:[...policy.rules,rule]};
       auditLogs.push({
@@ -113,11 +121,28 @@ function boot(nativeEnabled=true, mcpData?: {
         application:args.kind==="file"?"SuperAgent Core file tools":(args.executablePath?"VS Code":discovered.application),
         executablePath:ruleApp.executablePath,
         operation:args.operations.join(", "),
-        target:args.kind==="file"?args.filePath:(args.exactWindow?discovered.title:"All windows"),
+        target:args.kind==="file"?args.filePath:(titlePolicy==="exact"?discovered.title:"All windows"),
         effect:args.effect,
         ruleId:ruleId,
       });
       return policy;
+    }
+    if(name==="get_desktop_ui_discovery_policy")return discoveryRequiresDangerous;
+    if(name==="set_desktop_ui_discovery_policy"){
+      discoveryRequiresDangerous=args.discoveryRequiresDangerousTool===true;
+      auditLogs.push({
+        id:"audit-policy",
+        timestamp:Date.now(),
+        kind:"policy",
+        application:"Access Manager",
+        executablePath:"SuperAgent Tray",
+        operation:"desktop_ui_discovery_policy",
+        target:"read-only discovery: "+(discoveryRequiresDangerous
+          ?"requires_project_approval":"allowed_without_project_approval"),
+        effect:discoveryRequiresDangerous?"deny":"allow",
+        ruleId:null,
+      });
+      return discoveryRequiresDangerous;
     }
     if(name==="revoke_permanent_access_rule"){
       policy={...policy,rules:policy.rules.filter((r:any)=>r.id!==args.id)};
@@ -328,6 +353,81 @@ describe("real permanent Access Manager Tray panel",()=>{
   });
 });
 
+describe("explicit desktop title policy choice",()=>{
+  it("offers both title policies and defaults to the volatile app policy",async()=>{
+    const ui=boot();await flush();
+    const selector=ui.document.getElementById("access-title-policy")!;
+    expect(selector).not.toBeNull();
+    expect(selector.tagName).toBe("select");
+    expect(selector.children.map((option:any)=>option.textContent)).toEqual([
+      "Seluruh aplikasi (judul volatil)","Judul jendela persis"]);
+    expect(selector.value).toBe("app");
+    ui.document.getElementById("access-app-list")!.firstChild!.click();
+    ui.document.getElementById("access-submit")!.click();await flush();
+    const register=ui.calls.find(c=>c.name==="register_permanent_access_rule");
+    expect(register?.args.titlePolicy).toBe("app");
+    expect(register?.args.exactWindow).toBe(false);
+    const badge=ui.document.getElementById("access-rule-list")!.children[0]
+      .children[1].children[0].children
+      .find((child:any)=>child.className?.includes("access-title-policy-badge"));
+    expect(badge?.textContent).toBe("Judul volatil");
+  });
+  it("passes an exact window title policy and labels the rule Judul persis",async()=>{
+    const ui=boot();await flush();
+    ui.document.getElementById("access-app-list")!.firstChild!.click();
+    ui.document.getElementById("access-title-policy")!.value="exact";
+    ui.document.getElementById("access-submit")!.click();await flush();
+    const register=ui.calls.find(c=>c.name==="register_permanent_access_rule");
+    expect(register?.args.titlePolicy).toBe("exact");
+    expect(register?.args.exactWindow).toBe(true);
+    expect(ui.getPolicy().rules[0].titlePolicy).toBe("exact");
+    expect(ui.getPolicy().rules[0].scope.windowTitle).toBe(discovered.title);
+    expect(ui.document.getElementById("access-rule-list")!.children[0].textContent)
+      .toContain("Judul persis");
+  });
+  it("renders Legacy, Judul persis, and Judul volatil badges for existing rules",async()=>{
+    const ui=boot(true,{registryRules:[
+      {id:"legacy-desktop",kind:"desktop",effect:"allow",app,
+        operations:["view"],scope:{windowTitle:"Antigravity editor"}},
+      {id:"exact-desktop",kind:"desktop",effect:"allow",app,
+        operations:["view"],titlePolicy:"exact",scope:{windowTitle:"Antigravity editor"}},
+      {id:"app-desktop",kind:"desktop",effect:"allow",app,
+        operations:["input"],titlePolicy:"app",scope:{}},
+    ]});
+    await flush();
+    const badges=ui.document.getElementById("access-rule-list")!.children
+      .map((row:any)=>row.children[1].children[0].children
+        .find((child:any)=>child.className?.includes("access-title-policy-badge"))?.textContent);
+    expect(badges).toEqual(["Legacy","Judul persis","Judul volatil"]);
+  });
+  it("locks the title policy to app-wide when an installed application is selected",async()=>{
+    const ui=boot();await flush();
+    ui.document.getElementById("access-src-installed")!.click();await flush();
+    ui.document.getElementById("access-app-list")!.firstChild!.click();
+    const selector=ui.document.getElementById("access-title-policy")!;
+    expect(selector.disabled).toBe(true);
+    expect(selector.value).toBe("app");
+    ui.document.getElementById("access-submit")!.click();await flush();
+    const register=ui.calls.find(c=>c.name==="register_permanent_access_rule" &&
+      c.args.executablePath==="C:\\Apps\\Code.exe");
+    expect(register?.args.titlePolicy).toBe("app");
+    expect(register?.args.exactWindow).toBe(false);
+  });
+  it("records the discovery-policy toggle in the native audit trail",async()=>{
+    const ui=boot(true,{discoveryRequiresDangerous:true});await flush();
+    const toggle=ui.document.getElementById("access-desktop-discovery-toggle")!;
+    expect(toggle.checked).toBe(false);
+    toggle.checked=true;
+    toggle.change();await flush();
+    expect(ui.calls.some(c=>c.name==="set_desktop_ui_discovery_policy" &&
+      c.args.discoveryRequiresDangerousTool===false)).toBe(true);
+    expect(toggle.checked).toBe(true);
+    const auditList=ui.document.getElementById("access-audit-list")!;
+    expect(auditList.textContent).toContain("desktop_ui_discovery_policy");
+    expect(auditList.textContent).toContain("allowed_without_project_approval");
+  });
+});
+
 describe("element-specific UI enrollment",()=>{
   it("passes host-entered exact role and label into native approval, not core grants",async()=>{
     const ui=boot();await flush();
@@ -368,7 +468,8 @@ describe("installed applications enrollment and discovery", () => {
     list.children[0].click();
     expect(ui.document.getElementById("access-selected-title")?.textContent).toBe("VS Code");
     expect(ui.document.getElementById("access-selected-subtitle")?.textContent).toContain("Code.exe");
-    expect(ui.document.getElementById("access-exact")?.disabled).toBe(true);
+    expect(ui.document.getElementById("access-title-policy")?.disabled).toBe(true);
+    expect(ui.document.getElementById("access-title-policy")?.value).toBe("app");
 
     // Register rule
     ui.document.getElementById("access-submit")!.click();

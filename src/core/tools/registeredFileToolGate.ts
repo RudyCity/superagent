@@ -297,7 +297,7 @@ export function certifiedServiceInspection(args:Args|undefined):boolean {
   return parseReadOnlyServiceArgs(args)!==null;
 }
 export const CERTIFIED_DESKTOP_DISCOVERY = new Set([
-  "probe","list_windows","get_active_window","find_window",
+  "probe","stats","list_windows","get_active_window","find_window",
   "list_monitors","list_installed_apps","live_inventory","inspect_security_prompts",
 ]);
 /**

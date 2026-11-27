@@ -7,6 +7,11 @@ import {
   type FrameRegion,
 } from "./frames.js";
 import { readPngSize, sha256 } from "./png.js";
+import {
+  recordCaptureFrame,
+  recordCaptureSourceFallback,
+  recordSnapshotSample,
+} from "./desktopUiMetrics.js";
 import type {
   AccessibilitySnapshot,
   DesktopActionReceipt,
@@ -63,8 +68,20 @@ const ELEMENT_BOUNDS_TOLERANCE_PX = 2;
  */
 const ELEMENT_REGION_CHANGE_BUDGET = 0.35;
 
-/** Total confirmation captures used to settle an animated window per schema. */
-const CONFIRMATION_CAPTURE_ATTEMPTS = 3;
+/**
+ * Perception is assembled from ONE capture plus ONE accessibility read. A
+ * second "confirmation" capture used to compare whole-window pixels before a
+ * schema was returned; it doubled capture cost and still could not prove
+ * anything about the frame a caller would act on. Stability is now enforced
+ * where it actually protects input: the same-window identity fence between
+ * capture and UIA, the element fence, and the pre-action frame/region checks in
+ * prepareInput().
+ *
+ * The one caller that still needs the old pixel diagnostic is `wait_ready`,
+ * which exists precisely to poll a settling window: it opts in with
+ * `measureChangeRatio`, paying a single extra capture and keeping the visual
+ * budget as a retry signal. Plain `snapshot` never pays that capture.
+ */
 
 function sameElementBounds(a: DesktopBounds, b: DesktopBounds): boolean {
   return Math.abs(a.x - b.x) <= ELEMENT_BOUNDS_TOLERANCE_PX
@@ -207,8 +224,51 @@ export class DesktopUiSession {
     return this.options.adapter.probe();
   }
 
-  async snapshot(): Promise<DesktopUiSchema> {
-    return this.runExclusive(() => this.snapshotUnlocked());
+  /**
+   * Best-effort carrier warm-up used once by DesktopUiSessionManager.openSession:
+   * one capability probe, one frame through the persistent capture worker and
+   * one accessibility read through the persistent UIA carrier. The results are
+   * discarded; the point is that the first real snapshot finds every helper
+   * already running. This never decides authority and must never be treated as
+   * a perception revision.
+   */
+  async warmCarriers(): Promise<void> {
+    await this.runExclusive(async () => {
+      // Probe is memoized for a few seconds; without this the first snapshot
+      // would still pay a cold helper process for capabilities.
+      await this.capabilitiesCached();
+      const target = this.currentTarget();
+      const capture = await this.captureFrame(target);
+      await this.options.adapter.inspectAccessibility(target, capture);
+    });
+  }
+
+  /**
+   * Perceive the scoped window once. `measureChangeRatio` is an internal
+   * wait_ready-only diagnostic; see the stability comment above.
+   */
+  async snapshot(options: { measureChangeRatio?: boolean } = {}): Promise<DesktopUiSchema> {
+    return this.runExclusive(async () => {
+      const startedAt = performance.now();
+      let changeRatio: number | null = null;
+      try {
+        const schema = await this.snapshotUnlocked(options.measureChangeRatio === true);
+        changeRatio = schema.screenshot.changeRatio ?? null;
+        recordSnapshotSample({
+          latencyMs: performance.now() - startedAt,
+          ok: true,
+          changeRatio,
+        });
+        return schema;
+      } catch (error) {
+        recordSnapshotSample({
+          latencyMs: performance.now() - startedAt,
+          ok: false,
+          changeRatio: null,
+        });
+        throw error;
+      }
+    });
   }
 
   private async capabilitiesCached(): Promise<DesktopUiCapabilities> {
@@ -231,13 +291,17 @@ export class DesktopUiSession {
     const source = this.captureSource;
     if (source) {
       try {
-        return await source.capture();
+        const capture = await source.capture();
+        recordCaptureFrame("persistent");
+        return capture;
       } catch {
         this.captureSource = null;
+        recordCaptureSourceFallback();
         try { source.close(); } catch { /* ignore */ }
         this.captureFallbackReason = "Native capture source refused; using one-shot capture for this session.";
       }
     }
+    recordCaptureFrame("one-shot");
     return this.options.adapter.capture(target);
   }
 
@@ -251,7 +315,7 @@ export class DesktopUiSession {
     this.current = null;
   }
 
-  private async snapshotUnlocked(): Promise<DesktopUiSchema> {
+  private async snapshotUnlocked(measureChangeRatio = false): Promise<DesktopUiSchema> {
     const capabilities = await this.capabilitiesCached();
     if (!capabilities.available || !capabilities.screenshot) {
       throw new DesktopUiError(
@@ -283,27 +347,29 @@ export class DesktopUiSession {
       );
     }
 
-    // Bounded adaptive confirmation: retry the settling frame instead of
-    // failing a live window on the first animated tick.
-    let confirmation = await this.captureFrame(candidateTarget);
-    let assembledChangeRatio = frameChangeRatio(capture.image, confirmation.image);
-    for (let attempt = 1; attempt < CONFIRMATION_CAPTURE_ATTEMPTS; attempt++) {
-      const stable = sameWindowIdentity(capture.targetWindow, confirmation.targetWindow)
-        && (assembledChangeRatio === null
-          ? sha256(confirmation.image) === hash
-          : assembledChangeRatio <= DEFAULT_MAX_FRAME_CHANGE_RATIO);
-      if (stable) break;
-      confirmation = await this.captureFrame(candidateTarget);
-      assembledChangeRatio = frameChangeRatio(capture.image, confirmation.image);
-    }
-    const confirmedStable = assembledChangeRatio === null
-      ? sha256(confirmation.image) === hash
-      : assembledChangeRatio <= DEFAULT_MAX_FRAME_CHANGE_RATIO;
-    if (!sameWindowIdentity(capture.targetWindow, confirmation.targetWindow) || !confirmedStable) {
-      throw new DesktopUiError(
-        "STALE_SCREENSHOT",
-        "Target window changed beyond the allowed visual budget while the screenshot schema was being assembled.",
-      );
+    // Single-capture assembly. Identity between the frame and the UIA read is
+    // still fail-closed above; visual stability is enforced before dispatch.
+    // wait_ready opts into the legacy settle check below, because its whole
+    // purpose is to wait out animation and it needs the changeRatio diagnostic.
+    let assembledChangeRatio: number | null = null;
+    if (measureChangeRatio) {
+      const settled = await this.captureFrame(candidateTarget);
+      if (!sameWindowIdentity(capture.targetWindow, settled.targetWindow)) {
+        throw new DesktopUiError(
+          "STALE_SCREENSHOT",
+          "Target window identity or bounds changed while the screenshot schema was being assembled.",
+        );
+      }
+      assembledChangeRatio = frameChangeRatio(capture.image, settled.image);
+      const settledStable = assembledChangeRatio === null
+        ? sha256(settled.image) === hash
+        : assembledChangeRatio <= DEFAULT_MAX_FRAME_CHANGE_RATIO;
+      if (!settledStable) {
+        throw new DesktopUiError(
+          "STALE_SCREENSHOT",
+          "Target window changed beyond the allowed visual budget while the screenshot schema was being assembled.",
+        );
+      }
     }
 
     const elements = accessibilityElements(accessibility);

@@ -400,7 +400,7 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       registeredFileToolGate({name:"superagent_desktop_ui",args},a.root,opts);
     expect(getPermanentFileToolReadiness("superagent_desktop_ui")).toBe("action_dependent");
     for(const args of [
-      {command:"probe"}, {command:"list_windows",limit:50},
+      {command:"probe"}, {command:"stats"}, {command:"list_windows",limit:50},
       {action:"get_active_window"}, {command:"find_window",query:"Chrome",pid:2345},
       {command:"list_monitors"}, {command:"list_installed_apps",limit:50},
       {command:"live_inventory"}, {command:"inspect_security_prompts"},

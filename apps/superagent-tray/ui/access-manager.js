@@ -59,7 +59,7 @@
   function setBusy(value) {
     state.busy = value;
     for (const id of ["access-submit","access-refresh","access-select-window",
-      "access-effect","access-kind","access-exact","access-view","access-input","access-element-role","access-element-label",
+      "access-effect","access-kind","access-title-policy","access-view","access-input","access-element-role","access-element-label",
       "access-file-path","access-file-recursive","access-file-read","access-file-write","access-file-delete",
       "access-pick-file","access-pick-folder","access-audit-clear","access-audit-refresh",
       "access-src-active","access-src-installed","access-pick-exe",
@@ -83,10 +83,28 @@
         return app.includes(query) || path.includes(query) || ops.includes(query);
       });
       updateBulkBar(filtered);
+      // Re-apply target-dependent locks (e.g. app-wide title policy for an
+      // installed application) after controls are re-enabled.
+      updateSelection();
     }
   }
   function appName(path) {
     return String(path || "Unknown executable").split(/[\\/]/).pop() || "Unknown executable";
+  }
+  function titlePolicyBadge(policy) {
+    const descriptor = policy === "exact"
+      ? { label: "Judul persis", cls: "op-input",
+          hint: "Aturan terikat pada satu judul jendela persis yang terverifikasi." }
+      : policy === "app"
+        ? { label: "Judul volatil", cls: "op-view",
+            hint: "Aturan berlaku untuk seluruh jendela aplikasi; judul jendela hanya metadata volatil." }
+        : { label: "Legacy", cls: "op-write",
+            hint: "Aturan lama tanpa kebijakan judul eksplisit; judul mengikuti inferensi legacy." };
+    const badge = make("span", "access-op-chip " + descriptor.cls + " access-title-policy-badge",
+      descriptor.label);
+    badge.title = descriptor.hint;
+    badge.setAttribute("aria-label", "Kebijakan judul: " + descriptor.hint);
+    return badge;
   }
   function selectedWindow() {
     return state.windows.find(w => String(w.pid) + ":" + w.nativeId === state.selected);
@@ -215,21 +233,20 @@
       : (state.appSource === "active"
           ? "Pilih jendela aktif dari daftar untuk registrasi."
           : "Pilih aplikasi terinstall dari daftar untuk registrasi.");
-    const exactWrap = $("access-exact")?.parentNode;
-    if ($("access-exact")) {
+    const titlePolicy = $("access-title-policy");
+    if (titlePolicy) {
+      const titlePolicyWrap = titlePolicy.parentNode;
       if (target?.type === "installed") {
-        $("access-exact").checked = false;
-        $("access-exact").disabled = true;
-        if (exactWrap?.style) {
-          exactWrap.style.opacity = "0.5";
-        }
-        if (exactWrap) exactWrap.title = "Aturan aplikasi terinstall berlaku untuk seluruh jendela executable ini";
+        // An installed application rule covers every window of the executable,
+        // so binding a single window title is not possible.
+        titlePolicy.value = "app";
+        titlePolicy.disabled = true;
+        if (titlePolicyWrap?.style) titlePolicyWrap.style.opacity = "0.5";
+        if (titlePolicyWrap) titlePolicyWrap.title = "Aturan aplikasi terinstall berlaku untuk seluruh jendela executable ini";
       } else {
-        $("access-exact").disabled = state.busy;
-        if (exactWrap?.style) {
-          exactWrap.style.opacity = "1";
-        }
-        if (exactWrap) exactWrap.title = "";
+        titlePolicy.disabled = state.busy;
+        if (titlePolicyWrap?.style) titlePolicyWrap.style.opacity = "1";
+        if (titlePolicyWrap) titlePolicyWrap.title = "";
       }
     }
     const submit = $("access-submit");
@@ -379,7 +396,9 @@
         const chip = make("span", "access-op-chip op-" + op, op);
         chips.append(chip);
       }
-      headerLine.append(title, kindBadge, chips);
+      headerLine.append(title, kindBadge);
+      if (rule.kind === "desktop") headerLine.append(titlePolicyBadge(rule.titlePolicy));
+      headerLine.append(chips);
 
       const scopeDesc = rule.kind === "desktop"
         ? [rule.scope.windowTitle || "Semua jendela aplikasi terverifikasi",
@@ -511,13 +530,18 @@
     }
     setBusy(true);
     status("Konfirmasi aturan permanen lewat dialog native...");
+    // Explicit operator choice: volatile app-wide titles versus one exact window
+    // title. Installed-application rules have no live window, so they stay app-wide.
+    const titlePolicy = kind === "desktop" && target.type === "active" &&
+      $("access-title-policy")?.value === "exact" ? "exact" : "app";
     try {
       const registry = await invoke("register_permanent_access_rule", {
         pid: kind === "desktop" ? target.pid : 0,
         nativeId: kind === "desktop" ? target.nativeId : "",
         effect: $("access-effect").value,
         kind, operations,
-        exactWindow: kind === "desktop" && target.type === "active" && $("access-exact").checked,
+        exactWindow: kind === "desktop" && titlePolicy === "exact",
+        titlePolicy: kind === "desktop" ? titlePolicy : null,
         elementRole: kind === "desktop" ? ($("access-element-role").value.trim() || null) : null,
         elementLabel: kind === "desktop" ? ($("access-element-label").value.trim() || null) : null,
         filePath: kind === "file" ? $("access-file-path").value.trim() : null,
@@ -924,6 +948,9 @@
     const describeDiscoveryPolicy = (requiresDangerous) => requiresDangerous
       ? "Nonaktif: penemuan read-only tetap memerlukan persetujuan proyek."
       : "Aktif: penemuan read-only diizinkan tanpa persetujuan proyek.";
+    // Mount the control: it was previously built but never attached, leaving the
+    // operator unable to change the read-only discovery policy from the Tray.
+    discoveryBody.append(discoveryToggle, discoveryState);
     if (typeof invoke === "function") {
       discoveryInput.disabled = true;
       discoveryInput.addEventListener("change", () => {
@@ -936,6 +963,9 @@
             discoveryInput.checked = saved === false;
             discoveryState.textContent = describeDiscoveryPolicy(saved !== false);
             status("Kebijakan penemuan Desktop UI disimpan.", "success");
+            // The native host records this policy change in the access audit
+            // trail; refresh so the Audit Host tab shows it immediately.
+            void refreshAuditLog();
           } catch {
             discoveryInput.checked = !requiresDangerous;
             discoveryState.textContent = "Gagal menyimpan kebijakan; pengaturan sebelumnya dipertahankan.";
@@ -2945,7 +2975,13 @@
     const switches = make("div","access-switches");
     switches.append(checkbox("access-view","Lihat jendela dan konten",true),
       checkbox("access-input","Ketik, klik, dan navigasi",true));
-    desktop.append(switches,checkbox("access-exact","Berlaku hanya pada judul jendela ini",false));
+    desktop.append(switches);
+    const titlePolicySelect = select("access-title-policy", [
+      ["app", "Seluruh aplikasi (judul volatil)"],
+      ["exact", "Judul jendela persis"],
+    ]);
+    desktop.append(field("Kebijakan judul jendela", titlePolicySelect,
+      "Judul volatil mengikuti aplikasi; judul persis mengikat satu jendela terverifikasi."));
     const elementGrid = make("div","access-form-grid");
     const role = select("access-element-role",[["","Semua elemen"],["edit","Edit / input"],["button","Button"],["text","Text"],["textbox","Textbox"],["document","Document"],["menuitem","Menu item"],["list","List"],["tree","Tree"]]);
     const label = make("input","access-search");

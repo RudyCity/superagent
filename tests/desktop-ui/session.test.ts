@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createDesktopUiSession,
   DesktopUiError,
@@ -147,13 +147,17 @@ describe("DesktopUiSession", () => {
     await expect(session.snapshot()).rejects.toMatchObject({ code: "STALE_SCREENSHOT" });
   });
 
-  it("rejects a schema when the confirmation capture changes after accessibility inspection", async () => {
-    const before = fakePng(100, 50, 1);
-    const changed = fakePng(100, 50, 2);
-    const { adapter } = mockAdapter([before, changed]);
+  it("assembles a plain schema from a single capture and omits the wait_ready diagnostic", async () => {
+    const frame = fakePng(100, 50, 1);
+    const { adapter, capture } = mockAdapter([frame, fakePng(100, 50, 2)]);
     const session = createDesktopUiSession({ adapter, target: { pid: 42 } });
 
-    await expect(session.snapshot()).rejects.toMatchObject({ code: "STALE_SCREENSHOT" });
+    const schema = await session.snapshot();
+
+    // One frame + one accessibility read: no confirmation capture is paid.
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(schema.screenshot.changeRatio).toBeUndefined();
+    expect(schema.warnings.join(" ")).not.toMatch(/sampled pixels changed/);
   });
 
   it("default-denies native input even when the adapter reports input support", async () => {
@@ -238,7 +242,7 @@ describe("DesktopUiSession", () => {
   it("derives click coordinates from confirmed accessibility and returns post-action verification", async () => {
     const before = fakePng(100, 50, 1);
     const after = fakePng(100, 50, 2);
-    const { adapter, dispatch } = mockAdapter([before, before, before, before, after, after]);
+    const { adapter, dispatch } = mockAdapter([before, before, before, after, after]);
     const session = createDesktopUiSession({
       adapter,
       target: { pid: 42 },
@@ -384,7 +388,7 @@ describe("DesktopUiSession", () => {
   it("rechecks screenshot pixels after pre-action accessibility inspection", async () => {
     const frame = fakePng(100, 50, 1);
     const changed = fakePng(100, 50, 2);
-    const { adapter, dispatch } = mockAdapter([frame, frame, frame, changed]);
+    const { adapter, dispatch } = mockAdapter([frame, frame, changed, changed]);
     const session = createDesktopUiSession({
       adapter,
       target: { pid: 42, nativeId: "window-42" },
@@ -402,8 +406,14 @@ describe("DesktopUiSession", () => {
 
   it("never presents a sent click as a pre-dispatch failure when post-action verification fails", async () => {
     const before = fakePng(100, 50, 1);
-    const after = fakePng(100, 50, 2);
-    const { adapter, dispatch } = mockAdapter([before, before, before, before, after, before]);
+    const { adapter, dispatch } = mockAdapter([before, before, before]);
+    const capture = vi.mocked(adapter.capture);
+    const captureImplementation = capture.getMockImplementation()!;
+    capture.mockImplementation(async (target) => {
+      // Call 1 = perception, 2 = pre-action frame, 3 = pre-action confirmation.
+      if (capture.mock.calls.length > 3) throw new Error("post-action capture failed");
+      return captureImplementation(target);
+    });
     const session = createDesktopUiSession({
       adapter,
       target: { pid: 42, nativeId: "window-42" },
@@ -417,9 +427,10 @@ describe("DesktopUiSession", () => {
       expectedHash: schema.screenshot.sha256,
     })).rejects.toMatchObject({
       code: "DISPATCH_UNVERIFIED",
-      details: { dispatched: true, verificationErrorCode: "STALE_SCREENSHOT" },
+      details: { dispatched: true, verificationErrorCode: "PROCESS_FAILED" },
     });
     expect(dispatch).toHaveBeenCalledTimes(1);
+    // The invalidated schema must not be reusable after an unverified dispatch.
     await expect(session.click({
       elementId: "a1",
       expectedRevision: schema.screenshot.revision,
@@ -450,21 +461,22 @@ describe("DesktopUiSession", () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
   });
 
-  it("does not pin a new window until screenshot and accessibility checks both pass", async () => {
+  it("does not pin a target window until capture and accessibility agree on identity", async () => {
     const frame = fakePng(100, 50, 1);
     const replacement = { ...window, nativeId: "replacement-window" };
-    const { adapter, capture } = mockAdapter([frame, frame, frame, frame], {
-      captureWindows: [window, replacement, replacement, replacement],
+    const { adapter, capture } = mockAdapter([frame, frame, frame], {
+      captureWindows: [replacement, replacement, replacement],
     });
-    vi.mocked(adapter.inspectAccessibility).mockImplementation(
-      async (_target, nativeCapture) => accessibilitySnapshot(nativeCapture.targetWindow),
-    );
+    vi.mocked(adapter.inspectAccessibility)
+      .mockResolvedValueOnce(accessibilitySnapshot(window))
+      .mockImplementation(async (_target, nativeCapture) => accessibilitySnapshot(nativeCapture.targetWindow));
     const session = createDesktopUiSession({ adapter, target: { pid: 42 } });
 
     await expect(session.snapshot()).rejects.toMatchObject({ code: "STALE_SCREENSHOT" });
     const schema = await session.snapshot();
     expect(schema.screenshot.targetWindow.nativeId).toBe("replacement-window");
-    expect(capture).toHaveBeenNthCalledWith(5, { pid: 42 });
+    // The rejected attempt must not have been cached: both snapshots capture.
+    expect(capture).toHaveBeenCalledTimes(2);
   });
 
   it("requires verified focused-element identity for mutating untargeted key commands", async () => {
@@ -488,7 +500,7 @@ describe("DesktopUiSession", () => {
     const initial = accessibilitySnapshot();
     initial.elements[0].focused = true;
     const { adapter, dispatch } = mockAdapter(
-      [before, before, before, before, after, after],
+      [before, before, before, after, after],
       { accessibility: initial },
     );
     const session = createDesktopUiSession({
@@ -529,7 +541,7 @@ describe("DesktopUiSession", () => {
   it("serializes concurrent mutations so an old revision cannot dispatch twice", async () => {
     const before = fakePng(100, 50, 1);
     const after = fakePng(100, 50, 2);
-    const { adapter, dispatch } = mockAdapter([before, before, before, before, after, after]);
+    const { adapter, dispatch } = mockAdapter([before, before, before, after, after]);
     const session = createDesktopUiSession({
       adapter,
       target: { pid: 42 },

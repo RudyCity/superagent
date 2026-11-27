@@ -48,6 +48,17 @@ pub enum TitlePolicy {
     App,
     Exact,
 }
+/// OS-verified executable identity comparison. Windows paths and SHA-256
+/// digests are case-insensitive; other platforms compare exactly.
+fn same_executable(a: &ExecutableIdentity, b: &ExecutableIdentity) -> bool {
+    a.platform == b.platform
+        && a.sha256.eq_ignore_ascii_case(&b.sha256)
+        && if a.platform == "win32" {
+            a.executable_path.eq_ignore_ascii_case(&b.executable_path)
+        } else {
+            a.executable_path == b.executable_path
+        }
+}
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Rule {
@@ -85,13 +96,7 @@ impl Rule {
                 Rule::Desktop { effect: e2, app: a2, title_policy: t2, scope: s2, .. },
             ) => {
                 e1 == e2
-                    && a1.platform == a2.platform
-                    && a1.sha256.eq_ignore_ascii_case(&a2.sha256)
-                    && if a1.platform == "win32" {
-                        a1.executable_path.eq_ignore_ascii_case(&a2.executable_path)
-                    } else {
-                        a1.executable_path == a2.executable_path
-                    }
+                    && same_executable(a1, a2)
                     && s1.window_title == s2.window_title
                     && t1 == t2
                     && s1.element_role == s2.element_role
@@ -102,13 +107,11 @@ impl Rule {
                 Rule::File { effect: e2, app: a2, scope: s2, .. },
             ) => {
                 e1 == e2
-                    && a1.platform == a2.platform
-                    && a1.sha256.eq_ignore_ascii_case(&a2.sha256)
+                    && same_executable(a1, a2)
                     && if a1.platform == "win32" {
-                        a1.executable_path.eq_ignore_ascii_case(&a2.executable_path)
-                            && s1.path.eq_ignore_ascii_case(&s2.path)
+                        s1.path.eq_ignore_ascii_case(&s2.path)
                     } else {
-                        a1.executable_path == a2.executable_path && s1.path == s2.path
+                        s1.path == s2.path
                     }
                     && s1.recursive == s2.recursive
             }
@@ -669,6 +672,7 @@ pub(crate) async fn register_permanent_access_rule(
     exact_window: bool, element_role: Option<String>, element_label: Option<String>,
     file_path: Option<String>, recursive: Option<bool>,
     executable_path: Option<String>,
+    title_policy: Option<String>,
 ) -> Result<Registry, String> {
     focused(&window, true)?;
     if (kind == "desktop" && pid > 0 && !descriptor(&native_id, 256))
@@ -676,6 +680,17 @@ pub(crate) async fn register_permanent_access_rule(
         || !["allow", "deny"].contains(&effect.as_str())
         || !["desktop", "file"].contains(&kind.as_str()) || operations.is_empty() {
         return Err("Invalid registration request".into());
+    }
+    // Optional operator choice from the Tray. Omitted keeps the legacy
+    // `exactWindow` inference so older UI builds and pending approvals work.
+    let requested_title_policy = match title_policy.as_deref() {
+        None => None,
+        Some("app") => Some(TitlePolicy::App),
+        Some("exact") => Some(TitlePolicy::Exact),
+        Some(_) => return Err("Invalid title policy".into()),
+    };
+    if kind == "file" && requested_title_policy.is_some() {
+        return Err("Title policy applies only to desktop access rules".into());
     }
     // File rules apply ONLY to SuperAgent Core-managed file tools. They cannot
     // sandbox arbitrary filesystem access inside Antigravity/Chrome.
@@ -717,6 +732,15 @@ pub(crate) async fn register_permanent_access_rule(
         let (app_name, id) = verified_executable_from_path(exe_raw)?;
         (app_name, "All windows of this executable".to_string(), id, None)
     };
+    // An explicit operator choice wins; when omitted the legacy `exact_window`
+    // inference keeps older Tray builds and pending-request approvals working.
+    let effective_title_policy = resolve_title_policy(requested_title_policy, exact_window, pid, &kind)?;
+    let bind_exact_title = kind == "desktop" && effective_title_policy == TitlePolicy::Exact;
+    let title_policy_note = match (kind.as_str(), effective_title_policy) {
+        ("desktop", TitlePolicy::Exact) => format!("Exact window title (\"{title}\")"),
+        ("desktop", TitlePolicy::App) => "Whole application (window title is volatile)".to_string(),
+        _ => "Not applicable (Core-managed file rule)".to_string(),
+    };
     let chosen_path = if kind == "file" {
         let requested = file_path.as_deref().ok_or("File path required")?;
         // Actual existing file/folder only: no symlink or lexical traversal.
@@ -735,10 +759,11 @@ pub(crate) async fn register_permanent_access_rule(
         Some(value)
     } else { None };
     let prompt = format!(
-        "REGISTER PERMANENT {} RULE\n\nApplication: {}\nExecutable: {}\nSHA-256: {}\nWindow: {}\nKind: {}\nOperations: {}\nScope: {}\n\nThis rule has NO TIME LIMIT. It remains until you revoke it.\nBlocked rules always override allowed rules.\nSession tokens and OS restrictions remain separate.\nOnly approve if you selected this precise app/scope.",
+        "REGISTER PERMANENT {} RULE\n\nApplication: {}\nExecutable: {}\nSHA-256: {}\nWindow: {}\nKind: {}\nOperations: {}\nScope: {}\nTitle policy: {}\n\nThis rule has NO TIME LIMIT. It remains until you revoke it.\nBlocked rules always override allowed rules.\nSession tokens and OS restrictions remain separate.\nOnly approve if you selected this precise app/scope.",
         effect.to_uppercase(), application, identity.executable_path,
         identity.sha256, title, kind, operations.join(", "),
-        chosen_path.as_deref().unwrap_or(if exact_window && pid > 0 { &title } else { "All windows of this exact executable" })
+        chosen_path.as_deref().unwrap_or(if bind_exact_title { &title } else { "All windows of this exact executable" }),
+        title_policy_note
     );
     let prompt = format!(
         "{prompt}
@@ -760,7 +785,7 @@ Target element label: {}
             return Err("Core worker changed while native approval was shown".into());
         }
     } else if pid > 0 {
-        if exact_window {
+        if bind_exact_title {
             let fresh = super::core_request(Method::GET, "/api/desktop/live/windows", None).await?;
             let (fresh_app, fresh_title) = match_window(&fresh, pid, &native_id)?;
             if fresh_app != application || fresh_title != title {
@@ -787,9 +812,9 @@ Target element label: {}
         Rule::Desktop {
             id: uuid::Uuid::new_v4().simple().to_string(), effect, app: identity.clone(),
             operations: operations.clone(),
-            title_policy: Some(if exact_window && pid > 0 { TitlePolicy::Exact } else { TitlePolicy::App }),
+            title_policy: Some(effective_title_policy),
             scope: DesktopScope {
-                window_title: if exact_window && pid > 0 { Some(title) } else { None },
+                window_title: if bind_exact_title { Some(title) } else { None },
                 element_role, element_label,
             },
         }
@@ -807,34 +832,24 @@ Target element label: {}
     if policy != before_approval {
         return Err("Registry changed during approval; retry with current settings".into());
     }
-    if let Some(pos) = policy.rules.iter().position(|r| r.same_target(&rule)) {
-        let mut merged_ops = match &policy.rules[pos] {
-            Rule::Desktop { operations, .. } | Rule::File { operations, .. } => operations.clone(),
-        };
-        for op in match &rule {
-            Rule::Desktop { operations, .. } | Rule::File { operations, .. } => operations,
-        } {
-            if !merged_ops.contains(op) {
-                merged_ops.push(op.clone());
-            }
-        }
-        match &mut policy.rules[pos] {
-            Rule::Desktop { operations, .. } | Rule::File { operations, .. } => {
-                *operations = merged_ops;
-            }
-        }
-    } else {
-        if policy.rules.len() >= MAX_RULES { return Err("Access registry full".into()); }
-        policy.rules.push(rule.clone());
-    }
+    let title_policy_change = apply_rule_to_policy(&mut policy, &rule, requested_title_policy.is_some())?;
     save(&dir, &policy)?;
+    if let Some(change) = title_policy_change.as_ref() {
+        record_title_policy_change_audit(
+            &dir, change, &application, &identity.executable_path, rule.effect(),
+        );
+    }
     let target_desc = match &rule {
-        Rule::Desktop { scope, .. } => scope.window_title.clone().unwrap_or_else(|| "All windows".into()),
+        Rule::Desktop { scope, title_policy, .. } => format!(
+            "{} · titlePolicy: {}",
+            scope.window_title.clone().unwrap_or_else(|| "All windows".into()),
+            title_policy_descriptor(*title_policy)
+        ),
         Rule::File { scope, .. } => format!("{}{}", scope.path, if scope.recursive { " (recursive)" } else { "" }),
     };
     let _ = record_audit_entry(&dir, &AccessAuditEntry {
         id: uuid::Uuid::new_v4().simple().to_string(),
-        timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
+        timestamp: audit_timestamp_ms(),
         kind: rule.kind().to_string(),
         application: application.clone(),
         executable_path: identity.executable_path.clone(),
@@ -929,6 +944,155 @@ pub(crate) fn clear_permanent_access_audit_log(
     }
     Ok(true)
 }
+
+/// Milliseconds since the Unix epoch for audit entries.
+fn audit_timestamp_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// Operator-visible name of a rule title policy. `None` is a legacy rule that
+/// predates registry v3 and therefore relies on inferred title semantics.
+fn title_policy_descriptor(policy: Option<TitlePolicy>) -> &'static str {
+    match policy {
+        Some(TitlePolicy::App) => "app",
+        Some(TitlePolicy::Exact) => "exact",
+        None => "legacy",
+    }
+}
+
+/// Resolve the effective title policy for a desktop rule. An explicit operator
+/// choice always wins; when omitted the legacy `exact_window` inference keeps
+/// older Tray builds and pending-request approvals working unchanged.
+fn resolve_title_policy(
+    explicit: Option<TitlePolicy>, exact_window: bool, pid: u32, kind: &str,
+) -> Result<TitlePolicy, String> {
+    if kind == "file" {
+        return if explicit.is_some() {
+            Err("Title policy applies only to desktop access rules".into())
+        } else {
+            Ok(TitlePolicy::App)
+        };
+    }
+    match explicit {
+        Some(TitlePolicy::Exact) if pid == 0 => {
+            Err("Exact title policy requires a live verified window".into())
+        }
+        Some(policy) => Ok(policy),
+        None => Ok(if exact_window && pid > 0 { TitlePolicy::Exact } else { TitlePolicy::App }),
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TitlePolicyChange {
+    rule_id: String,
+    from: Option<TitlePolicy>,
+    to: TitlePolicy,
+}
+
+/// A legacy rule (no explicit policy) matches a newly registered rule when
+/// everything except the title policy is identical. Re-registering that target
+/// with an explicit choice upgrades the rule in place instead of leaving two
+/// near-duplicate rules behind.
+fn legacy_title_policy_match(existing: &Rule, candidate: &Rule) -> bool {
+    match (existing, candidate) {
+        (
+            Rule::Desktop { effect: e1, app: a1, title_policy: None, scope: s1, .. },
+            Rule::Desktop { effect: e2, app: a2, title_policy: Some(_), scope: s2, .. },
+        ) => {
+            e1 == e2
+                && same_executable(a1, a2)
+                && s1.window_title == s2.window_title
+                && s1.element_role == s2.element_role
+                && s1.element_label == s2.element_label
+        }
+        _ => false,
+    }
+}
+
+fn merge_rule_operations(target: &mut Rule, source: &Rule) {
+    let additions = match source {
+        Rule::Desktop { operations, .. } | Rule::File { operations, .. } => operations.clone(),
+    };
+    let current = match target {
+        Rule::Desktop { operations, .. } | Rule::File { operations, .. } => operations,
+    };
+    for operation in additions {
+        if !current.contains(&operation) {
+            current.push(operation);
+        }
+    }
+}
+
+/// Merge or insert a verified rule. Returns a descriptor when an existing
+/// legacy rule changed its title policy, which the caller records as an audit
+/// entry. An existing explicit policy is never overwritten silently.
+fn apply_rule_to_policy(
+    policy: &mut Registry, rule: &Rule, explicit_policy: bool,
+) -> Result<Option<TitlePolicyChange>, String> {
+    if let Some(pos) = policy.rules.iter().position(|existing| existing.same_target(rule)) {
+        merge_rule_operations(&mut policy.rules[pos], rule);
+        return Ok(None);
+    }
+    if explicit_policy {
+        if let Some(pos) = policy.rules.iter().position(|existing| legacy_title_policy_match(existing, rule)) {
+            let candidate_policy = match rule {
+                Rule::Desktop { title_policy, .. } => *title_policy,
+                Rule::File { .. } => None,
+            };
+            let change = match (&policy.rules[pos], candidate_policy) {
+                (Rule::Desktop { id, title_policy, .. }, Some(to)) => Some(TitlePolicyChange {
+                    rule_id: id.clone(),
+                    from: *title_policy,
+                    to,
+                }),
+                _ => None,
+            };
+            if let Some(change) = change {
+                if let Rule::Desktop { title_policy, scope, .. } = &mut policy.rules[pos] {
+                    *title_policy = Some(change.to);
+                    if let Rule::Desktop { scope: candidate_scope, .. } = rule {
+                        scope.window_title = candidate_scope.window_title.clone();
+                    }
+                }
+                merge_rule_operations(&mut policy.rules[pos], rule);
+                return Ok(Some(change));
+            }
+        }
+    }
+    if policy.rules.len() >= MAX_RULES {
+        return Err("Access registry full".into());
+    }
+    policy.rules.push(rule.clone());
+    Ok(None)
+}
+
+/// Append the audit entry for an explicit title-policy change on an existing
+/// rule. Failure is non-fatal so a policy upgrade is never rolled back by a
+/// logging problem.
+fn record_title_policy_change_audit(
+    dir: &Path, change: &TitlePolicyChange, application: &str, executable_path: &str,
+    effect: &str,
+) {
+    let _ = record_audit_entry(dir, &AccessAuditEntry {
+        id: uuid::Uuid::new_v4().simple().to_string(),
+        timestamp: audit_timestamp_ms(),
+        kind: "desktop".into(),
+        application: application.to_string(),
+        executable_path: executable_path.to_string(),
+        operation: "title policy change".into(),
+        target: format!(
+            "{} -> {}",
+            title_policy_descriptor(change.from),
+            title_policy_descriptor(Some(change.to))
+        ),
+        effect: effect.to_string(),
+        rule_id: Some(change.rule_id.clone()),
+    });
+}
+
 const PENDING_RULE_REQUESTS_FILENAME: &str = "pending-active-rule-requests.json";
 const MAX_PENDING_RULE_REQUESTS: usize = 128;
 
@@ -1156,6 +1320,7 @@ pub(crate) async fn approve_pending_active_rule_request(
             Some(req.target_path.clone()),
             Some(req.recursive),
             None,
+            None,
         )
         .await?
     } else {
@@ -1173,6 +1338,7 @@ pub(crate) async fn approve_pending_active_rule_request(
             None,
             None,
             Some(req.target_path.clone()),
+            None,
         )
         .await?
     };
@@ -1261,6 +1427,14 @@ impl Default for DesktopUiPolicy {
 fn ui_policy_path(dir: &Path) -> PathBuf {
     dir.join(UI_POLICY_FILENAME)
 }
+/// Operator-visible state of read-only Desktop UI discovery.
+fn discovery_policy_label(requires_dangerous: bool) -> &'static str {
+    if requires_dangerous {
+        "requires_project_approval"
+    } else {
+        "allowed_without_project_approval"
+    }
+}
 /// Missing, malformed, oversized or symlinked policies fail closed to strict.
 fn read_ui_policy(dir: &Path) -> DesktopUiPolicy {
     let target = ui_policy_path(dir);
@@ -1275,6 +1449,7 @@ fn read_ui_policy(dir: &Path) -> DesktopUiPolicy {
     }
 }
 fn write_ui_policy(dir: &Path, requires_dangerous: bool) -> Result<DesktopUiPolicy, String> {
+    let previous = read_ui_policy(dir).discovery_requires_dangerous_tool;
     fs::create_dir_all(dir).map_err(|_| "Cannot create config directory")?;
     let target = ui_policy_path(dir);
     if let Ok(meta) = fs::symlink_metadata(&target) {
@@ -1300,6 +1475,23 @@ fn write_ui_policy(dir: &Path, requires_dangerous: bool) -> Result<DesktopUiPoli
         let _ = fs::remove_file(&tmp);
         return Err("Cannot replace policy atomically".into());
     }
+    // Audit records the policy transition, not just the new state, so the Tray
+    // audit list shows who relaxed or tightened read-only discovery.
+    let _ = record_audit_entry(dir, &AccessAuditEntry {
+        id: uuid::Uuid::new_v4().simple().to_string(),
+        timestamp: audit_timestamp_ms(),
+        kind: "policy".into(),
+        application: "Access Manager".into(),
+        executable_path: "SuperAgent Tray".into(),
+        operation: "desktop_ui_discovery_policy".into(),
+        target: format!(
+            "read-only discovery: {} -> {}",
+            discovery_policy_label(previous),
+            discovery_policy_label(requires_dangerous)
+        ),
+        effect: if requires_dangerous { "deny" } else { "allow" }.into(),
+        rule_id: None,
+    });
     Ok(policy)
 }
 
@@ -1598,5 +1790,142 @@ mod tests {
             assert!(!a.name.is_empty());
             assert!(!a.executable_path.is_empty());
         }
+    }
+    #[test]
+    fn resolves_explicit_title_policy_with_legacy_fallback() {
+        assert_eq!(resolve_title_policy(None, false, 4242, "desktop").unwrap(), TitlePolicy::App);
+        assert_eq!(resolve_title_policy(None, true, 4242, "desktop").unwrap(), TitlePolicy::Exact);
+        assert_eq!(resolve_title_policy(None, true, 0, "desktop").unwrap(), TitlePolicy::App);
+        assert_eq!(resolve_title_policy(Some(TitlePolicy::App), true, 4242, "desktop").unwrap(), TitlePolicy::App);
+        assert_eq!(resolve_title_policy(Some(TitlePolicy::Exact), false, 4242, "desktop").unwrap(), TitlePolicy::Exact);
+        assert!(resolve_title_policy(Some(TitlePolicy::Exact), true, 0, "desktop").is_err());
+        assert!(resolve_title_policy(Some(TitlePolicy::App), false, 0, "file").is_err());
+        assert_eq!(title_policy_descriptor(None), "legacy");
+        assert_eq!(title_policy_descriptor(Some(TitlePolicy::Exact)), "exact");
+    }
+    #[test]
+    fn legacy_rule_title_policy_upgrade_persists_and_is_audited() {
+        let app = ExecutableIdentity {
+            platform: "win32".into(),
+            executable_path: r"C:\Apps\Live.exe".into(),
+            sha256: "d".repeat(64),
+        };
+        let mut registry = Registry::default();
+        registry.rules.push(Rule::Desktop {
+            id: "legacy-rule".into(),
+            effect: "allow".into(),
+            app: app.clone(),
+            operations: vec!["view".into()],
+            title_policy: None,
+            scope: DesktopScope { window_title: None, element_role: None, element_label: None },
+        });
+        let explicit = Rule::Desktop {
+            id: "explicit-rule".into(),
+            effect: "allow".into(),
+            app: app.clone(),
+            operations: vec!["input".into()],
+            title_policy: Some(TitlePolicy::App),
+            scope: DesktopScope { window_title: None, element_role: None, element_label: None },
+        };
+        let change = apply_rule_to_policy(&mut registry, &explicit, true)
+            .unwrap()
+            .expect("legacy rule should be upgraded in place");
+        assert_eq!(change.rule_id, "legacy-rule");
+        assert_eq!(change.from, None);
+        assert_eq!(change.to, TitlePolicy::App);
+        assert_eq!(registry.rules.len(), 1);
+        match &registry.rules[0] {
+            Rule::Desktop { title_policy, operations, .. } => {
+                assert_eq!(*title_policy, Some(TitlePolicy::App));
+                assert_eq!(operations, &vec!["view".to_string(), "input".to_string()]);
+            }
+            _ => panic!("expected desktop rule"),
+        }
+        let root = std::env::temp_dir().join(format!("title-policy-upgrade-{}", uuid::Uuid::new_v4()));
+        save(&root, &registry).unwrap();
+        let loaded = load(&root).unwrap();
+        assert_eq!(loaded, registry);
+        match &loaded.rules[0] {
+            Rule::Desktop { title_policy, .. } => assert_eq!(*title_policy, Some(TitlePolicy::App)),
+            _ => panic!("expected desktop rule"),
+        }
+        record_title_policy_change_audit(&root, &change, "Live", &app.executable_path, "allow");
+        let content = fs::read_to_string(root.join("desktop-access-audit.jsonl")).unwrap();
+        assert!(content.contains("title policy change"));
+        assert!(content.contains("legacy -> app"));
+        let _ = fs::remove_dir_all(root);
+    }
+    #[test]
+    fn explicit_title_policy_is_never_silently_overwritten() {
+        let app = ExecutableIdentity {
+            platform: "win32".into(),
+            executable_path: r"C:\Apps\Live.exe".into(),
+            sha256: "e".repeat(64),
+        };
+        let mut registry = Registry::default();
+        registry.rules.push(Rule::Desktop {
+            id: "exact-rule".into(),
+            effect: "allow".into(),
+            app: app.clone(),
+            operations: vec!["view".into()],
+            title_policy: Some(TitlePolicy::Exact),
+            scope: DesktopScope {
+                window_title: Some("Pinned Window".into()),
+                element_role: None,
+                element_label: None,
+            },
+        });
+        let app_wide = Rule::Desktop {
+            id: "app-rule".into(),
+            effect: "allow".into(),
+            app: app.clone(),
+            operations: vec!["view".into()],
+            title_policy: Some(TitlePolicy::App),
+            scope: DesktopScope { window_title: None, element_role: None, element_label: None },
+        };
+        // A differing explicit policy must become a second rule, never a rewrite.
+        let change = apply_rule_to_policy(&mut registry, &app_wide, true).unwrap();
+        assert!(change.is_none());
+        assert_eq!(registry.rules.len(), 2);
+        // Re-registering the same explicit target merges operations only.
+        let repeated = Rule::Desktop {
+            id: "app-rule-2".into(),
+            effect: "allow".into(),
+            app: app.clone(),
+            operations: vec!["input".into()],
+            title_policy: Some(TitlePolicy::App),
+            scope: DesktopScope { window_title: None, element_role: None, element_label: None },
+        };
+        let change = apply_rule_to_policy(&mut registry, &repeated, true).unwrap();
+        assert!(change.is_none());
+        assert_eq!(registry.rules.len(), 2);
+        match &registry.rules[1] {
+            Rule::Desktop { operations, title_policy, .. } => {
+                assert_eq!(*title_policy, Some(TitlePolicy::App));
+                assert_eq!(operations, &vec!["view".to_string(), "input".to_string()]);
+            }
+            _ => panic!("expected desktop rule"),
+        }
+    }
+    #[test]
+    fn discovery_policy_write_records_audit_entry() {
+        let root = std::env::temp_dir().join(format!("ui-policy-audit-{}", uuid::Uuid::new_v4()));
+        write_ui_policy(&root, false).unwrap();
+        let audit_path = root.join("desktop-access-audit.jsonl");
+        let content = fs::read_to_string(&audit_path).unwrap();
+        assert!(content.contains("desktop_ui_discovery_policy"));
+        assert!(content.contains("requires_project_approval -> allowed_without_project_approval"));
+        let first: AccessAuditEntry = serde_json::from_str(content.lines().next().unwrap()).unwrap();
+        assert_eq!(first.kind, "policy");
+        assert_eq!(first.effect, "allow");
+        assert_eq!(first.rule_id, None);
+        write_ui_policy(&root, true).unwrap();
+        let content = fs::read_to_string(&audit_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 2);
+        let second: AccessAuditEntry = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(second.effect, "deny");
+        assert!(second.target.contains("allowed_without_project_approval -> requires_project_approval"));
+        let _ = fs::remove_dir_all(root);
     }
 }

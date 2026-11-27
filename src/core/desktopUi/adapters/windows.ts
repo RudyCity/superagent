@@ -16,7 +16,7 @@ import type {
   NativeCapture,
   NativeDesktopAction,
 } from "../types.js";
-import { inspectViaPersistentAccessibilityHost } from "./windowsAccessibilityHost.js";
+import { inspectViaPersistentAccessibilityHost, normalizeAccessibilityElements } from "./windowsAccessibilityHost.js";
 
 const WINDOWS_POWERSHELL = path.win32.join(
   process.env.SystemRoot || process.env.windir || "C:\\Windows",
@@ -783,29 +783,13 @@ export function createWindowsDesktopUiAdapter(
         });
         const payload = parseJson<any>(result.stdout, "Windows accessibility inspection");
         const window = windowFrom(payload.window);
-        const rawElements = Array.isArray(payload.elements) ? payload.elements : [];
-        const elements = rawElements
-          .filter((element: any) =>
-            element
-            && typeof element.role === "string"
-            && typeof element.bounds?.x === "number"
-            && typeof element.bounds?.y === "number"
-            && typeof element.bounds?.width === "number"
-            && typeof element.bounds?.height === "number")
-          .map((element: any) => ({
-            role: element.role,
-            label: typeof element.label === "string" ? element.label : null,
-            description: typeof element.description === "string" ? element.description : null,
-            value: typeof element.value === "string" ? element.value : null,
-            bounds: element.bounds,
-            center: {
-              x: element.bounds.x + element.bounds.width / 2,
-              y: element.bounds.y + element.bounds.height / 2,
-            },
-            actionable: element.actionable === true,
-            focused: typeof element.focused === "boolean" ? element.focused : undefined,
-            nativeRef: typeof element.nativeRef === "string" ? element.nativeRef : undefined,
-          }));
+        // The one-shot script predates ControlView/RawView merging, but its
+        // records still pass through the same normalizer so both paths share one
+        // element shape, dedupe rule and actionability authority.
+        const elements = normalizeAccessibilityElements([
+          ...(Array.isArray(payload.elements) ? payload.elements : []),
+          ...(Array.isArray(payload.rawElements) ? payload.rawElements : []),
+        ]);
         return { window, elements };
       } catch (error) {
         throw mapWindowsError(error, "ACCESSIBILITY_UNAVAILABLE", "Windows UIAutomation inspection failed");

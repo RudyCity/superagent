@@ -140,14 +140,20 @@ describe("DesktopUiSession live-window tolerance", () => {
     expect(schema.elements).toHaveLength(1);
   });
 
-  it("still rejects a schema when the window is replaced mid-assembly", async () => {
+  it("assembles a plain schema from one frame even when the next frame would differ", async () => {
     const { adapter } = mockAdapter([animatedFrame(10), replacedFrame()]);
     const session = createDesktopUiSession({
       adapter,
       target: { pid: 42, nativeId: "window-42" },
     });
 
-    await expect(session.snapshot()).rejects.toMatchObject({ code: "STALE_SCREENSHOT" });
+    const schema = await session.snapshot();
+
+    // The removed confirmation capture used to reject this; a plain snapshot
+    // now trusts the capture+UIA identity fence and defers motion checks to the
+    // pre-action verification. wait_ready keeps the strict check below.
+    expect(schema.screenshot.revision).toBe(1);
+    expect(schema.screenshot.changeRatio).toBeUndefined();
   });
 
   it("dispatches a click on an animating window while the element stays put", async () => {
@@ -231,7 +237,7 @@ describe("DesktopUiSession live-window tolerance", () => {
       x >= 10 && x < 30 && y >= 10 && y < 30
         ? [15, 15, 140]
         : (x >= 10 && x < 16 && y >= 10 && y < 16 ? [20, 20, 20] : [250, 250, 250]));
-    const { adapter, dispatch } = mockAdapter([base, base, replacedControl, replacedControl]);
+    const { adapter, dispatch } = mockAdapter([base, replacedControl, replacedControl, replacedControl]);
     const session = createDesktopUiSession({
       adapter,
       target: { pid: 42, nativeId: "window-42" },
@@ -247,32 +253,42 @@ describe("DesktopUiSession live-window tolerance", () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
-  it("records the perception change ratio for auditing", async () => {
+  it("records the perception change ratio for auditing when wait_ready asks for it", async () => {
     const { adapter } = mockAdapter([animatedFrame(10), animatedFrame(40)]);
     const session = createDesktopUiSession({
       adapter,
       target: { pid: 42, nativeId: "window-42" },
     });
 
-    const schema = await session.snapshot();
+    const schema = await session.snapshot({ measureChangeRatio: true });
 
     expect(schema.screenshot.changeRatio).toBeGreaterThan(0);
     expect(schema.screenshot.changeRatio).toBeLessThan(0.12);
     expect(schema.warnings.join(" ")).toMatch(/sampled pixels changed/);
   });
 
-  it("retries the settling confirmation frame before declaring the window stale", async () => {
-    const stable = animatedFrame(10);
-    const { adapter } = mockAdapter([stable, replacedFrame(), stable]);
+  it("fails closed in the wait_ready settle check when the second frame is a replacement", async () => {
+    const { adapter } = mockAdapter([animatedFrame(10), replacedFrame()]);
     const session = createDesktopUiSession({
       adapter,
       target: { pid: 42, nativeId: "window-42" },
     });
 
-    const schema = await session.snapshot();
+    await expect(session.snapshot({ measureChangeRatio: true }))
+      .rejects.toMatchObject({ code: "STALE_SCREENSHOT" });
+  });
+
+  it("keeps accepting an animating window in the wait_ready settle check within budget", async () => {
+    const { adapter } = mockAdapter([animatedFrame(10), animatedFrame(40)]);
+    const session = createDesktopUiSession({
+      adapter,
+      target: { pid: 42, nativeId: "window-42" },
+    });
+
+    const schema = await session.snapshot({ measureChangeRatio: true });
 
     expect(schema.screenshot.revision).toBe(1);
-    expect(schema.screenshot.changeRatio).toBe(0);
+    expect(schema.screenshot.changeRatio).toBeLessThanOrEqual(0.12);
   });
 
   it("prefers a persistent verified capture source over one-shot captures", async () => {
@@ -304,7 +320,7 @@ describe("DesktopUiSession live-window tolerance", () => {
     session.close();
 
     expect(adapterCapture).not.toHaveBeenCalled();
-    expect(sourceCapture).toHaveBeenCalledTimes(2);
+    expect(sourceCapture).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalledTimes(1);
   });
 

@@ -64,13 +64,26 @@ for (const file of mdFiles) {
       if (currentChunkLines.length > 0) {
         const text = currentChunkLines.join('\n').trim();
         if (text.length > 50) {
-          const chunkId = crypto.createHash('sha256').update(`${file}:${currentSectionTitle}:${text.slice(0, 100)}`).digest('hex').slice(0, 16);
+          
+/**
+ * Deterministic chunk timestamp: the newest source-document mtime, so repeated
+ * syncs over unchanged docs produce byte-identical chunk files (no review noise).
+ */
+function sourceDocTimestamp(file) {
+  try {
+    return fs.statSync(path.join(wikiDir, file)).mtime.toISOString();
+  } catch {
+    return "1970-01-01T00:00:00.000Z";
+  }
+}
+
+const chunkId = crypto.createHash('sha256').update(`${file}:${currentSectionTitle}:${text.slice(0, 100)}`).digest('hex').slice(0, 16);
           memoryChunks.push({
             id: `wiki-${chunkId}`,
             document: file,
             section: currentSectionTitle,
             content: text,
-            updatedAt: new Date().toISOString()
+            updatedAt: sourceDocTimestamp(file)
           });
         }
         currentChunkLines = [];
@@ -91,7 +104,7 @@ for (const file of mdFiles) {
         document: file,
         section: currentSectionTitle,
         content: text,
-        updatedAt: new Date().toISOString()
+        updatedAt: sourceDocTimestamp(file)
       });
     }
   }

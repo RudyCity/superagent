@@ -20,6 +20,7 @@ import {
   type DesktopModifier,
 } from "../../desktopUi/index.js";
 import { inspectSecurityPrompts } from "../../desktopSecurity/index.js";
+import { getDesktopUiMetricsSnapshot } from "../../desktopUi/desktopUiMetrics.js";
 
 export const DESKTOP_UI_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> = {
   superagent_desktop_ui: "dangerous",
@@ -31,7 +32,7 @@ export interface DesktopUiMcpContext {
 }
 
 const actionKinds = ["click", "type", "key", "scroll"] as const;
-const commands = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "live_inventory", "live_stop", "open", "snapshot", "wait_ready", "action", "close"] as const;
+const commands = ["probe", "stats", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "live_inventory", "live_stop", "open", "snapshot", "wait_ready", "action", "close"] as const;
 
 const inputSchema = {
   type: "object",
@@ -150,6 +151,7 @@ export const DESKTOP_UI_MCP_TOOL_DEFS = [
       + "pid+nativeId identify the window; title is volatile metadata that is canonicalized from fresh OS discovery, so live apps that rename themselves (active document, conversation name, progress suffix) stay usable. App-scoped host approvals (no windowTitle scope) tolerate title drift; title-scoped approvals still require the exact approved title. "
       + "Perception tolerates bounded animation between captures while still failing closed on gross window changes, and every action is fenced to the exact semantic element and executable identity. "
       + "wait_ready polls perception with a bounded deadline so live windows can settle; failures return retryable/retryAfterMs/nextAction guidance. "
+      + "stats returns only bounded in-process perception counters (latency, changeRatio, carrier fallbacks, wait_ready attempts) with no window metadata. "
       + "Lifecycle mutation requires exact host consent; package mutation requires one-shot host-operator approval bound to digest, principal, target, and invocation. "
       + "This tool is principal-bound and unavailable for SSH/chain workspaces; no raw shell, implicit elevation, or model-controlled approval is accepted.",
     inputSchema,
@@ -264,6 +266,10 @@ export async function dispatchDesktopUiMcpTool(
       }
       case "probe":
         result = { success: true, capabilities: await desktopUiSessionManager.probe() };
+        break;
+      case "stats":
+        // Read-only bounded counters only: no titles, paths, tokens or images.
+        result = { success: true, stats: getDesktopUiMetricsSnapshot() };
         break;
       case "list_windows":
         result = { success: true, ...(await desktopUiSessionManager.listWindows({ limit: typeof rawArgs.limit === "number" ? rawArgs.limit : undefined })) };

@@ -276,7 +276,13 @@ if (fs.existsSync(indexPath)) {
     indexContent += `\n\n## 🔄 Real-time Codebase Sync Status\n\n${logSnippet}\n`;
   }
 
-  fs.writeFileSync(indexPath, indexContent, 'utf8');
+  if (changedDetails.length === 0 && indexContent.includes(syncLogMarkerStart)) {
+    // Routine verification run: keep the existing sync log and timestamp so
+    // repeated `wiki:sync` calls produce no review noise.
+    console.log('   ℹ️ No source changes detected; 00-index.md left unchanged.');
+  } else {
+    fs.writeFileSync(indexPath, indexContent, 'utf8');
+  }
   console.log(`   ✅ Synced 00-index.md (Timestamp: ${dateStr} ${timeStr} UTC)`);
 }
 
@@ -366,7 +372,12 @@ manifest.workspaces = workspaces.map(w => ({ name: w.name, path: w.baseDir }));
 manifest.lastModifiedFiles = changedFiles.slice(0, 50);
 manifest.impactSummary = impact;
 
-fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+if (changedDetails.length === 0) {
+  // Same reasoning as above: a no-op run must not rewrite the manifest.
+  console.log('   ℹ️ No source changes detected; auto-sync-manifest.json left unchanged.');
+} else {
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+}
 
 console.log(`\n🎉 [4/4] Multi-Workspace Wiki auto-sync complete! Manifest updated.`);
 console.log(`🌐 Live Web Viewer URL: http://localhost:3333 (Run 'bun run wiki:serve' to view)`);

@@ -55,6 +55,13 @@ import {evaluatePersistentAccess,hasRegisteredDesktopInputCandidate,
   from "../desktopUi/persistentAccessPolicy.js";
 import {resolveNativeDesktopExecutable} from "../desktopUi/nativeExecutableIdentity.js";
 import { desktopUiSessionAccessRequests, type DesktopUiSessionAccessRequest } from "../desktopUi/desktopUiSessionAccessRequests.js";
+import {
+  getDesktopUiMetricsSnapshot,
+  recordCarrierPrewarm,
+  recordSessionOpened,
+  recordWaitReadyAttempt,
+  recordWaitReadyComplete,
+} from "../desktopUi/desktopUiMetrics.js";
 
 export const MAX_DESKTOP_UI_SESSIONS = 10;
 export const DEFAULT_SESSION_TTL_MS = 10 * 60 * 1000;
@@ -151,6 +158,7 @@ export const DESKTOP_UI_APP_COMMANDS = [
 ] as const;
 
 export const DISCOVERY_COMMAND_FIELDS: Record<string, ReadonlySet<string>> = {
+  stats: new Set(["command", "action"]),
   list_windows: new Set(["command", "action", "limit"]),
   get_active_window: new Set(["command", "action"]),
   find_window: new Set(["command", "action", "query", "pid", "limit"]),
@@ -394,6 +402,12 @@ export interface OpenSessionParams {
   ttlMs?: number;
   adapter?: DesktopUiAdapter;
   vision?: DesktopVisionDetector;
+  /**
+   * Internal: best-effort carrier warm-up on open (default true). One-shot
+   * inspection sets false because it snapshots once and closes, so a warm-up
+   * would only duplicate that single perception.
+   */
+  prewarmCarriers?: boolean;
 }
 
 export interface SnapshotParams {
@@ -401,6 +415,12 @@ export interface SnapshotParams {
   ownerPrincipal?: string;
   includeScreenshotImage?: boolean;
   maxImageBytes?: number;
+  /**
+   * Internal only: wait_ready sets this so the session pays one extra frame to
+   * report the `changeRatio` diagnostic and reject an unsettled window. It is
+   * never exposed as a tool/MCP argument.
+   */
+  measureFrameChangeRatio?: boolean;
 }
 
 export interface ActionParams {
@@ -602,7 +622,7 @@ export class DesktopUiSessionManager {
     const adapter = params.adapter ?? createNativeDesktopUiAdapter();
     const discovery = await listDiscoveredWindows(adapter, MAX_WINDOW_DISCOVERY_LIMIT);
     const target = requireFreshWindowTarget(discovery, params.pid, params.nativeId);
-    const opened = await this.openSession({ pid: target.pid, nativeId: target.nativeId, title: target.title, ownerPrincipal, allowInput: false, adapter, ttlMs: MIN_SESSION_TTL_MS });
+    const opened = await this.openSession({ pid: target.pid, nativeId: target.nativeId, title: target.title, ownerPrincipal, allowInput: false, adapter, ttlMs: MIN_SESSION_TTL_MS, prewarmCarriers: false });
     try {
       const snapshot = await this.snapshot({ sessionToken: opened.sessionToken, ownerPrincipal, includeScreenshotImage: params.includeScreenshotImage === true, maxImageBytes: params.maxImageBytes });
       return { window: target, ...snapshot };
@@ -859,6 +879,21 @@ export class DesktopUiSessionManager {
       ...(captureSource ? { captureSource } : {}),
     });
 
+    // Best-effort carrier pre-warm: the capture worker is already open above, so
+    // issue one cheap frame + UIA read through both persistent carriers. This
+    // moves the cold helper/UIAutomation start off the first real snapshot.
+    // A failure here is never fatal, never widens authority, and never extends
+    // the session TTL.
+    if (captureSource && params.prewarmCarriers !== false) {
+      try {
+        await nativeSession.warmCarriers();
+        recordCarrierPrewarm(true);
+      } catch {
+        recordCarrierPrewarm(false);
+      }
+    }
+    recordSessionOpened();
+
     const now = Date.now();
     const record: ActiveSessionRecord = {
       token: sessionToken,
@@ -960,7 +995,9 @@ export class DesktopUiSessionManager {
       );
     }
 
-    const schema = await session.session.snapshot();
+    const schema = await session.session.snapshot({
+      measureChangeRatio: params.measureFrameChangeRatio === true,
+    });
     let screenshotImage: string | undefined;
     let screenshotImageOmitted: string | undefined;
 
@@ -1001,16 +1038,26 @@ export class DesktopUiSessionManager {
     const pollIntervalMs = Math.min(1_000, Math.max(50, params.pollIntervalMs ?? 150));
     const startedAt = Date.now();
     let attempts = 0;
-    for (;;) {
-      attempts += 1;
-      try {
-        const snapshot = await this.snapshot(params);
-        return { ...snapshot, attempts, waitedMs: Date.now() - startedAt };
-      } catch (error) {
-        const code = (error as { code?: string } | null)?.code ?? "";
-        if (!STABLE_SNAPSHOT_RETRY_CODES.has(code) || Date.now() - startedAt >= timeoutMs) throw error;
-        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    try {
+      for (;;) {
+        attempts += 1;
+        recordWaitReadyAttempt();
+        try {
+          // wait_ready is the one path that opts into the settle diagnostic: it
+          // deliberately polls an animating window, so it needs changeRatio.
+          const snapshot = await this.snapshot({
+            ...params,
+            measureFrameChangeRatio: true,
+          });
+          return { ...snapshot, attempts, waitedMs: Date.now() - startedAt };
+        } catch (error) {
+          const code = (error as { code?: string } | null)?.code ?? "";
+          if (!STABLE_SNAPSHOT_RETRY_CODES.has(code) || Date.now() - startedAt >= timeoutMs) throw error;
+          await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+        }
       }
+    } finally {
+      recordWaitReadyComplete(attempts);
     }
   }
 
@@ -1312,12 +1359,12 @@ export const desktopUiTool: Tool = {
     properties: {
       command: {
         type: "string",
-        enum: ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "wait_ready", "action", "close"],
-        description: "Desktop UI command to execute.",
+        enum: ["probe", "stats", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "wait_ready", "action", "close"],
+        description: "Desktop UI command to execute. 'stats' returns bounded in-process perception counters only.",
       },
       action: {
         type: "string",
-        enum: ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "wait_ready", "action", "close", "click", "type", "key", "scroll"],
+        enum: ["probe", "stats", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "wait_ready", "action", "close", "click", "type", "key", "scroll"],
         description: "Alternative command name or action kind. command='action' with action='click' is supported.",
       },
       subAction: {
@@ -1425,7 +1472,7 @@ export const desktopUiTool: Tool = {
       let command = typeof args.command === "string" ? args.command.trim().toLowerCase() : "";
       const rawAction = typeof args.action === "string" ? args.action.trim().toLowerCase() : "";
       if (!command) {
-        command = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "wait_ready", "action", "close"].includes(rawAction as any)
+        command = ["probe", "stats", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "wait_ready", "action", "close"].includes(rawAction as any)
           ? rawAction
           : ["click", "type", "key", "scroll"].includes(rawAction)
             ? "action"
@@ -1439,6 +1486,8 @@ export const desktopUiTool: Tool = {
       switch (command) {
         case "probe":
           return JSON.stringify({ success: true, capabilities: await desktopUiSessionManager.probe() }, null, 2);
+        case "stats":
+          return JSON.stringify({ success: true, stats: getDesktopUiMetricsSnapshot() }, null, 2);
         case "list_windows":
           return JSON.stringify({ success: true, ...(await desktopUiSessionManager.listWindows({ limit: typeof args.limit === "number" ? args.limit : undefined })) }, null, 2);
         case "list_monitors":
