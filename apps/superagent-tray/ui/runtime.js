@@ -1100,6 +1100,7 @@ function runtimeOpenMcpConfig(event) {
   rt("runtime-mcp-config-feedback").textContent = "";
   rt("runtime-mcp-config-dialog").hidden = false;
   rt("runtime-mcp-config-close")?.focus?.();
+  void runtimeHydrateMcpConfigPrompt();
 }
 
 async function runtimeSaveMcpConfig(event) {
@@ -1192,17 +1193,37 @@ function runtimeRenderMcpPromptHistory(history) {
   const list = rt("runtime-mcp-prompt-history-list");
   const count = rt("runtime-mcp-prompt-history-count");
   const entries = (Array.isArray(history) ? history : [])
-    .filter(entry => entry && Number.isFinite(entry.at) && Number.isFinite(entry.length))
+    .filter(entry => entry && Number.isFinite(entry.at) && typeof entry.prompt === "string")
     .slice(0, 10);
   if (count) count.textContent = entries.length ? String(entries.length) : "";
   if (details) details.hidden = entries.length === 0;
   if (!list) return;
   list.replaceChildren?.();
-  for (const entry of entries) {
+  entries.forEach((entry, index) => {
     const item = document.createElement("li");
-    item.textContent = `${new Date(entry.at).toLocaleString()} · ${runtimeFormatChars(entry.length)}`;
+    item.className = "runtime-mcp-prompt-history-item";
+    const meta = document.createElement("span");
+    meta.className = "runtime-mcp-prompt-history-meta";
+    meta.textContent = `${new Date(entry.at).toLocaleString()} · ${runtimeFormatChars(entry.prompt.length)}`;
+    item.appendChild(meta);
+    const actions = document.createElement("span");
+    actions.className = "runtime-mcp-prompt-history-actions";
+    for (const [action, label, title] of [
+      ["restore", "Restore", "Load this version into the editor. Nothing is applied until Save & apply."],
+      ["diff", "Diff", "Compare this version with the current draft"],
+    ]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button ghost runtime-mcp-prompt-history-action";
+      button.dataset.historyAction = action;
+      button.dataset.historyIndex = String(index);
+      button.title = title;
+      button.textContent = label;
+      actions.appendChild(button);
+    }
+    item.appendChild(actions);
     list.appendChild(item);
-  }
+  });
 }
 
 function runtimeSetMcpPromptSummary(length) {
@@ -1233,20 +1254,38 @@ function runtimeMcpPromptFeedback(text, tone) {
   else delete node.dataset.tone;
 }
 
+let runtimeMcpPromptCache = { prompt: "", updatedAt: null, history: [] };
+
+// One read path for the card, the owner badges and the configuration dialog.
+async function runtimeFetchMcpAgentPrompt() {
+  const data = await runtimeInvoke("get_mcp_agent_prompt");
+  const prompt = typeof data?.prompt === "string" ? data.prompt : "";
+  const history = (Array.isArray(data?.history) ? data.history : [])
+    .filter(entry => entry && Number.isFinite(entry.at) && typeof entry.prompt === "string")
+    .slice(0, 10);
+  runtimeMcpPromptCache = {
+    prompt,
+    updatedAt: Number.isFinite(data?.updatedAt) ? data.updatedAt : null,
+    history,
+  };
+  if (Number.isSafeInteger(data?.maxChars) && data.maxChars > 0) {
+    const input = rt("runtime-mcp-prompt-input");
+    if (input) input.maxLength = Math.min(data.maxChars, 20000);
+  }
+  return { ...data, prompt, history };
+}
+
 async function runtimeLoadMcpAgentPrompt() {
   const input = rt("runtime-mcp-prompt-input");
   if (!input) return;
   runtimeMcpPromptState("Loading…");
   try {
-    const result = await runtimeInvoke("get_mcp_agent_prompt");
-    input.value = typeof result?.prompt === "string" ? result.prompt : "";
-    if (Number.isSafeInteger(result?.maxChars) && result.maxChars > 0) {
-      input.maxLength = Math.min(result.maxChars, 20000);
-    }
+    const result = await runtimeFetchMcpAgentPrompt();
+    input.value = result.prompt;
     runtimeMcpPromptCounter();
     runtimeSetMcpPromptSummary(input.value.length);
-    runtimeRenderMcpPromptHistory(result?.history);
-    runtimeMcpPromptState(result?.updatedAt ? "Saved prompt" : "Not set", "saved");
+    runtimeRenderMcpPromptHistory(result.history);
+    runtimeMcpPromptState(result.updatedAt ? "Saved prompt" : "Not set", "saved");
   } catch (error) {
     runtimeMcpPromptState("Unavailable", "error");
     runtimeMcpPromptFeedback("Could not read the saved prompt: " + String(error), "error");
@@ -1320,6 +1359,125 @@ function runtimeMcpPromptClear() {
   input.focus?.();
 }
 
+function runtimeSplitPromptLines(text) {
+  return String(text ?? "").split("\n");
+}
+
+// Bounded LCS line diff. Above 400x400 changed lines the middle block is
+// reported as removed-then-added, which still cannot understate a change.
+function runtimeLineDiff(beforeText, afterText) {
+  const before = runtimeSplitPromptLines(beforeText);
+  const after = runtimeSplitPromptLines(afterText);
+  let prefix = 0;
+  while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix += 1;
+  let suffix = 0;
+  while (suffix < before.length - prefix && suffix < after.length - prefix &&
+         before[before.length - 1 - suffix] === after[after.length - 1 - suffix]) suffix += 1;
+  const beforeMiddle = before.slice(prefix, before.length - suffix);
+  const afterMiddle = after.slice(prefix, after.length - suffix);
+  const rows = [];
+  for (let index = 0; index < prefix; index += 1) rows.push({ kind: "ctx", text: before[index] });
+  if (beforeMiddle.length * afterMiddle.length > 160_000) {
+    beforeMiddle.forEach(text => rows.push({ kind: "del", text }));
+    afterMiddle.forEach(text => rows.push({ kind: "add", text }));
+  } else {
+    const n = beforeMiddle.length;
+    const m = afterMiddle.length;
+    const table = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+    for (let row = n - 1; row >= 0; row -= 1) {
+      for (let column = m - 1; column >= 0; column -= 1) {
+        table[row][column] = beforeMiddle[row] === afterMiddle[column]
+          ? table[row + 1][column + 1] + 1
+          : Math.max(table[row + 1][column], table[row][column + 1]);
+      }
+    }
+    let row = 0;
+    let column = 0;
+    while (row < n && column < m) {
+      if (beforeMiddle[row] === afterMiddle[column]) {
+        rows.push({ kind: "ctx", text: beforeMiddle[row] });
+        row += 1;
+        column += 1;
+      } else if (table[row + 1][column] >= table[row][column + 1]) {
+        rows.push({ kind: "del", text: beforeMiddle[row] });
+        row += 1;
+      } else {
+        rows.push({ kind: "add", text: afterMiddle[column] });
+        column += 1;
+      }
+    }
+    while (row < n) { rows.push({ kind: "del", text: beforeMiddle[row] }); row += 1; }
+    while (column < m) { rows.push({ kind: "add", text: afterMiddle[column] }); column += 1; }
+  }
+  for (let index = before.length - suffix; index < before.length; index += 1) {
+    rows.push({ kind: "ctx", text: before[index] });
+  }
+  return rows;
+}
+
+function runtimeRenderMcpPromptDiff(rows, metaText) {
+  const box = rt("runtime-mcp-prompt-preview");
+  const body = rt("runtime-mcp-prompt-preview-body");
+  const meta = rt("runtime-mcp-prompt-preview-meta");
+  const toggle = rt("runtime-mcp-prompt-preview-toggle");
+  if (!box || !body) return;
+  body.replaceChildren?.();
+  for (const row of rows) {
+    const line = document.createElement("span");
+    line.className = `runtime-mcp-prompt-diff-line runtime-mcp-prompt-diff-${row.kind}`;
+    line.textContent = `${row.kind === "add" ? "+ " : row.kind === "del" ? "- " : "  "}${row.text}`;
+    body.appendChild(line);
+  }
+  if (meta) meta.textContent = metaText;
+  box.hidden = false;
+  box.dataset.view = "diff";
+  toggle?.setAttribute?.("aria-expanded", "true");
+}
+
+function runtimeRestoreMcpPromptVersion(index) {
+  const entry = runtimeMcpPromptCache.history[index];
+  const input = rt("runtime-mcp-prompt-input");
+  if (!entry || !input || typeof entry.prompt !== "string") return;
+  const when = new Date(entry.at).toLocaleString();
+  if (!window.confirm(`Load the version saved ${when} (${runtimeFormatChars(entry.prompt.length)}) into the editor?\n\nNothing changes for MCP clients until you press Save & apply.`)) return;
+  input.value = entry.prompt.slice(0, input.maxLength);
+  runtimeMcpPromptCounter();
+  runtimeMcpPromptFeedback(`Loaded version from ${when} into the editor. Review it, then Save & apply.`);
+  input.focus?.();
+}
+
+function runtimeDiffMcpPromptVersion(index) {
+  const entry = runtimeMcpPromptCache.history[index];
+  const input = rt("runtime-mcp-prompt-input");
+  if (!entry || !input || typeof entry.prompt !== "string") return;
+  const rows = runtimeLineDiff(entry.prompt, input.value);
+  const added = rows.filter(row => row.kind === "add").length;
+  const removed = rows.filter(row => row.kind === "del").length;
+  runtimeRenderMcpPromptDiff(
+    rows,
+    `Diff · saved ${new Date(entry.at).toLocaleString()} → current draft · +${added} −${removed} lines`,
+  );
+}
+
+async function runtimeHydrateMcpConfigPrompt() {
+  const state = rt("runtime-mcp-config-prompt-state");
+  const body = rt("runtime-mcp-config-prompt-body");
+  if (!state || !body) return;
+  state.textContent = "Checking…";
+  body.textContent = "";
+  try {
+    const data = await runtimeFetchMcpAgentPrompt();
+    const savedAt = data.updatedAt ? ` · saved ${new Date(data.updatedAt).toLocaleString()}` : "";
+    state.textContent = data.prompt
+      ? `Active · ${runtimeFormatChars(data.prompt.length)}${savedAt}`
+      : "Not set · canonical instructions only";
+    body.textContent = data.prompt || "No operator prompt saved for this profile.";
+  } catch (error) {
+    state.textContent = "Unavailable";
+    body.textContent = String(error);
+  }
+}
+
 async function runtimeMcpPromptTogglePreview() {
   const input = rt("runtime-mcp-prompt-input");
   const box = rt("runtime-mcp-prompt-preview");
@@ -1335,6 +1493,7 @@ async function runtimeMcpPromptTogglePreview() {
   body.textContent = "Composing the effective instructions…";
   if (meta) meta.textContent = "";
   box.hidden = false;
+  box.dataset.view = "preview";
   toggle?.setAttribute?.("aria-expanded", "true");
   try {
     const result = await runtimeInvoke("preview_mcp_agent_prompt", { instructions: input.value });
@@ -1903,6 +2062,22 @@ function runtimeInstall() {
   rt("runtime-mcp-prompt-clear")?.addEventListener("click", runtimeMcpPromptClear);
   rt("runtime-mcp-prompt-preview-toggle")?.addEventListener("click", runtimeMcpPromptTogglePreview);
   rt("runtime-mcp-prompt-save")?.addEventListener("click", runtimeSaveMcpAgentPrompt);
+  rt("runtime-mcp-prompt-history-list")?.addEventListener("click", event => {
+    const button = event.target?.closest?.("button[data-history-action]");
+    if (!button) return;
+    const index = Number(button.dataset?.historyIndex);
+    if (!Number.isInteger(index) || index < 0) return;
+    if (button.dataset.historyAction === "restore") runtimeRestoreMcpPromptVersion(index);
+    else if (button.dataset.historyAction === "diff") runtimeDiffMcpPromptVersion(index);
+  });
+  rt("runtime-mcp-prompt-input")?.addEventListener("input", () => {
+    // Preview and diff describe a specific draft; hide them once it changes.
+    const box = rt("runtime-mcp-prompt-preview");
+    if (box && !box.hidden) {
+      box.hidden = true;
+      rt("runtime-mcp-prompt-preview-toggle")?.setAttribute?.("aria-expanded", "false");
+    }
+  });
   void runtimeLoadMcpAgentPrompt();
   rt("runtime-remote-panel")?.addEventListener("click", event => {
     void runtimeCopyPublicUrl(event);

@@ -14,6 +14,8 @@
 - Add local authenticated Core routes (`GET`/`POST /api/desktop/mcp-agent-prompt`) with native Tray commands and focused unit plus regression coverage.
 - Show a per-owner `Session prompt` badge (active with size, or none) and a bounded newest-first change history in the Tray card; a Preview action renders the effective initialize instructions for the current draft without saving it.
 - Cover the real path with a reloadable staging owner: the live session is closed, a new backend generation starts, and its next initialize advertises the saved prompt.
+- Show the active session prompt, its size and save time inside the Edit MCP Configuration dialog, so tool-mode and exposure changes are reviewed with the prompt context in view.
+- Retain the full text of the last 10 saved versions: each history entry can be restored into the editor (nothing is applied until Save & apply) or diffed line-by-line against the current draft in the preview panel.
 
 ## [1.14.110] - 2026-11-26
 ### Intent-based tool discovery and background Desktop UI inspection

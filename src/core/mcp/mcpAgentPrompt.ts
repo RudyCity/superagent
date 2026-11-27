@@ -14,7 +14,8 @@ import { getRootConfigDir } from "../config/paths.js";
 export const MCP_AGENT_PROMPT_MAX_CHARS = 6000;
 export const MCP_AGENT_PROMPT_MAX_HISTORY = 10;
 const FILE_NAME = "mcp-agent-prompt.json";
-const MAX_FILE_BYTES = 64 * 1024;
+// Ten retained versions of at most 6000 characters each, plus JSON overhead.
+const MAX_FILE_BYTES = 256 * 1024;
 // Keep tab/newline, drop every other C0/C1 control character and DEL.
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
 
@@ -23,6 +24,8 @@ export interface McpAgentPromptHistoryEntry {
   at: number;
   /** Prompt length in characters (not bytes). */
   length: number;
+  /** Full text of that version, so the operator can restore or diff it. */
+  prompt: string;
 }
 
 export interface McpAgentPromptState {
@@ -65,7 +68,15 @@ function readHistory(value: unknown): McpAgentPromptHistoryEntry[] {
     if (typeof record.at !== "number" || !Number.isFinite(record.at) || record.at <= 0) continue;
     if (typeof record.length !== "number" || !Number.isInteger(record.length) ||
         record.length < 0 || record.length > MCP_AGENT_PROMPT_MAX_CHARS) continue;
-    entries.push({ at: record.at, length: record.length });
+    if (typeof record.prompt !== "string") continue;
+    let prompt: string;
+    try {
+      prompt = sanitizeMcpAgentPrompt(record.prompt);
+    } catch {
+      // A historical version that no longer validates is dropped, never guessed.
+      continue;
+    }
+    entries.push({ at: record.at, length: record.length, prompt });
     if (entries.length >= MCP_AGENT_PROMPT_MAX_HISTORY) break;
   }
   return entries;
@@ -111,7 +122,7 @@ export function saveMcpAgentPrompt(value: unknown): {
   const previous = readMcpAgentPrompt();
   const history = prompt === previous.prompt
     ? previous.history
-    : [{ at: updatedAt, length: prompt.length }, ...previous.history]
+    : [{ at: updatedAt, length: prompt.length, prompt }, ...previous.history]
       .slice(0, MCP_AGENT_PROMPT_MAX_HISTORY);
   const target = getMcpAgentPromptPath();
   fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });

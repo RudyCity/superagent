@@ -71,7 +71,9 @@ describe("MCP agent knowledge prompt", () => {
     const second = saveMcpAgentPrompt("second prompt is longer");
     expect(second.history).toHaveLength(2);
     expect(second.history[0].length).toBe(second.length);
+    expect(second.history[0].prompt).toBe("second prompt is longer");
     expect(second.history[1].length).toBe(first.length);
+    expect(second.history[1].prompt).toBe("first prompt");
 
     // Re-saving identical text must not inflate the history.
     expect(saveMcpAgentPrompt("second prompt is longer").history).toHaveLength(2);
@@ -93,9 +95,16 @@ describe("MCP agent knowledge prompt", () => {
     expect(readMcpAgentPrompt().prompt).toBe("");
     fs.writeFileSync(getMcpAgentPromptPath(), JSON.stringify({
       version: 1, prompt: "kept", updatedAt: 1,
-      history: [{ at: 0, length: 2 }, { at: 5, length: 99_999 }, "junk", { at: 10, length: 4 }],
+      history: [
+        { at: 0, length: 2, prompt: "zero time" },
+        { at: 5, length: 99_999, prompt: "impossible length" },
+        { at: 6, length: 2 },
+        { at: 7, length: 3, prompt: "z".repeat(MCP_AGENT_PROMPT_MAX_CHARS + 1) },
+        { at: 10, length: 4, prompt: "stale" },
+      ],
     }));
-    expect(readMcpAgentPrompt().history).toEqual([{ at: 10, length: 4 }]);
+    // Only versions that carry a valid, restorable prompt survive.
+    expect(readMcpAgentPrompt().history).toEqual([{ at: 10, length: 4, prompt: "stale" }]);
   });
 
   it("composes the operator section without dropping the canonical protocol", () => {

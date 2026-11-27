@@ -68,9 +68,11 @@ describe("MCP agent prompt operator route boundary", () => {
     expect(result.body?.success).toBe(true);
     expect(result.body?.prompt).toBe("Read the workspace status tool first.");
     expect(result.body?.maxChars).toBe(6000);
-    expect(result.body?.history).toEqual([
-      { at: expect.any(Number), length: "Read the workspace status tool first.".length },
-    ]);
+    expect(result.body?.history).toEqual([{
+      at: expect.any(Number),
+      length: "Read the workspace status tool first.".length,
+      prompt: "Read the workspace status tool first.",
+    }]);
     expect(Array.isArray(result.body?.applied)).toBe(false);
   });
 

@@ -211,6 +211,7 @@ See [Muse MCP workflow examples](../mcp/muse-chat-workflows.md) for readiness ch
 - The saved text is appended to the canonical initialize instructions by `composeMcpSessionInstructions`, so an MCP client receives it at the start of every session. An explicit `McpServerOptions.instructions` value still replaces the whole string for that call site.
 - `POST` reconfigures each verified reloadable managed owner with its existing tool mode and exposure, which closes its sessions. Busy, non-reloadable or unverifiable owners are returned in `skipped` and are never force-restarted.
 - `POST /api/desktop/mcp-agent-prompt/preview` composes a candidate draft with the canonical protocol and returns `effective` plus lengths; it never persists or reloads anything.
+- `history[]` keeps the full text of the last 10 saved versions, newest first, so the Tray can restore a version into the editor or diff it against the current draft. Restoring only fills the editor; nothing is applied to clients until an explicit save.
 - The prompt is guidance only. OAuth scopes, Security Approval grants, project grants and host file rules remain independent authorization gates.
 
 ---

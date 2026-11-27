@@ -1566,6 +1566,15 @@
               <form id="runtime-mcp-config-form">
                 <div class="modal-body runtime-result-body">
                   <p id="runtime-mcp-config-owner" class="runtime-evidence"></p>
+                  <div class="runtime-mcp-config-prompt">
+                    <div class="runtime-mcp-config-prompt-head">
+                      <strong>Session prompt</strong>
+                      <span id="runtime-mcp-config-prompt-state" class="runtime-mcp-config-prompt-state" role="status" aria-live="polite">Checking…</span>
+                    </div>
+                    <pre id="runtime-mcp-config-prompt-body" class="runtime-mcp-config-prompt-body"
+                      aria-label="Active MCP session prompt"></pre>
+                    <small>Clients receive this at the next initialize after reconnect. Changing exposure or mode does not change the prompt, and it never grants permissions.</small>
+                  </div>
                   <div class="runtime-create-fields">
                     <div class="runtime-create-field">
                       <label for="runtime-mcp-config-exposure">Tool catalog exposure</label>

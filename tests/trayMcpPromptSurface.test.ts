@@ -25,9 +25,15 @@ describe("Tray MCP agent prompt surface", () => {
       .toBeLessThan(panel.indexOf("Independent MCP Owners"));
     expect(html).toContain('maxlength="6000"');
     expect(html).toContain("never grants permissions");
+    // The Edit MCP Configuration dialog shows the active prompt besides the
+    // tool policy controls it is about to change.
+    const dialog = html.slice(html.indexOf('id="runtime-mcp-config-form"'));
+    expect(dialog.slice(0, dialog.indexOf("runtime-mcp-config-exposure")))
+      .toContain('id="runtime-mcp-config-prompt-body"');
+    expect(html).toContain('id="runtime-mcp-config-prompt-state"');
   });
 
-  it("wires preview, history and the per-owner session prompt badge", () => {
+  it("wires preview, history, restore, diff and the per-owner badge", () => {
     const js = read("apps/superagent-tray/ui/runtime.js");
     expect(js).toContain('runtimeInvoke("get_mcp_agent_prompt")');
     expect(js).toContain('runtimeInvoke("set_mcp_agent_prompt", {instructions})');
@@ -37,6 +43,16 @@ describe("Tray MCP agent prompt surface", () => {
     expect(js).toContain("runtimeSetMcpPromptSummary(");
     // The badge is rendered inside the MCP owner card, not a separate panel.
     expect(js).toContain('${service.kind === "mcp" ? runtimeMcpPromptOwnerBadge() : ""}');
+    // Restore loads the version into the editor; only an explicit save applies it.
+    expect(js).toContain("function runtimeRestoreMcpPromptVersion(");
+    expect(js).toContain("Nothing changes for MCP clients until you press Save & apply.");
+    expect(js).toContain("input.value = entry.prompt.slice(0, input.maxLength);");
+    expect(js).toContain('button.dataset.historyAction = action;');
+    // Diff is computed from the stored version text against the live draft.
+    expect(js).toContain("function runtimeLineDiff(");
+    expect(js).toContain("runtimeLineDiff(entry.prompt, input.value)");
+    expect(js).toContain("function runtimeHydrateMcpConfigPrompt(");
+    expect(js).toContain("void runtimeHydrateMcpConfigPrompt();");
   });
 
   it("keeps the native commands and the loopback preview route aligned", () => {
