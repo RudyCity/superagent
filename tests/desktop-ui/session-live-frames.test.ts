@@ -261,6 +261,85 @@ describe("DesktopUiSession live-window tolerance", () => {
     expect(schema.warnings.join(" ")).toMatch(/sampled pixels changed/);
   });
 
+  it("retries the settling confirmation frame before declaring the window stale", async () => {
+    const stable = animatedFrame(10);
+    const { adapter } = mockAdapter([stable, replacedFrame(), stable]);
+    const session = createDesktopUiSession({
+      adapter,
+      target: { pid: 42, nativeId: "window-42" },
+    });
+
+    const schema = await session.snapshot();
+
+    expect(schema.screenshot.revision).toBe(1);
+    expect(schema.screenshot.changeRatio).toBe(0);
+  });
+
+  it("prefers a persistent verified capture source over one-shot captures", async () => {
+    const frames = [animatedFrame(10), animatedFrame(10), animatedFrame(20)];
+    let index = 0;
+    const sourceCapture = vi.fn(async (): Promise<NativeCapture> => ({
+      image: frames[Math.min(index++, frames.length - 1)],
+      capturedAt: "2026-11-27T00:00:00.000Z",
+      targetWindow: window,
+    }));
+    const close = vi.fn();
+    const adapterCapture = vi.fn(async () => {
+      throw new Error("one-shot capture must not be used while the source is healthy");
+    });
+    const adapter: DesktopUiAdapter = {
+      platform: "win32",
+      probe: async () => capabilities,
+      capture: adapterCapture,
+      inspectAccessibility: async () => accessibilitySnapshot(),
+      dispatch: vi.fn(async () => undefined),
+    };
+    const session = createDesktopUiSession({
+      adapter,
+      target: { pid: 42, nativeId: "window-42" },
+      captureSource: { backend: "test-source", verifiedInsideCapture: true, capture: sourceCapture, close },
+    });
+
+    await session.snapshot();
+    session.close();
+
+    expect(adapterCapture).not.toHaveBeenCalled();
+    expect(sourceCapture).toHaveBeenCalledTimes(2);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to one-shot capture when the verified source refuses", async () => {
+    const stable = animatedFrame(10);
+    const adapterCapture = vi.fn(async (): Promise<NativeCapture> => ({
+      image: stable,
+      capturedAt: "2026-11-27T00:00:00.000Z",
+      targetWindow: window,
+    }));
+    const adapter: DesktopUiAdapter = {
+      platform: "win32",
+      probe: async () => capabilities,
+      capture: adapterCapture,
+      inspectAccessibility: async () => accessibilitySnapshot(),
+      dispatch: vi.fn(async () => undefined),
+    };
+    const close = vi.fn();
+    const session = createDesktopUiSession({
+      adapter,
+      target: { pid: 42, nativeId: "window-42" },
+      captureSource: {
+        backend: "test-source", verifiedInsideCapture: true,
+        capture: async () => { throw new Error("title changed"); },
+        close,
+      },
+    });
+
+    const schema = await session.snapshot();
+
+    expect(schema.elements).toHaveLength(1);
+    expect(schema.warnings.join(" ")).toMatch(/Native capture source refused/);
+    expect(adapterCapture).toHaveBeenCalled();
+  });
+
   it("allows clipped control bounds within two device pixels", async () => {
     const frames = Array.from({ length: 6 }, (_, i) => animatedFrame(10 + i * 10));
     const { adapter, dispatch, inspectAccessibility } = mockAdapter(frames);

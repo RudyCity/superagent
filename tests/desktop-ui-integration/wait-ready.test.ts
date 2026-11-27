@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+﻿import { describe, expect, it, vi } from "vitest";
 import {
   desktopUiErrorGuidance,
   DesktopUiConsentManager,
@@ -87,7 +87,7 @@ function manager(policy: PersistentAccessPolicy) {
 
 describe("wait_ready stable snapshot", () => {
   it("retries perception assembly failures until a schema is available", async () => {
-    const { adapter } = harness([1, 2, 3, 3]);
+    const { adapter } = harness([1, 2, 3, 3, 3, 3]);
     const sessions = manager(appScoped);
     const opened = await sessions.openSession({
       pid: 901, nativeId: "hwnd-901", title: "Live Editor",
@@ -107,7 +107,7 @@ describe("wait_ready stable snapshot", () => {
   });
 
   it("gives up at the deadline with the last perception error", async () => {
-    const { adapter } = harness([1, 2, 1, 2, 1, 2]);
+    const { adapter } = harness([1, 2, 3, 4]);
     const sessions = manager(appScoped);
     const opened = await sessions.openSession({
       pid: 901, nativeId: "hwnd-901", title: "Live Editor",
@@ -166,3 +166,4 @@ describe("desktop UI error guidance", () => {
     expect(desktopUiErrorGuidance("SOMETHING_ELSE").retryable).toBe(false);
   });
 });
+

@@ -17,6 +17,7 @@ import type {
   DesktopUiElement,
   DesktopUiSchema,
   DesktopUiSessionOptions,
+  DesktopWindowCaptureSource,
   DesktopKey,
   DesktopScreenshotIdentity,
   DesktopWindowTarget,
@@ -61,6 +62,9 @@ const ELEMENT_BOUNDS_TOLERANCE_PX = 2;
  * same-labelled element swapped for a different one at the same bounds).
  */
 const ELEMENT_REGION_CHANGE_BUDGET = 0.35;
+
+/** Total confirmation captures used to settle an animated window per schema. */
+const CONFIRMATION_CAPTURE_ATTEMPTS = 3;
 
 function sameElementBounds(a: DesktopBounds, b: DesktopBounds): boolean {
   return Math.abs(a.x - b.x) <= ELEMENT_BOUNDS_TOLERANCE_PX
@@ -188,12 +192,15 @@ export class DesktopUiSession {
   private pinnedTarget: DesktopWindowTarget | null = null;
   private operationTail: Promise<void> = Promise.resolve();
   private capabilities: { at: number; value: DesktopUiCapabilities } | null = null;
+  private captureSource: DesktopWindowCaptureSource | null = null;
+  private captureFallbackReason: string | null = null;
 
   constructor(options: DesktopUiSessionOptions) {
     this.options = {
       ...options,
       allowInput: options.allowInput === true,
     };
+    this.captureSource = options.captureSource ?? null;
   }
 
   async probe() {
@@ -214,6 +221,36 @@ export class DesktopUiSession {
     return value;
   }
 
+  /**
+   * Prefer the persistent, identity-verified capture source (one helper process
+   * per session, HWND/PID/title/bounds re-verified per frame). Any refusal
+   * permanently falls back to the one-shot adapter capture for this session and
+   * is surfaced as a warning; it never weakens the identity checks that follow.
+   */
+  private async captureFrame(target: DesktopWindowTarget): Promise<NativeCapture> {
+    const source = this.captureSource;
+    if (source) {
+      try {
+        return await source.capture();
+      } catch {
+        this.captureSource = null;
+        try { source.close(); } catch { /* ignore */ }
+        this.captureFallbackReason = "Native capture source refused; using one-shot capture for this session.";
+      }
+    }
+    return this.options.adapter.capture(target);
+  }
+
+  /** Release the persistent capture source; safe to call more than once. */
+  close(): void {
+    const source = this.captureSource;
+    this.captureSource = null;
+    if (source) {
+      try { source.close(); } catch { /* ignore */ }
+    }
+    this.current = null;
+  }
+
   private async snapshotUnlocked(): Promise<DesktopUiSchema> {
     const capabilities = await this.capabilitiesCached();
     if (!capabilities.available || !capabilities.screenshot) {
@@ -229,7 +266,7 @@ export class DesktopUiSession {
       );
     }
 
-    const capture = await this.options.adapter.capture(this.currentTarget());
+    const capture = await this.captureFrame(this.currentTarget());
     const candidateTarget = this.pinnedTarget ?? {
       ...this.options.target,
       nativeId: capture.targetWindow.nativeId,
@@ -246,8 +283,19 @@ export class DesktopUiSession {
       );
     }
 
-    const confirmation = await this.options.adapter.capture(candidateTarget);
-    const assembledChangeRatio = frameChangeRatio(capture.image, confirmation.image);
+    // Bounded adaptive confirmation: retry the settling frame instead of
+    // failing a live window on the first animated tick.
+    let confirmation = await this.captureFrame(candidateTarget);
+    let assembledChangeRatio = frameChangeRatio(capture.image, confirmation.image);
+    for (let attempt = 1; attempt < CONFIRMATION_CAPTURE_ATTEMPTS; attempt++) {
+      const stable = sameWindowIdentity(capture.targetWindow, confirmation.targetWindow)
+        && (assembledChangeRatio === null
+          ? sha256(confirmation.image) === hash
+          : assembledChangeRatio <= DEFAULT_MAX_FRAME_CHANGE_RATIO);
+      if (stable) break;
+      confirmation = await this.captureFrame(candidateTarget);
+      assembledChangeRatio = frameChangeRatio(capture.image, confirmation.image);
+    }
     const confirmedStable = assembledChangeRatio === null
       ? sha256(confirmation.image) === hash
       : assembledChangeRatio <= DEFAULT_MAX_FRAME_CHANGE_RATIO;
@@ -260,6 +308,7 @@ export class DesktopUiSession {
 
     const elements = accessibilityElements(accessibility);
     const warnings = [...(accessibility.warnings ?? [])];
+    if (this.captureFallbackReason) warnings.push(this.captureFallbackReason);
     if (assembledChangeRatio !== null && assembledChangeRatio > 0) {
       warnings.push(
         `Perception assembled while ${(assembledChangeRatio * 100).toFixed(1)}% of sampled pixels changed (within budget).`,
@@ -463,7 +512,7 @@ export class DesktopUiSession {
 
     // Fresh frame must stay inside the visual budget: identical for static
     // targets, tolerant for live apps, still fail-closed for gross changes.
-    const freshCapture = await this.options.adapter.capture(this.currentTarget());
+    const freshCapture = await this.captureFrame(this.currentTarget());
     if (
       !sameWindowIdentity(schema.screenshot.targetWindow, freshCapture.targetWindow)
       || !framesEquivalent(capture.image, freshCapture.image)
@@ -519,7 +568,7 @@ export class DesktopUiSession {
       }
     }
 
-    const confirmation = await this.options.adapter.capture(this.currentTarget());
+    const confirmation = await this.captureFrame(this.currentTarget());
     if (
       !sameWindowIdentity(schema.screenshot.targetWindow, confirmation.targetWindow)
       || !framesEquivalent(capture.image, confirmation.image)
@@ -597,3 +646,4 @@ export class DesktopUiSession {
 export function createDesktopUiSession(options: DesktopUiSessionOptions): DesktopUiSession {
   return new DesktopUiSession(options);
 }
+

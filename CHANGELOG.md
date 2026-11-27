@@ -1,3 +1,11 @@
+## [1.14.114] - 2026-11-27
+### Persistent verified capture for live Desktop UI sessions
+- Bind one persistent, identity-verified capture worker per Desktop UI session (`adapter.openVerifiedCapture`, the existing exact-HWND Desktop Live worker). Every frame re-verifies HWND, PID birth, title, bounds, DWM cloak and display affinity inside the worker; no caller-supplied binary path is accepted.
+- Measured on a real Windows Terminal window: capture drops from 768 ms (one-shot PowerShell) to 89-131 ms, and a warm snapshot from 2.6-3.1 s to 1.05 s.
+- Keep the worker optional and fail-open only for capture: a refusal or a pinned-title change closes it, adds a schema warning, and the session continues on the one-shot fallback. WGC stays owner opt-in and checksum-verified.
+- Retry the settling confirmation frame up to three times before reporting `STALE_SCREENSHOT`, so one animation tick no longer discards a schema.
+- Release the capture worker on close, expiry, operator revocation and clear-all; cover the lifecycle, fallback warnings and confirmation retry with focused tests.
+
 ## [1.14.113] - 2026-11-27
 ### Deterministic recovery and per-control freshness for Desktop UI
 - Add `wait_ready` to `superagent_desktop_ui` and the local `desktop_ui` tool. It polls perception with a bounded deadline (500-10000 ms, default 3000 ms) and retries only capture-assembly failures (`STALE_SCREENSHOT`, `SCREENSHOT_UNAVAILABLE`, `ACCESSIBILITY_UNAVAILABLE`, `TARGET_NOT_FOUND`, `PROCESS_FAILED`); permission and policy denials fail immediately.

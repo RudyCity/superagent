@@ -1,5 +1,5 @@
 /**
- * desktopUiTools.ts â€” Native Desktop UI Automation & Semantic Schema Perception.
+ * desktopUiTools.ts Ã¢â‚¬â€ Native Desktop UI Automation & Semantic Schema Perception.
  *
  * Provides scoped single-window automation across Windows (UIA), macOS (AX),
  * and Linux (AT-SPI2/xdotool) using accessibility semantics with local UI-DETR vision fallback.
@@ -39,6 +39,7 @@ import {
   type DesktopWindowDiscoveryResult,
   type DesktopWindowTarget,
   type NativeCapture,
+  type DesktopWindowCaptureSource,
 } from "../desktopUi/index.js";
 import type { Tool } from "./types.js";
 import { DesktopAppManager } from "../desktopApp/index.js";
@@ -522,6 +523,7 @@ export class DesktopUiSessionManager {
         if (session.trustedGrantId) this.consentManager.revokeConsent(session.trustedGrantId);
         if (session.sessionApprovalGrantId) this.consentManager.revokeConsent(session.sessionApprovalGrantId);
         if (session.registeredGrantId) this.consentManager.revokeConsent(session.registeredGrantId);
+        session.session.close();
         this.sessions.delete(token);
       }
     }
@@ -546,6 +548,7 @@ export class DesktopUiSessionManager {
       if ("registeredGrantId" in s && typeof s.registeredGrantId === "string") {
         this.consentManager.revokeConsent(s.registeredGrantId);
       }
+      s.session.close();
       if (this.sessions.delete(token)) closed++;
     }
     return closed;
@@ -668,6 +671,7 @@ export class DesktopUiSessionManager {
     let registeredViewIdentity: ExecutableIdentity | undefined;
     let allowViewTitleDrift = false;
     let allowInputTitleDrift = false;
+    let discoveredTarget: DesktopDiscoveredWindow | null = null;
     if (permanent) {
       // A registered application must be explicitly approved for observation.
       // Window listing remains available so the owner can enroll a target.
@@ -676,6 +680,7 @@ export class DesktopUiSessionManager {
       }
       const discovery = await listDiscoveredWindows(baseAdapter, MAX_WINDOW_DISCOVERY_LIMIT);
       const observed = requireFreshWindowTarget(discovery, target.pid, target.nativeId);
+      discoveredTarget = observed;
       // Canonicalize the volatile title from fresh discovery. A caller-supplied
       // title only has to be recognizable (exact, truncated, or case-shifted);
       // pid + nativeId remain the identity, matching the "metadata only" contract.
@@ -834,11 +839,24 @@ export class DesktopUiSessionManager {
       vision = createHostAuthorizedVisionDetector(params.visionEndpoint);
     }
 
+    // One persistent, identity-verified capture worker per session removes a
+    // helper spawn from every frame. Refusal is not fatal: the session falls
+    // back to the one-shot adapter capture.
+    let captureSource: DesktopWindowCaptureSource | undefined;
+    if (discoveredTarget && typeof baseAdapter.openVerifiedCapture === "function") {
+      try {
+        captureSource = await baseAdapter.openVerifiedCapture(discoveredTarget);
+      } catch {
+        captureSource = undefined;
+      }
+    }
+
     const nativeSession = createDesktopUiSession({
       adapter,
       target,
       vision,
       allowInput: inputRequested,
+      ...(captureSource ? { captureSource } : {}),
     });
 
     const now = Date.now();
@@ -1166,6 +1184,7 @@ export class DesktopUiSessionManager {
     if (session.trustedGrantId) this.consentManager.revokeConsent(session.trustedGrantId);
     if (session.sessionApprovalGrantId) this.consentManager.revokeConsent(session.sessionApprovalGrantId);
     if (session.registeredGrantId) this.consentManager.revokeConsent(session.registeredGrantId);
+    session.session.close();
     return { closed: this.sessions.delete(sessionToken) };
   }
 
@@ -1174,6 +1193,7 @@ export class DesktopUiSessionManager {
       if (session.trustedGrantId) this.consentManager.revokeConsent(session.trustedGrantId);
       if (session.sessionApprovalGrantId) this.consentManager.revokeConsent(session.sessionApprovalGrantId);
       if (session.registeredGrantId) this.consentManager.revokeConsent(session.registeredGrantId);
+      session.session.close();
     }
     this.sessions.clear();
   }
@@ -1569,4 +1589,5 @@ export const desktopUiTool: Tool = {
     }
   },
 };
+
 

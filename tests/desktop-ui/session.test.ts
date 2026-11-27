@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+﻿import { describe, expect, it, vi } from "vitest";
 import {
   createDesktopUiSession,
   DesktopUiError,
@@ -464,7 +464,7 @@ describe("DesktopUiSession", () => {
     await expect(session.snapshot()).rejects.toMatchObject({ code: "STALE_SCREENSHOT" });
     const schema = await session.snapshot();
     expect(schema.screenshot.targetWindow.nativeId).toBe("replacement-window");
-    expect(capture).toHaveBeenNthCalledWith(3, { pid: 42 });
+    expect(capture).toHaveBeenNthCalledWith(5, { pid: 42 });
   });
 
   it("requires verified focused-element identity for mutating untargeted key commands", async () => {
@@ -555,3 +555,4 @@ describe("DesktopUiSession", () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
   });
 });
+

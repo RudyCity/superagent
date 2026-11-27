@@ -41,6 +41,37 @@ independent, bounded checks:
    a visually replaced control that kept its label, role and bounds, while an
    unrelated pane is free to stream.
 
+## Persistent verified capture (fast path)
+
+Each session may bind one persistent, identity-verified capture worker
+(`adapter.openVerifiedCapture`, the existing exact-HWND worker used by Desktop
+Live). The worker re-verifies HWND, PID birth, title, bounds, DWM cloak and
+display affinity inside every frame and never accepts a path from a caller.
+
+Measured on a real Windows Terminal window (2026-11-27):
+
+| Path | Capture | Snapshot |
+|---|---|---|
+| One-shot PowerShell capture | 768 ms | 2.6-3.1 s |
+| Persistent verified worker | 131 / 103 / 89 ms | 1.6 s cold, **1.05 s warm** |
+
+Behavior and limits:
+
+- The worker is optional. Any refusal permanently falls back to one-shot
+  capture for that session and adds a schema warning; it is never fatal.
+- Targets the worker refuses (some Electron hosts and Explorer windows fail its
+  strict `Verify`) simply use the fallback path.
+- WGC remains owner opt-in via `SUPERAGENT_DESKTOP_LIVE_WGC=1`; the bundled
+  helper is checksum-verified before use.
+- The worker pins the title it was opened with, so a volatile title closes it and
+  the session continues on the fallback path (title drift policy is unchanged).
+
+## Bounded confirmation retry
+
+Perception assembly now retries the settling frame up to three times before
+declaring `STALE_SCREENSHOT`. A single animated tick no longer discards a
+schema, while a genuinely changing window still fails closed.
+
 ## Recovering from perception failures
 
 `wait_ready` polls perception with a bounded deadline (500-10000 ms, default

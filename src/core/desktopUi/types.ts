@@ -202,6 +202,13 @@ export interface DesktopUiSessionOptions {
   target: DesktopWindowTarget;
   vision?: DesktopVisionDetector;
   allowInput?: boolean;
+  /**
+   * Optional persistent, identity-verified capture source (for example the
+   * exact-HWND native worker). It removes one helper process per capture and
+   * re-verifies HWND/PID/title/bounds inside every frame. Sessions fall back to
+   * `adapter.capture` when the source refuses or is unavailable.
+   */
+  captureSource?: DesktopWindowCaptureSource;
 }
 
 export interface DesktopActionReceipt {
