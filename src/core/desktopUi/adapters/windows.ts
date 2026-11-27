@@ -16,6 +16,7 @@ import type {
   NativeCapture,
   NativeDesktopAction,
 } from "../types.js";
+import { inspectViaPersistentAccessibilityHost } from "./windowsAccessibilityHost.js";
 
 const WINDOWS_POWERSHELL = path.win32.join(
   process.env.SystemRoot || process.env.windir || "C:\\Windows",
@@ -613,9 +614,15 @@ function mapWindowsError(error: unknown, fallbackCode: "SCREENSHOT_UNAVAILABLE" 
   return asDesktopUiError(error, fallbackCode, fallbackMessage);
 }
 
+const DEFAULT_RUNNER = createRestrictedProcessRunner([WINDOWS_POWERSHELL]);
+
 export function createWindowsDesktopUiAdapter(
-  runner: DesktopProcessRunner = createRestrictedProcessRunner([WINDOWS_POWERSHELL]),
+  runner: DesktopProcessRunner = DEFAULT_RUNNER,
 ): DesktopUiAdapter {
+  // Only the production runner may reuse the persistent accessibility host;
+  // injected runners (tests, security harnesses) must stay fully scripted and
+  // side-effect free.
+  const usePersistentAccessibilityHost = runner === DEFAULT_RUNNER && process.platform === "win32";
   const runPowerShell = async (script: string, payload?: unknown) =>
     runner.run({
       executable: WINDOWS_POWERSHELL,
@@ -756,6 +763,19 @@ export function createWindowsDesktopUiAdapter(
     },
 
     async inspectAccessibility(target, capture): Promise<AccessibilitySnapshot> {
+      // Persistent host first: one carrier process per Core instead of one
+      // PowerShell + UIAutomation load per snapshot. Any refusal falls back to
+      // the audited one-shot script below, so behaviour is never weakened.
+      if (usePersistentAccessibilityHost) {
+        try {
+          return await inspectViaPersistentAccessibilityHost({
+            pid: target.pid,
+            nativeId: capture.targetWindow.nativeId ?? target.nativeId,
+          });
+        } catch {
+          // fall through to the one-shot script
+        }
+      }
       try {
         const result = await runPowerShell(ACCESSIBILITY_SCRIPT, {
           ...target,

@@ -1,3 +1,10 @@
+## [1.14.117] - 2026-11-27
+### Persistent accessibility host for Desktop UI perception
+- Keep one fixed-script UIAutomation carrier process per Core instead of spawning PowerShell and loading the UIAutomation assemblies for every snapshot. It re-validates HWND, owner PID, root status, visibility, title and geometry on every request; only the tree walk runs per call.
+- Measured on a real Windows Terminal window: accessibility inspection drops from ~950 ms to 241-314 ms warm, and a warm snapshot from 1.05 s to 278 ms (cold start 2.5 s while the carrier loads).
+- Fail open only to the audited one-shot script: spawn, protocol, parse or response-shape failures close the carrier and fall back for that call. Idle carriers close after 60 s; requests are serialized with a 15 s timeout.
+- Restrict the carrier to the production process runner so injected test/security runners keep their fully scripted, side-effect-free behaviour; no executable path, script or argument is accepted from a caller.
+
 ## [1.14.116] - 2026-11-27
 ### Operator-scoped read-only Desktop UI discovery and registry v3 title policies
 - Add `desktop-ui-policy.json` (`version: 1`, `discoveryRequiresDangerousTool`). The strict default keeps discovery behind the dangerous-tool project Execute gate; when an operator explicitly sets it to `false`, only read-only commands (`probe`, `list_windows`, `list_monitors`, `get_active_window`, `find_window`, `inspect_window`, `list_installed_apps`, `inspect_security_prompts`, `live_inventory`, `snapshot`, `wait_ready`) skip that gate. `open`, `action`, `close`, lifecycle, package and live-stop commands always require it.

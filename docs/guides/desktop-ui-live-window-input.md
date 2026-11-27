@@ -73,6 +73,27 @@ Behavior and limits:
   re-verifying the target each round, so a transient GPU-composited failure does
   not kill the fast path.
 
+## Persistent accessibility host
+
+UIAutomation used to be loaded by a fresh PowerShell process per snapshot
+(~0.95 s). A single shared carrier process now holds the UIAutomation assemblies
+and re-validates HWND, owner PID, root status, visibility and geometry for every
+request. Only the tree walk remains per snapshot.
+
+| Stage | Before | After |
+|---|---|---|
+| Accessibility inspect | ~950 ms | **241-314 ms** warm (first call 2.5 s while the carrier starts) |
+| Warm snapshot (capture + inspect + confirm) | 1.05 s | **278 ms** |
+
+Safety and limits:
+
+- The carrier only runs for the production process runner; injected runners used
+  by tests and security harnesses stay fully scripted.
+- Any spawn, protocol or parse failure closes the carrier and falls back to the
+  audited one-shot script for that call; nothing is weakened.
+- Idle carriers close after 60 s; requests are serialized with a 15 s timeout.
+- No path, script or argument is ever accepted from a caller.
+
 ## Bounded confirmation retry
 
 Perception assembly now retries the settling frame up to three times before
