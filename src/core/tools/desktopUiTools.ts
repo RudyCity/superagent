@@ -820,7 +820,6 @@ export class DesktopUiSessionManager {
       (permanent ? Boolean(registeredGrantId) : true) &&
       this.consentManager.hasConsent(target, sessionToken);
     const consentDenied = inputRequested && !inputAllowed;
-    let latestCapture: NativeCapture | null = null;
     const adapter: DesktopUiAdapter = {
       platform: baseAdapter.platform,
       probe: () => baseAdapter.probe(),
@@ -862,10 +861,24 @@ export class DesktopUiSessionManager {
     // One persistent, identity-verified capture worker per session removes a
     // helper spawn from every frame. Refusal is not fatal: the session falls
     // back to the one-shot adapter capture.
+    // Record frames from whichever capture path the session actually uses: the
+    // persistent source bypasses this manager's adapter wrapper, and
+    // includeScreenshotImage reads getLatestCapture().
+    let latestCapture: NativeCapture | null = null;
     let captureSource: DesktopWindowCaptureSource | undefined;
     if (discoveredTarget && typeof baseAdapter.openVerifiedCapture === "function") {
       try {
-        captureSource = await baseAdapter.openVerifiedCapture(discoveredTarget);
+        const openedSource = await baseAdapter.openVerifiedCapture(discoveredTarget);
+        captureSource = {
+          backend: openedSource.backend,
+          verifiedInsideCapture: true,
+          capture: async () => {
+            const frame = await openedSource.capture();
+            latestCapture = frame;
+            return frame;
+          },
+          close: () => openedSource.close(),
+        };
       } catch {
         captureSource = undefined;
       }

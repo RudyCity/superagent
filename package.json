@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.14.120",
+  "version": "1.14.121",
   "description": "Terminal-native general-purpose AI assistant for research, writing, productivity, automation and software development",
   "type": "module",
   "bin": {
@@ -56,7 +56,7 @@
     "doctor:launcher": "bun scripts/repair-bun-global-launcher.ts",
     "repair:launcher": "bun scripts/repair-bun-global-launcher.ts --apply",
     "setup:piper": "bun scripts/setup-piper.ts",
-    "test:e2e": "bun --bun x vitest run tests/*e2e*.test.ts tests/*E2E*.test.ts"
+    "test:e2e": "bun --bun x vitest run e2e"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",

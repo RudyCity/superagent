@@ -17,6 +17,10 @@ import type {
   NativeDesktopAction,
 } from "../types.js";
 import { inspectViaPersistentAccessibilityHost, normalizeAccessibilityElements } from "./windowsAccessibilityHost.js";
+import {
+  getSharedWindowsDesktopHost,
+  type WindowsDesktopHost,
+} from "./windowsDesktopHost.js";
 
 const WINDOWS_POWERSHELL = path.win32.join(
   process.env.SystemRoot || process.env.windir || "C:\\Windows",
@@ -616,13 +620,26 @@ function mapWindowsError(error: unknown, fallbackCode: "SCREENSHOT_UNAVAILABLE" 
 
 const DEFAULT_RUNNER = createRestrictedProcessRunner([WINDOWS_POWERSHELL]);
 
+export interface WindowsDesktopUiAdapterOptions {
+  /**
+   * Test seam only. Production never supplies a host: the adapter resolves the
+   * fixed verified artifact itself. An injected host lets tests prove the
+   * prefer-host/fall-back wiring without executing the native binary.
+   */
+  desktopHost?: WindowsDesktopHost | null;
+}
+
 export function createWindowsDesktopUiAdapter(
   runner: DesktopProcessRunner = DEFAULT_RUNNER,
+  options: WindowsDesktopUiAdapterOptions = {},
 ): DesktopUiAdapter {
-  // Only the production runner may reuse the persistent accessibility host;
-  // injected runners (tests, security harnesses) must stay fully scripted and
-  // side-effect free.
+  // Only the production runner may reuse the persistent accessibility host and
+  // the native host; injected runners (tests, security harnesses) must stay
+  // fully scripted and side-effect free unless a host is explicitly injected.
   const usePersistentAccessibilityHost = runner === DEFAULT_RUNNER && process.platform === "win32";
+  const nativeHost: WindowsDesktopHost | null = options.desktopHost !== undefined
+    ? options.desktopHost
+    : (usePersistentAccessibilityHost ? getSharedWindowsDesktopHost() : null);
   const runPowerShell = async (script: string, payload?: unknown) =>
     runner.run({
       executable: WINDOWS_POWERSHELL,
@@ -730,6 +747,17 @@ export function createWindowsDesktopUiAdapter(
     },
 
     async capture(target: DesktopWindowTarget): Promise<NativeCapture> {
+      // Single native host first: one verified WinExe serves PrintWindow and
+      // UIAutomation. Any refusal (missing artifact, spawn, protocol, identity,
+      // size) is silent and falls through to the unchanged PowerShell path, so
+      // deleting or breaking the artifact restores today's behaviour exactly.
+      if (nativeHost) {
+        try {
+          return await nativeHost.capture(target);
+        } catch {
+          // fall through to the audited one-shot PowerShell capture
+        }
+      }
       const dir = await mkdtemp(path.join(os.tmpdir(), "superagent-desktop-ui-"));
       const outputPath = path.join(dir, "capture.png");
       try {
@@ -763,7 +791,20 @@ export function createWindowsDesktopUiAdapter(
     },
 
     async inspectAccessibility(target, capture): Promise<AccessibilitySnapshot> {
-      // Persistent host first: one carrier process per Core instead of one
+      // Native host first (capture and inspect from the same DPI-aware process
+      // keep the reported geometry consistent). Then the persistent PowerShell
+      // carrier, then the audited one-shot script; no path is removed.
+      if (nativeHost) {
+        try {
+          return await nativeHost.inspect(
+            { pid: target.pid, nativeId: capture.targetWindow.nativeId ?? target.nativeId },
+            capture,
+          );
+        } catch {
+          // fall through to the persistent carrier / one-shot script
+        }
+      }
+      // Persistent host next: one carrier process per Core instead of one
       // PowerShell + UIAutomation load per snapshot. Any refusal falls back to
       // the audited one-shot script below, so behaviour is never weakened.
       if (usePersistentAccessibilityHost) {
