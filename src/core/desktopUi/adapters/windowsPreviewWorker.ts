@@ -85,17 +85,32 @@ function Verify {
  $w=$r.Right-$r.Left
  $ht=$r.Bottom-$r.Top
  if ($w -le 0 -or $ht -le 0 -or $w -gt 8192 -or $ht -gt 8192 -or
-    ([long]$w*[long]$ht) -gt 16000000 -or
-    $r.Left -ne $t.bounds.x -or $r.Top -ne $t.bounds.y -or
-    $w -ne $t.bounds.width -or $ht -ne $t.bounds.height) {throw "changed"}
+    ([long]$w*[long]$ht) -gt 16000000) {throw "changed"}
+ $dpi=[NWindow]::GetDpiForWindow($h)
+ if ($dpi -le 0) {throw "dpi"}
+ # Discovery and this worker may run in different DPI contexts (per-monitor-v2
+ # vs DIP), so the same HWND reports logical or physical bounds depending on
+ # the caller. HWND + owner PID birth remain the identity; bounds only prove
+ # that the geometry did not change, so compare exact or DPI-equivalent values.
+ $scale=[double]$dpi/96.0
+ $tol=2.0
+ $exact = ($r.Left -eq $t.bounds.x -and $r.Top -eq $t.bounds.y -and
+           $w -eq $t.bounds.width -and $ht -eq $t.bounds.height)
+ $scaled = ([Math]::Abs($w*$scale-$t.bounds.width) -le $tol -and
+            [Math]::Abs($ht*$scale-$t.bounds.height) -le $tol -and
+            [Math]::Abs($r.Left*$scale-$t.bounds.x) -le $tol -and
+            [Math]::Abs($r.Top*$scale-$t.bounds.y) -le $tol)
+ $unscaled = ([Math]::Abs($w/$scale-$t.bounds.width) -le $tol -and
+              [Math]::Abs($ht/$scale-$t.bounds.height) -le $tol -and
+              [Math]::Abs($r.Left/$scale-$t.bounds.x) -le $tol -and
+              [Math]::Abs($r.Top/$scale-$t.bounds.y) -le $tol)
+ if (-not ($exact -or $scaled -or $unscaled)) {throw "changed"}
  $len=[NWindow]::GetWindowTextLength($h)
  if ($len -le 0) {throw "title"}
  $b=New-Object System.Text.StringBuilder ([Math]::Min(513,$len+1))
  [void][NWindow]::GetWindowText($h,$b,$b.Capacity)
  $title=[regex]::Replace($b.ToString(),'[\x00-\x1F\x7F]','')
  if ($title -cne [string]$t.title) {throw "title changed"}
- $dpi=[NWindow]::GetDpiForWindow($h)
- if ($dpi -le 0) {throw "dpi"}
  return [pscustomobject]@{
   pid=$ownerPid;nativeId=$h.ToInt64().ToString();title=$title;
   active=([NWindow]::GetForegroundWindow() -eq $h);
@@ -117,10 +132,20 @@ while ($true) {
   $memory=[System.IO.MemoryStream]::new()
   $dc=[IntPtr]::Zero
   try {
-   $dc=$g.GetHdc()
-   if (-not [NWindow]::PrintWindow($h,$dc,2)) {throw "capture"}
-   $g.ReleaseHdc($dc);$dc=[IntPtr]::Zero
-   $g.Dispose()
+    # PrintWindow can transiently fail while a GPU-composited window paints.
+    # Retry a bounded number of times, re-verifying the target each round; the
+    # loop still fails closed after the last attempt.
+    $captured=$false
+    for ($attempt=0; $attempt -lt 3; $attempt++) {
+     $dc=$g.GetHdc()
+     try {$captured=[NWindow]::PrintWindow($h,$dc,2)}
+     finally {$g.ReleaseHdc($dc);$dc=[IntPtr]::Zero}
+     if ($captured) {break}
+     Start-Sleep -Milliseconds 120
+     $before=Verify
+    }
+    if (-not $captured) {throw "capture"}
+    $g.Dispose()
    $bmp.Save($memory,[System.Drawing.Imaging.ImageFormat]::Png)
    if ($memory.Length -lt 24 -or $memory.Length -gt 8388608) {throw "too large"}
    $after=Verify
@@ -139,6 +164,28 @@ while ($true) {
 `;
 const MAX_TEXT = 12 * 1024 * 1024;
 
+
+/**
+ * Bounds may be reported in DIPs or physical pixels depending on the DPI
+ * context of the caller (discovery vs this worker). Geometry only proves the
+ * window did not move or resize; HWND + owner PID birth remain the identity, so
+ * accept an exact match or a consistent per-axis DPI scaling of the match.
+ */
+export function boundsEquivalentWithDpi(
+  actual: { x: number; y: number; width: number; height: number } | undefined,
+  expected: { x: number; y: number; width: number; height: number },
+  scaleFactor: number | undefined,
+): boolean {
+  if (!actual) return false;
+  const keys = ["x", "y", "width", "height"] as const;
+  if (keys.every((key) => actual[key] === expected[key])) return true;
+  const scale = typeof scaleFactor === "number" && Number.isFinite(scaleFactor) && scaleFactor > 0
+    ? scaleFactor : 1;
+  const near = (a: number, b: number) => Math.abs(a - b) <= 2;
+  if (keys.every((key) => near(actual[key] * scale, expected[key]))) return true;
+  if (keys.every((key) => near(actual[key] / scale, expected[key]))) return true;
+  return false;
+}
 
 export async function openWindowsVerifiedCapture(target: DesktopDiscoveredWindow): Promise<DesktopWindowCaptureSource> {
   if (process.platform !== "win32" || !Number.isSafeInteger(target.pid) || target.pid <= 0 ||
@@ -249,8 +296,8 @@ export async function openWindowsVerifiedCapture(target: DesktopDiscoveredWindow
         if (image.length<24||image.length>8*1024*1024) throw failure;
         const current=response.window;
         if (!current||current.pid!==target.pid||current.nativeId!==target.nativeId||
-            current.title!==target.title||!["x","y","width","height"].every(k=>
-              current.bounds?.[k]===target.bounds[k as keyof typeof target.bounds])) throw failure;
+            current.title!==target.title||
+            !boundsEquivalentWithDpi(current.bounds,target.bounds,current.scaleFactor)) throw failure;
         return {image,targetWindow:current,capturedAt:new Date().toISOString()};
       } catch {close();throw failure;}
       finally {busy=false;}

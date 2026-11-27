@@ -65,6 +65,13 @@ Behavior and limits:
   helper is checksum-verified before use.
 - The worker pins the title it was opened with, so a volatile title closes it and
   the session continues on the fallback path (title drift policy is unchanged).
+- High-DPI note: discovery and the worker may run in different DPI contexts, so
+  window geometry is compared with a DPI-aware equivalence (exact, or
+  consistently scaled either direction, 2 px tolerance). Identity remains HWND +
+  owner PID birth + title + cloak + affinity; only the pixel unit is normalized.
+- `PrintWindow` is retried up to three times (120 ms apart) inside the worker,
+  re-verifying the target each round, so a transient GPU-composited failure does
+  not kill the fast path.
 
 ## Bounded confirmation retry
 

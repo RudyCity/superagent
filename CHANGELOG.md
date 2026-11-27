@@ -1,3 +1,11 @@
+## [1.14.115] - 2026-11-27
+### Fast-path capture now works for high-DPI Electron windows
+- Diagnosed why the persistent verified worker refused Electron and Explorer targets: at 150% display scaling, window discovery reported physical pixels while the worker reported DIPs, so the strict bounds equality failed and the worker closed. Explorer was additionally refused because it was genuinely minimized (correct fail-closed behavior, unchanged).
+- Compare window geometry with a DPI-aware equivalence (exact, or consistently scaled either direction, 2 px tolerance) in both the worker script and its Core-side frame validation. HWND, owner PID birth, title, DWM cloak and display affinity remain the identity; only the unit mismatch was relaxed.
+- Add a bounded `PrintWindow` retry (3 attempts, 120 ms apart, re-verifying the target each round) inside the persistent worker so a transient GPU-composited capture failure no longer kills the fast path.
+- Measured on a real Electron window: 170 ms / 150 ms per capture versus 770-880 ms one-shot, with automatic fallback when the pinned title changes.
+- Cover the geometry equivalence rules (physical vs DIP, moved/resized, unknown scale) with focused tests.
+
 ## [1.14.114] - 2026-11-27
 ### Persistent verified capture for live Desktop UI sessions
 - Bind one persistent, identity-verified capture worker per Desktop UI session (`adapter.openVerifiedCapture`, the existing exact-HWND Desktop Live worker). Every frame re-verifies HWND, PID birth, title, bounds, DWM cloak and display affinity inside the worker; no caller-supplied binary path is accepted.
