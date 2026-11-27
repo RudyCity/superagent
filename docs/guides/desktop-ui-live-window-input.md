@@ -138,9 +138,11 @@ of inferred:
   authorized.
 - absent — legacy behaviour: exact title only when `scope.windowTitle` exists.
 
-Core reads and enforces this field now; the Tray owner still writes the legacy
-`scope.windowTitle` form until the Rust registry and its UI surface are updated,
-so no operator workflow changes yet.
+Core reads and enforces this field, and the Tray registry now writes it on every new
+approval: `exact` when the operator approved one window title, `app` when the whole
+application was approved. Rules that differ only by title policy are treated as
+distinct targets, and an `exact` rule without a bound title is rejected. Older
+entries without the field keep the legacy inference, so no migration is needed.
 
 ## Recovering from perception failures
 

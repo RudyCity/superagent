@@ -37,7 +37,7 @@
       "updatedAt": "2026-08-15T02:09:42.094Z"
     }
   },
-  "lastSync": "2026-11-27T13:28:46.692Z",
+  "lastSync": "2026-11-27T13:43:13.759Z",
   "workspaces": [
     {
       "name": "superagent",
@@ -50,10 +50,14 @@
   ],
   "lastModifiedFiles": [
     "[superagent] CHANGELOG.md",
+    "[superagent] apps/superagent-tray/src-tauri/src/desktop_access_registry.rs",
     "[superagent] docs/guides/desktop-ui-live-window-input.md",
     "[superagent] package.json",
-    "[superagent] src/core/desktopUi/adapters/windows.ts",
-    "[superagent] src/core/desktopUi/adapters/windowsAccessibilityHost.ts",
+    "[superagent] src/serverRoutes.ts",
+    "[t-line] backend/src/browserSessions.ts",
+    "[t-line] backend/src/superAgentRoutes.ts",
+    "[t-line] desktop-tauri/src-tauri/src/browser/mod.rs",
+    "[t-line] desktop-tauri/src-tauri/src/lib.rs",
     "[t-line] frontend/src/App.tsx",
     "[t-line] frontend/src/components/RightSidebar.tsx",
     "[t-line] frontend/src/components/SuperAgentInputContainer.tsx",

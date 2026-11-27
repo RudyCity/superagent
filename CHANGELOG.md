@@ -1,3 +1,9 @@
+## [1.14.118] - 2026-11-27
+### Tray writes explicit registry v3 title policies
+- New Tray approvals now emit an explicit `titlePolicy` on desktop rules: `exact` when the operator approved one window title, `app` when the whole application is approved. Existing entries without the field keep the legacy inference, so no migration is required.
+- Reject an `exact` policy that has no bound window title, and treat rules that differ only by title policy as distinct approval targets instead of merging them.
+- Core already enforces the field (1.14.116); this closes the writer side so operator intent is explicit in the on-disk registry. Focused Rust tests cover parsing, round-tripping, validation and deduplication.
+
 ## [1.14.117] - 2026-11-27
 ### Persistent accessibility host for Desktop UI perception
 - Keep one fixed-script UIAutomation carrier process per Core instead of spawning PowerShell and loading the UIAutomation assemblies for every snapshot. It re-validates HWND, owner PID, root status, visibility, title and geometry on every request; only the tree walk runs per call.

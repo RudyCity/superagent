@@ -38,6 +38,16 @@ pub struct FileScope {
     path: String,
     recursive: bool,
 }
+/// Explicit title semantics for desktop rules (registry v3). `App` treats the
+/// window title as volatile metadata; `Exact` binds the rule to
+/// `scope.windowTitle`. Absent keeps the legacy inference used by older Core
+/// builds.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TitlePolicy {
+    App,
+    Exact,
+}
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Rule {
@@ -46,6 +56,8 @@ pub enum Rule {
         effect: String,
         app: ExecutableIdentity,
         operations: Vec<String>,
+        #[serde(rename = "titlePolicy", default, skip_serializing_if = "Option::is_none")]
+        title_policy: Option<TitlePolicy>,
         scope: DesktopScope,
     },
     File {
@@ -69,8 +81,8 @@ impl Rule {
     fn same_target(&self, other: &Rule) -> bool {
         match (self, other) {
             (
-                Rule::Desktop { effect: e1, app: a1, scope: s1, .. },
-                Rule::Desktop { effect: e2, app: a2, scope: s2, .. },
+                Rule::Desktop { effect: e1, app: a1, title_policy: t1, scope: s1, .. },
+                Rule::Desktop { effect: e2, app: a2, title_policy: t2, scope: s2, .. },
             ) => {
                 e1 == e2
                     && a1.platform == a2.platform
@@ -81,6 +93,7 @@ impl Rule {
                         a1.executable_path == a2.executable_path
                     }
                     && s1.window_title == s2.window_title
+                    && t1 == t2
                     && s1.element_role == s2.element_role
                     && s1.element_label == s2.element_label
             }
@@ -104,7 +117,10 @@ impl Rule {
     }
     fn validate(&self) -> Result<(), String> {
         let (effect, app, operations, allowed) = match self {
-            Rule::Desktop { effect, app, operations, scope, .. } => {
+            Rule::Desktop { effect, app, operations, scope, title_policy, .. } => {
+                if *title_policy == Some(TitlePolicy::Exact) && scope.window_title.is_none() {
+                    return Err("Exact title policy requires a window title".into());
+                }
                 if scope.window_title.as_ref().is_some_and(|x| !descriptor(x, 512))
                     || scope.element_role.as_ref().is_some_and(|x| !descriptor(x, 128))
                     || scope.element_label.as_ref().is_some_and(|x| !descriptor(x, 512))
@@ -771,6 +787,7 @@ Target element label: {}
         Rule::Desktop {
             id: uuid::Uuid::new_v4().simple().to_string(), effect, app: identity.clone(),
             operations: operations.clone(),
+            title_policy: Some(if exact_window && pid > 0 { TitlePolicy::Exact } else { TitlePolicy::App }),
             scope: DesktopScope {
                 window_title: if exact_window && pid > 0 { Some(title) } else { None },
                 element_role, element_label,
@@ -1250,6 +1267,7 @@ mod tests {
             version:2,default_effect:"deny".into(),rules:vec![Rule::Desktop{
                 id:"registered-editor".into(),effect:"allow".into(),
                 app,operations:vec!["view".into()],
+                title_policy:None,
                 scope:DesktopScope{window_title:None,element_role:None,element_label:None},
             }],
         };
@@ -1324,6 +1342,7 @@ mod tests {
             effect: "allow".into(),
             app: app1,
             operations: vec!["view".into()],
+            title_policy: None,
             scope: DesktopScope {
                 window_title: None,
                 element_role: None,
@@ -1335,6 +1354,7 @@ mod tests {
             effect: "allow".into(),
             app: app2,
             operations: vec!["input".into()],
+            title_policy: None,
             scope: DesktopScope {
                 window_title: None,
                 element_role: None,
@@ -1342,6 +1362,78 @@ mod tests {
             },
         };
         assert!(r1.same_target(&r2));
+    }
+    #[test]
+    fn parses_and_round_trips_explicit_title_policy() {
+        let app = ExecutableIdentity {
+            platform: "win32".into(),
+            executable_path: r"C:\Apps\Live.exe".into(),
+            sha256: "c".repeat(64),
+        };
+        let json = serde_json::json!({
+            "version": 2,
+            "defaultEffect": "deny",
+            "rules": [{
+                "id": "r-exact",
+                "kind": "desktop",
+                "effect": "allow",
+                "app": {
+                    "platform": "win32",
+                    "executablePath": r"C:\Apps\Live.exe",
+                    "sha256": "c".repeat(64),
+                },
+                "operations": ["view"],
+                "titlePolicy": "exact",
+                "scope": { "windowTitle": "Pinned Editor" },
+            }],
+        });
+        let registry: Registry = serde_json::from_value(json).expect("registry parses");
+        assert_eq!(registry.rules.len(), 1);
+        match &registry.rules[0] {
+            Rule::Desktop { title_policy, scope, .. } => {
+                assert_eq!(*title_policy, Some(TitlePolicy::Exact));
+                assert_eq!(scope.window_title.as_deref(), Some("Pinned Editor"));
+            }
+            _ => panic!("expected desktop rule"),
+        }
+        let serialized = serde_json::to_value(&registry).expect("registry serializes");
+        assert_eq!(serialized["rules"][0]["titlePolicy"], "exact");
+        let _ = app;
+    }
+    #[test]
+    fn rejects_exact_title_policy_without_a_bound_title() {
+        let rule = Rule::Desktop {
+            id: "r-exact".into(),
+            effect: "allow".into(),
+            app: ExecutableIdentity {
+                platform: "win32".into(),
+                executable_path: r"C:\Apps\Live.exe".into(),
+                sha256: "c".repeat(64),
+            },
+            operations: vec!["view".into()],
+            title_policy: Some(TitlePolicy::Exact),
+            scope: DesktopScope { window_title: None, element_role: None, element_label: None },
+        };
+        assert!(rule.validate().is_err());
+    }
+    #[test]
+    fn deduplication_distinguishes_title_policy() {
+        let app = ExecutableIdentity {
+            platform: "win32".into(),
+            executable_path: r"C:\Apps\Live.exe".into(),
+            sha256: "c".repeat(64),
+        };
+        let make = |policy: Option<TitlePolicy>| Rule::Desktop {
+            id: "r1".into(),
+            effect: "allow".into(),
+            app: app.clone(),
+            operations: vec!["view".into()],
+            title_policy: policy,
+            scope: DesktopScope { window_title: None, element_role: None, element_label: None },
+        };
+        assert!(make(Some(TitlePolicy::App)).same_target(&make(Some(TitlePolicy::App))));
+        assert!(!make(Some(TitlePolicy::App)).same_target(&make(Some(TitlePolicy::Exact))));
+        assert!(!make(Some(TitlePolicy::App)).same_target(&make(None)));
     }
     #[test]
     fn audit_entry_appends_and_reads_back() {
