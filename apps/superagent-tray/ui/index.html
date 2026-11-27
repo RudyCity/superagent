@@ -1690,6 +1690,32 @@
             </div>
 
             <div id="runtime-remote-panel" class="runtime-column runtime-full" role="tabpanel" aria-labelledby="runtime-tab-mcp" hidden>
+              <section id="runtime-mcp-prompt" class="op-frame runtime-mcp-prompt" aria-labelledby="runtime-mcp-prompt-title">
+                <div class="runtime-mcp-prompt-head">
+                  <div>
+                    <span class="runtime-mcp-eyebrow">AGENT SESSION PROMPT</span>
+                    <h3 id="runtime-mcp-prompt-title">MCP agent knowledge prompt</h3>
+                    <p>Sent to every MCP client at the start of a session: which tools to inspect first, project context, and access limits.
+                      This text never grants permissions — OAuth scopes, Security Approval, project grants, and host file rules stay authoritative.</p>
+                  </div>
+                  <span id="runtime-mcp-prompt-state" class="runtime-mcp-prompt-state" role="status" aria-live="polite">Loading…</span>
+                </div>
+                <label class="runtime-mcp-prompt-field" for="runtime-mcp-prompt-input">
+                  <span>Prompt added to the MCP initialize handshake</span>
+                  <textarea id="runtime-mcp-prompt-input" maxlength="6000" rows="6" spellcheck="false"
+                    placeholder="Example: Start with superagent://workspace/info. Writes stay inside the registered project unless an approved grant exists."></textarea>
+                </label>
+                <div class="runtime-mcp-prompt-foot">
+                  <span id="runtime-mcp-prompt-count" class="runtime-mcp-prompt-count">0 / 6000 characters</span>
+                  <div class="runtime-mcp-prompt-actions">
+                    <button type="button" class="button ghost" id="runtime-mcp-prompt-template">Insert template</button>
+                    <button type="button" class="button ghost" id="runtime-mcp-prompt-clear">Clear</button>
+                    <button type="button" class="button primary" id="runtime-mcp-prompt-save">Save &amp; apply</button>
+                  </div>
+                </div>
+                <p id="runtime-mcp-prompt-feedback" class="runtime-mcp-prompt-feedback" role="status" aria-live="polite"></p>
+              </section>
+
               <section class="runtime-remote-owners-section" aria-labelledby="runtime-remote-heading">
                 <div class="column-header">
                   <h3><span id="runtime-remote-heading">Independent MCP Owners</span> <span id="runtime-remote-count" class="subtle-badge"></span></h3>

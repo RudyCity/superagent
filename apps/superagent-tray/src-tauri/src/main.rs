@@ -884,6 +884,28 @@ async fn configure_mcp(
     ).await
 }
 
+/// Global MCP agent knowledge prompt (text only, never a permission grant).
+/// The saved prompt extends the canonical MCP initialize instructions.
+#[tauri::command]
+async fn get_mcp_agent_prompt() -> Result<Value, String> {
+    core_request(Method::GET, "/api/desktop/mcp-agent-prompt", None).await
+}
+
+#[tauri::command]
+async fn set_mcp_agent_prompt(instructions: String) -> Result<Value, String> {
+    // 6000 characters can reach 24000 bytes in UTF-8; reject beyond that before
+    // sending anything to Core.
+    if instructions.len() > 24_000 {
+        return Err("MCP agent prompt is too long".into());
+    }
+    core_request(
+        Method::POST,
+        "/api/desktop/mcp-agent-prompt",
+        Some(json!({"instructions": instructions})),
+    )
+    .await
+}
+
 fn connection_body(input: Value, core_port: u16) -> Result<Value, String> {
     let object = input
         .as_object()
@@ -4720,6 +4742,8 @@ fn main() {
             create_connection,
             regenerate_token,
             configure_mcp,
+            get_mcp_agent_prompt,
+            set_mcp_agent_prompt,
             get_tray_settings,
             tray_notification_center_action,
             tray_notification_center_begin_navigation,

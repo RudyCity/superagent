@@ -1639,6 +1639,70 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Native Tray-only MCP agent knowledge prompt. The saved text extends the
+  // canonical MCP initialize instructions for every owner; it never grants
+  // OAuth scopes, Security Approval, project access or host file rights.
+  if (pathname === "/api/desktop/mcp-agent-prompt") {
+    res.setHeader("Cache-Control", "no-store");
+    const loopback = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
+    const localHost = /^(?:127\.0\.0\.1|localhost):([0-9]{2,5})$/i.exec(String(req.headers.host || ""));
+    if (!loopback || !localHost || req.headers.origin || req.headers["x-forwarded-for"] ||
+        req.headers["x-forwarded-host"] || req.headers["cf-connecting-ip"] || req.headers["cf-ray"]) {
+      sendJSON(res, 403, { success: false, error: "MCP_PROMPT_LOCAL_AUTHENTICATED_ONLY" });
+      return true;
+    }
+    const { readMcpAgentPrompt, saveMcpAgentPrompt, MCP_AGENT_PROMPT_MAX_CHARS } =
+      await import("./core/mcp/mcpAgentPrompt.js");
+    if (req.method === "GET") {
+      const current = readMcpAgentPrompt();
+      sendJSON(res, 200, {
+        success: true,
+        prompt: current.prompt,
+        length: current.prompt.length,
+        updatedAt: current.updatedAt,
+        maxChars: MCP_AGENT_PROMPT_MAX_CHARS,
+      });
+      return true;
+    }
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "MCP_PROMPT_POST_REQUIRED" });
+      return true;
+    }
+    try {
+      const raw = await readBody(req);
+      if (Buffer.byteLength(raw, "utf8") > 24_000) {
+        sendJSON(res, 413, { success: false, error: "MCP_PROMPT_REQUEST_TOO_LARGE" });
+        return true;
+      }
+      const body = JSON.parse(raw) as Record<string, unknown>;
+      if (!body || typeof body !== "object" || Array.isArray(body) ||
+          Object.keys(body).length !== 1 || typeof body.instructions !== "string") {
+        sendJSON(res, 400, { success: false, error: "MCP_PROMPT_REQUEST_INVALID" });
+        return true;
+      }
+      const saved = saveMcpAgentPrompt(body.instructions);
+      const { applyMcpAgentPromptToRunningOwners } =
+        await import("./core/runtime/mcpManagedTunnelOwner.js");
+      const apply = await applyMcpAgentPromptToRunningOwners();
+      sendJSON(res, 200, {
+        success: true,
+        prompt: saved.prompt,
+        length: saved.length,
+        updatedAt: saved.updatedAt,
+        maxChars: MCP_AGENT_PROMPT_MAX_CHARS,
+        applied: apply.applied,
+        skipped: apply.skipped,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      sendJSON(res, /^MCP_AGENT_PROMPT_/.test(message) ? 400 : 409, {
+        success: false,
+        error: /^MCP_[A-Z0-9_]+/.test(message) ? message : "MCP_PROMPT_SAVE_FAILED",
+      });
+    }
+    return true;
+  }
+
   if (pathname === "/api/desktop/configure-mcp" && req.method === "POST") {
     res.setHeader("Cache-Control", "no-store");
     try {

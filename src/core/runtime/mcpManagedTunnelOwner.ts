@@ -78,12 +78,18 @@ export interface ManagedMcpTunnelStartResult {
   workspace?: string;
 }
 
+/**
+ * Owner leases for this profile. An explicit private staging profile must
+ * isolate its owner lease too. Without an override this preserves the
+ * historic ~/.superagent-r path.
+ */
+function ownerRootDir(): string {
+  const root = process.env.SUPERAGENT_CONFIG_DIR?.trim();
+  return root ? path.resolve(root) : path.join(os.homedir(), ".superagent-r");
+}
+
 function ownerLeasePath(port: number): string {
-  // An explicit private staging profile must isolate its owner lease too.
-  // Without an override this preserves the historic ~/.superagent-r path.
-  const root=process.env.SUPERAGENT_CONFIG_DIR?.trim();
-  return path.join(root?path.resolve(root):path.join(os.homedir(),".superagent-r"),
-    `mcp-owner-${port}.json`);
+  return path.join(ownerRootDir(), `mcp-owner-${port}.json`);
 }
 
 function assertPort(port: number): number {
@@ -199,6 +205,28 @@ export function readManagedMcpTunnelLease(port: number): ManagedMcpTunnelLease |
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
+}
+
+/**
+ * Every managed owner lease for this profile. A lease is only a locator:
+ * process identity, readiness and reloadability are verified separately.
+ */
+export function listManagedMcpTunnelOwnerPorts(): number[] {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(ownerRootDir());
+  } catch {
+    return [];
+  }
+  const ports: number[] = [];
+  for (const entry of entries) {
+    const match = /^mcp-owner-(\d{4,5})\.json$/.exec(entry);
+    if (!match) continue;
+    const port = Number(match[1]);
+    if (!Number.isInteger(port) || port < 1024 || port > 65535 || port === 7888) continue;
+    ports.push(port);
+  }
+  return ports.sort((left, right) => left - right).slice(0, 32);
 }
 
 function writeManagedMcpTunnelLease(lease: ManagedMcpTunnelLease): void {
@@ -761,6 +789,60 @@ export async function configureManagedMcpTunnel(
     toolMode: config.toolMode, toolExposure: config.toolExposure,
     sessionsClosed: Number(applied.sessionsClosed),
   };
+}
+
+export interface McpAgentPromptApplyResult {
+  applied: Array<{ port: number; backendPid: number; sessionsClosed: number }>;
+  skipped: Array<{ port: number; code: string }>;
+}
+
+function promptApplyErrorCode(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  const match = /^MCP_[A-Z0-9_]+/.exec(message);
+  return match ? match[0] : "MCP_PROMPT_APPLY_FAILED";
+}
+
+/**
+ * Reload every verified reloadable owner so the newly saved knowledge prompt is
+ * advertised by the next initialize handshake. The configuration apply closes
+ * existing sessions, so no client keeps talking under the previous prompt.
+ * A busy or non-reloadable owner is reported, never force-restarted.
+ */
+export async function applyMcpAgentPromptToRunningOwners(): Promise<McpAgentPromptApplyResult> {
+  const applied: McpAgentPromptApplyResult["applied"] = [];
+  const skipped: McpAgentPromptApplyResult["skipped"] = [];
+  for (const port of listManagedMcpTunnelOwnerPorts()) {
+    let lease: ManagedMcpTunnelLease | null;
+    try {
+      lease = readManagedMcpTunnelLease(port);
+    } catch {
+      skipped.push({ port, code: "MCP_PROMPT_OWNER_LEASE_UNREADABLE" });
+      continue;
+    }
+    if (!lease) continue;
+    try {
+      await verifyManagedOwnerIdentity(lease, { timeoutMs: 3000 });
+      const before = await probeManagedMcpTunnelOwner(lease);
+      if (!before || before.reloadable !== true ||
+          (before.toolMode !== "safe" && before.toolMode !== "dangerous") ||
+          (before.toolExposure !== "gateway" && before.toolExposure !== "full")) {
+        skipped.push({ port, code: "MCP_PROMPT_OWNER_NOT_RELOADABLE" });
+        continue;
+      }
+      const result = await configureManagedMcpTunnel(port, before.pid, {
+        toolMode: before.toolMode,
+        toolExposure: before.toolExposure,
+      });
+      applied.push({
+        port,
+        backendPid: result.backendPid,
+        sessionsClosed: result.sessionsClosed,
+      });
+    } catch (error) {
+      skipped.push({ port, code: promptApplyErrorCode(error) });
+    }
+  }
+  return { applied, skipped };
 }
 
 export async function reloadManagedMcpTunnelBackend(port: number): Promise<{

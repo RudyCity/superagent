@@ -204,6 +204,16 @@ See [Muse MCP workflow examples](../mcp/muse-chat-workflows.md) for readiness ch
 
 ---
 
+## 7. MCP Session Prompt Contract (Tray)
+
+`GET` / `POST /api/desktop/mcp-agent-prompt` is a loopback-only, Core-authenticated Tray route. It stores one operator prompt per profile in `<config>/mcp-agent-prompt.json` (mode `0600`, 6000-character cap, control characters stripped) and reports which running owners were reloaded.
+
+- The saved text is appended to the canonical initialize instructions by `composeMcpSessionInstructions`, so an MCP client receives it at the start of every session. An explicit `McpServerOptions.instructions` value still replaces the whole string for that call site.
+- `POST` reconfigures each verified reloadable managed owner with its existing tool mode and exposure, which closes its sessions. Busy, non-reloadable or unverifiable owners are returned in `skipped` and are never force-restarted.
+- The prompt is guidance only. OAuth scopes, Security Approval grants, project grants and host file rules remain independent authorization gates.
+
+---
+
 ## Automated Route Inventory
 
 <!-- API_CATALOG_START -->

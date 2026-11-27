@@ -38,7 +38,11 @@ import {
   isPathWithinMcpScope,
   isSensitiveEnvFileAccess,
 } from "../permissions.js";
-import { registerResourcesAndPrompts, getSuperagentMcpInstructions } from "./resourcesAndPrompts.js";
+import {
+  registerResourcesAndPrompts,
+  composeMcpSessionInstructions,
+} from "./resourcesAndPrompts.js";
+import { readMcpAgentPrompt } from "./mcpAgentPrompt.js";
 import {
   isRemoteWorkspaceTarget,
   resolveMcpChildWorkspacePath,
@@ -616,9 +620,12 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     throw new Error("Safe-only MCP owner requires an explicit allowlist and must disable dangerous tools");
   }
   const version = getSuperAgentVersion();
+  // Explicit call-site instructions win. Otherwise the canonical protocol is
+  // extended with the operator's saved knowledge prompt so every MCP client
+  // receives it at the start of a session.
   const effectiveInstructions = options.instructions !== undefined
     ? options.instructions
-    : getSuperagentMcpInstructions();
+    : composeMcpSessionInstructions(readMcpAgentPrompt().prompt);
   const server = new Server(
     {
       name: "superagent-mcp-server",

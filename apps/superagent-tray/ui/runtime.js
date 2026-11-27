@@ -824,7 +824,10 @@ function runtimeSelectTab(tab, focus = false) {
   if (!runtimeTabNames.includes(tab)) return;
   runtimeActiveTab = tab;
   runtimeApplyTab();
-  if (tab === "mcp") void runtimeRefreshMcpSecurity();
+  if (tab === "mcp") {
+    void runtimeRefreshMcpSecurity();
+    void runtimeLoadMcpAgentPrompt();
+  }
   if (tab === "chrome") window.__superagentManagedChromeRefresh?.();
   if (focus) rt("runtime-tab-" + tab)?.focus?.();
 }
@@ -1148,6 +1151,125 @@ async function runtimeSaveMcpConfig(event) {
     runtimeActionBusy = false;
     if (submit) submit.disabled = false;
   }
+}
+
+const RUNTIME_MCP_PROMPT_TEMPLATE = [
+  "## Tools to inspect first",
+  "- Workspace and project status before any file or shell action.",
+  "- Diagnostics when a service reports unhealthy.",
+  "",
+  "## Project context",
+  "- Workspace, stack, and where the relevant code lives.",
+  "",
+  "## Access limits",
+  "- Read inside the registered project only.",
+  "- Ask for an explicit grant before write, execute, or path-escaping actions.",
+].join("\n");
+
+function runtimeMcpPromptCounter() {
+  const input = rt("runtime-mcp-prompt-input");
+  const count = rt("runtime-mcp-prompt-count");
+  if (!input || !count) return;
+  count.textContent = `${input.value.length} / ${input.maxLength} characters`;
+}
+
+function runtimeMcpPromptState(text, state) {
+  const node = rt("runtime-mcp-prompt-state");
+  if (!node) return;
+  node.textContent = text;
+  if (state) node.dataset.state = state;
+  else delete node.dataset.state;
+}
+
+function runtimeMcpPromptFeedback(text, tone) {
+  const node = rt("runtime-mcp-prompt-feedback");
+  if (!node) return;
+  node.textContent = text || "";
+  if (tone) node.dataset.tone = tone;
+  else delete node.dataset.tone;
+}
+
+async function runtimeLoadMcpAgentPrompt() {
+  const input = rt("runtime-mcp-prompt-input");
+  if (!input) return;
+  runtimeMcpPromptState("Loading…");
+  try {
+    const result = await runtimeInvoke("get_mcp_agent_prompt");
+    input.value = typeof result?.prompt === "string" ? result.prompt : "";
+    if (Number.isSafeInteger(result?.maxChars) && result.maxChars > 0) {
+      input.maxLength = Math.min(result.maxChars, 20000);
+    }
+    runtimeMcpPromptCounter();
+    runtimeMcpPromptState(result?.updatedAt ? "Saved prompt" : "Not set", "saved");
+  } catch (error) {
+    runtimeMcpPromptState("Unavailable", "error");
+    runtimeMcpPromptFeedback("Could not read the saved prompt: " + String(error), "error");
+  }
+}
+
+async function runtimeSaveMcpAgentPrompt() {
+  const input = rt("runtime-mcp-prompt-input");
+  const save = rt("runtime-mcp-prompt-save");
+  if (!input || runtimeActionBusy) return;
+  const instructions = input.value;
+  if (instructions.length > input.maxLength) {
+    runtimeMcpPromptFeedback("Prompt is longer than the allowed limit.", "error");
+    return;
+  }
+  if (!window.confirm("Save this prompt and apply it to every running MCP owner?\n\nExisting MCP sessions will be closed and clients must reconnect. The prompt only guides the agent; it never grants permissions.")) return;
+  runtimeActionBusy = true;
+  if (save) save.disabled = true;
+  runtimeMcpPromptFeedback("Saving and applying to running MCP owners…");
+  try {
+    const result = await runtimeInvoke("set_mcp_agent_prompt", {instructions});
+    if (result?.success !== true) throw new Error(result?.error || "Prompt was not saved");
+    input.value = typeof result.prompt === "string" ? result.prompt : instructions;
+    runtimeMcpPromptCounter();
+    runtimeMcpPromptState("Saved prompt", "saved");
+    const applied = Array.isArray(result.applied) ? result.applied : [];
+    const skipped = Array.isArray(result.skipped) ? result.skipped : [];
+    const closed = applied.reduce((total, item) => total + Number(item?.sessionsClosed || 0), 0);
+    const detail = [
+      applied.length
+        ? `Applied to ${applied.length} running owner(s); ${closed} session(s) closed — reconnect MCP clients.`
+        : "No running reloadable owner to reload; new MCP sessions receive it at initialize.",
+      skipped.length
+        ? `Skipped ${skipped.length} owner(s): ${skipped.map(item => `:${item.port} ${item.code}`).join(", ")}.`
+        : "",
+    ].filter(Boolean).join(" ");
+    runtimeMcpPromptFeedback(detail, skipped.length ? "error" : "success");
+    window.TrayFeedback?.notify?.({
+      kind: skipped.length ? "warning" : "success", scope: "runtime",
+      message: skipped.length
+        ? "MCP prompt saved, but some owners were not reloaded."
+        : "MCP prompt saved and applied at session start.",
+    });
+    if (applied.length) await runtimeRefresh(true);
+  } catch (error) {
+    runtimeMcpPromptState("Save failed", "error");
+    runtimeMcpPromptFeedback("Prompt was not saved: " + String(error), "error");
+  } finally {
+    runtimeActionBusy = false;
+    if (save) save.disabled = false;
+  }
+}
+
+function runtimeMcpPromptInsertTemplate() {
+  const input = rt("runtime-mcp-prompt-input");
+  if (!input) return;
+  const existing = input.value.trim();
+  input.value = (existing ? `${existing}\n\n${RUNTIME_MCP_PROMPT_TEMPLATE}` : RUNTIME_MCP_PROMPT_TEMPLATE)
+    .slice(0, input.maxLength);
+  runtimeMcpPromptCounter();
+  input.focus?.();
+}
+
+function runtimeMcpPromptClear() {
+  const input = rt("runtime-mcp-prompt-input");
+  if (!input) return;
+  input.value = "";
+  runtimeMcpPromptCounter();
+  input.focus?.();
 }
 
 let runtimeResultReturnFocus = null;
@@ -1697,6 +1819,11 @@ function runtimeInstall() {
   rt("runtime-mcp-config-dialog")?.addEventListener("keydown", event => {
     if (event.key === "Escape") { event.preventDefault(); runtimeCloseMcpConfig(); }
   });
+  rt("runtime-mcp-prompt-input")?.addEventListener("input", runtimeMcpPromptCounter);
+  rt("runtime-mcp-prompt-template")?.addEventListener("click", runtimeMcpPromptInsertTemplate);
+  rt("runtime-mcp-prompt-clear")?.addEventListener("click", runtimeMcpPromptClear);
+  rt("runtime-mcp-prompt-save")?.addEventListener("click", runtimeSaveMcpAgentPrompt);
+  void runtimeLoadMcpAgentPrompt();
   rt("runtime-remote-panel")?.addEventListener("click", event => {
     void runtimeCopyPublicUrl(event);
     runtimeOpenMcpSecurity(event);

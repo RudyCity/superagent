@@ -1,3 +1,17 @@
+## [1.14.112] - 2026-11-27
+### Live-window Desktop UI input for MCP clients
+- Replace byte-exact confirmation screenshots with a bounded visual-difference budget (`framesEquivalent`, 5% of sampled pixels, 12-level channel delta). Byte-identical captures still short-circuit; undecodable or differently sized frames stay fail-closed, so a replaced window or dialog is still rejected as `STALE_SCREENSHOT`.
+- Fence native input to the exact semantic control instead of the whole accessibility tree: the selected element must keep its role, label, description, native ref and bounds within 2 device pixels, and focused-control identity is rechecked for untargeted key input. Varying text values and unrelated live regions no longer block clicks/typing.
+- Treat the window title as volatile metadata: `pid` + native window id are the identity, and the title is canonicalized from fresh OS discovery. A stale, truncated or renamed caller title is corrected; an unrelated title still fails closed.
+- Post-open title drift is allowed only when the host-approved rules are app-scoped (`scope.windowTitle` absent); title-scoped approvals keep the exact-title boundary for snapshot and action.
+- Add `desktopAccessRequiresExactTitle` to the v2 policy evaluator, and cover frame tolerance, element fencing and title drift with focused unit and integration tests.
+
+### Tray MCP agent knowledge prompt
+- Add an operator-authored prompt card above the Tray MCP connection list. The saved text is appended to the canonical MCP initialize instructions, so every connected client receives it at the start of a session.
+- Apply immediately from the Tray: verified reloadable MCP owners reload, existing sessions close, and clients must reconnect; busy or non-reloadable owners are reported, never force-restarted.
+- Store the prompt once per profile in `mcp-agent-prompt.json` (mode 0600, 6000-character cap). It is guidance only and never grants OAuth scopes, Security Approval, project access or host file rights.
+- Add local authenticated Core routes (`GET`/`POST /api/desktop/mcp-agent-prompt`) with native Tray commands and focused unit plus regression coverage.
+
 ## [1.14.110] - 2026-11-26
 ### Intent-based tool discovery and background Desktop UI inspection
 - Instruct models and MCP clients to infer user intent automatically and resolve capabilities via `list_tools({ intent })` / `superagent_tool_search({ intent })` and batch `describe_tool` without waiting for explicit tool names; add Master routing guidance and expand bilingual intent synonyms.

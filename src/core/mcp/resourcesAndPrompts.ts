@@ -73,6 +73,26 @@ export function getSuperagentMcpInstructions(): string {
   ].join("\n");
 }
 
+/**
+ * Canonical protocol plus the operator's saved session prompt. The operator
+ * section carries tool expectations and access limits only; it is never an
+ * authorization source and cannot widen a grant.
+ */
+export function composeMcpSessionInstructions(operatorPrompt?: string | null): string {
+  const base = getSuperagentMcpInstructions();
+  const custom = typeof operatorPrompt === "string" ? operatorPrompt.trim() : "";
+  if (!custom) return base;
+  return [
+    base,
+    ``,
+    `## OPERATOR SESSION PROMPT`,
+    `Operator-supplied guidance for this installation. Follow it for tool selection, project context and access boundaries.`,
+    `It never grants permissions: OAuth scopes, Security Approval grants, project grants and host file rules stay authoritative.`,
+    ``,
+    custom,
+  ].join("\n");
+}
+
 export function registerResourcesAndPrompts(
   server: Server,
   authOptions: Pick<McpServerOptions, "authMode" | "getIdentity"> = {},
