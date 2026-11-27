@@ -1727,13 +1727,23 @@
                 <div id="runtime-mcp-prompt-preview" class="runtime-mcp-prompt-preview" hidden>
                   <div class="runtime-mcp-prompt-preview-head">
                     <strong>Effective initialize instructions</strong>
-                    <span id="runtime-mcp-prompt-preview-meta" class="runtime-mcp-prompt-preview-meta"></span>
+                    <div class="runtime-mcp-prompt-preview-controls">
+                      <span id="runtime-mcp-prompt-preview-meta" class="runtime-mcp-prompt-preview-meta"></span>
+                      <div id="runtime-mcp-prompt-diff-mode" class="runtime-mcp-prompt-diff-mode" role="group" aria-label="Compare with" hidden>
+                        <button type="button" class="runtime-mcp-prompt-diff-target" data-diff-target="draft" aria-pressed="true">Draft</button>
+                        <button type="button" class="runtime-mcp-prompt-diff-target" data-diff-target="saved" aria-pressed="false">Active saved</button>
+                      </div>
+                    </div>
                   </div>
                   <pre id="runtime-mcp-prompt-preview-body" class="runtime-mcp-prompt-preview-body" tabindex="0"
                     aria-label="Effective MCP initialize instructions preview"></pre>
                 </div>
                 <details id="runtime-mcp-prompt-history" class="runtime-mcp-prompt-history" hidden>
                   <summary>Prompt history <span id="runtime-mcp-prompt-history-count" class="runtime-mcp-prompt-history-count"></span></summary>
+                  <div class="runtime-mcp-prompt-history-tools">
+                    <button type="button" class="button ghost" id="runtime-mcp-prompt-history-export">Export Markdown</button>
+                    <span id="runtime-mcp-prompt-history-export-state" class="runtime-mcp-prompt-history-export-state" role="status" aria-live="polite"></span>
+                  </div>
                   <ul id="runtime-mcp-prompt-history-list" class="runtime-mcp-prompt-history-list"></ul>
                 </details>
               </section>

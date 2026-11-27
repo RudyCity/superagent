@@ -15,6 +15,9 @@ describe("Tray MCP agent prompt surface", () => {
       "runtime-mcp-prompt-preview-toggle",
       "runtime-mcp-prompt-preview-body",
       "runtime-mcp-prompt-history-list",
+      "runtime-mcp-prompt-history-export",
+      "runtime-mcp-prompt-history-export-state",
+      "runtime-mcp-prompt-diff-mode",
       "runtime-mcp-prompt-save",
       "runtime-mcp-prompt-feedback",
     ]) {
@@ -50,9 +53,24 @@ describe("Tray MCP agent prompt surface", () => {
     expect(js).toContain('button.dataset.historyAction = action;');
     // Diff is computed from the stored version text against the live draft.
     expect(js).toContain("function runtimeLineDiff(");
-    expect(js).toContain("runtimeLineDiff(entry.prompt, input.value)");
+    expect(js).toContain("runtimeLineDiff(entry.prompt, base)");
     expect(js).toContain("function runtimeHydrateMcpConfigPrompt(");
     expect(js).toContain("void runtimeHydrateMcpConfigPrompt();");
+    // Versions identical to the active prompt are labelled and cannot be
+    // restored onto themselves.
+    expect(js).toContain('badge.className = "runtime-mcp-prompt-history-current"');
+    expect(js).toContain('badge.textContent = "current"');
+    expect(js).toContain('if (action === "restore" && isCurrent)');
+    expect(js).toContain('button.disabled = true');
+    // Diff can compare against the active saved prompt, not only the draft.
+    expect(js).toContain("function runtimeSetMcpPromptDiffTarget(");
+    expect(js).toContain('runtimeMcpPromptDiffTarget === "saved" ? runtimeMcpPromptCache.prompt : input.value');
+    expect(js).toContain("let runtimeMcpPromptDiffTarget = \"draft\"");
+    // History export renders Markdown, copies it, and never leaves a dead end.
+    expect(js).toContain("function runtimeMcpPromptMarkdown(");
+    expect(js).toContain("function runtimeExportMcpPromptHistory(");
+    expect(js).toContain("await window.navigator.clipboard.writeText(markdown)");
+    expect(js).toContain("Clipboard unavailable — copy the Markdown from the preview panel.");
   });
 
   it("keeps the native commands and the loopback preview route aligned", () => {

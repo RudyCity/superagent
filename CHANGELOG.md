@@ -1,3 +1,15 @@
+## [1.14.113] - 2026-11-27
+### Deterministic recovery and per-control freshness for Desktop UI
+- Add `wait_ready` to `superagent_desktop_ui` and the local `desktop_ui` tool. It polls perception with a bounded deadline (500-10000 ms, default 3000 ms) and retries only capture-assembly failures (`STALE_SCREENSHOT`, `SCREENSHOT_UNAVAILABLE`, `ACCESSIBILITY_UNAVAILABLE`, `TARGET_NOT_FOUND`, `PROCESS_FAILED`); permission and policy denials fail immediately.
+- Return machine-readable recovery guidance (`retryable`, `retryAfterMs`, `nextAction`) with every Desktop UI error so clients stop guessing between retry and operator approval.
+- Fence input to the selected control's own pixels (`regionChangeRatio`, 35% budget) in addition to accessibility identity, role, label, native ref and 2 px bounds tolerance. An unrelated streaming pane no longer blocks input, while a visually replaced control at identical bounds now fails closed.
+- Record the observed perception change ratio in `screenshot.changeRatio` and as a schema warning (diagnostic only, never authorization).
+- Add deterministic animation fixtures at the adapter level plus focused tests for region fencing, wait_ready retry/deadline/denial behavior and error guidance.
+
+### Tray MCP prompt history controls
+- Label the version identical to the active prompt as `current` and disable its Restore action, so an empty-looking restore cannot happen.
+- Let the diff compare against either the draft or the active saved prompt, and export the active prompt plus all retained versions as Markdown (copied to the clipboard and rendered in the preview panel).
+
 ## [1.14.112] - 2026-11-27
 ### Live-window Desktop UI input for MCP clients
 - Replace byte-exact confirmation screenshots with a bounded visual-difference budget (`framesEquivalent`, 12% of sampled pixels, 12-level channel delta, calibrated against a live Electron window where 5% rejected legitimate streaming frames). Byte-identical captures still short-circuit; undecodable or differently sized frames stay fail-closed, so a replaced window or dialog is still rejected as `STALE_SCREENSHOT`.
@@ -7,6 +19,7 @@
 - Post-open title drift is allowed only when the host-approved rules are app-scoped (`scope.windowTitle` absent); title-scoped approvals keep the exact-title boundary for snapshot and action.
 - Add `desktopAccessRequiresExactTitle` to the v2 policy evaluator, and cover frame tolerance, element fencing and title drift with focused unit and integration tests.
 
+## [1.14.111] - 2026-11-27
 ### Tray MCP agent knowledge prompt
 - Add an operator-authored prompt card above the Tray MCP connection list. The saved text is appended to the canonical MCP initialize instructions, so every connected client receives it at the start of a session.
 - Apply immediately from the Tray: verified reloadable MCP owners reload, existing sessions close, and clients must reconnect; busy or non-reloadable owners are reported, never force-restarted.
