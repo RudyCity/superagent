@@ -19,8 +19,9 @@ describe("MCP agent prompt operator route boundary", () => {
 
   async function invoke(options: {
     peer?: string; host?: string; origin?: string; method?: string; body?: string;
+    pathname?: string;
   } = {}) {
-    const pathname = "/api/desktop/mcp-agent-prompt";
+    const pathname = options.pathname ?? "/api/desktop/mcp-agent-prompt";
     const reply: { status?: number; body?: any } = {};
     const host = options.host ?? "localhost:7888";
     const headers: Record<string, string> = {
@@ -67,7 +68,44 @@ describe("MCP agent prompt operator route boundary", () => {
     expect(result.body?.success).toBe(true);
     expect(result.body?.prompt).toBe("Read the workspace status tool first.");
     expect(result.body?.maxChars).toBe(6000);
+    expect(result.body?.history).toEqual([
+      { at: expect.any(Number), length: "Read the workspace status tool first.".length },
+    ]);
     expect(Array.isArray(result.body?.applied)).toBe(false);
+  });
+
+  it("previews a draft with the canonical protocol without saving it", async () => {
+    saveMcpAgentPrompt("saved prompt");
+    const preview = await invoke({
+      pathname: "/api/desktop/mcp-agent-prompt/preview",
+      body: JSON.stringify({ instructions: "draft only guidance" }),
+    });
+    expect(preview.status).toBe(200);
+    expect(preview.body?.effective).toContain("SUPERAGENT MCP AGENTIC INSTRUCTION PROTOCOL");
+    expect(preview.body?.effective).toContain("## OPERATOR SESSION PROMPT");
+    expect(preview.body?.effective).toContain("draft only guidance");
+    expect(preview.body?.length).toBe("draft only guidance".length);
+    expect(preview.body?.effectiveLength).toBe(preview.body?.effective.length);
+    expect(readMcpAgentPrompt().prompt).toBe("saved prompt");
+
+    const emptyDraft = await invoke({
+      pathname: "/api/desktop/mcp-agent-prompt/preview",
+      body: JSON.stringify({ instructions: "   " }),
+    });
+    expect(emptyDraft.body?.effective).not.toContain("## OPERATOR SESSION PROMPT");
+    expect(emptyDraft.body?.length).toBe(0);
+
+    const tooLong = await invoke({
+      pathname: "/api/desktop/mcp-agent-prompt/preview",
+      body: JSON.stringify({ instructions: "x".repeat(6001) }),
+    });
+    expect(tooLong.status).toBe(400);
+    expect(tooLong.body?.error).toBe("MCP_AGENT_PROMPT_TOO_LONG");
+
+    const wrongMethod = await invoke({
+      pathname: "/api/desktop/mcp-agent-prompt/preview", method: "GET",
+    });
+    expect(wrongMethod.status).toBe(405);
   });
 
   it("saves a prompt and reports the owner apply result", async () => {

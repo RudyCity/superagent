@@ -1,6 +1,7 @@
 ## [1.14.112] - 2026-11-27
 ### Live-window Desktop UI input for MCP clients
-- Replace byte-exact confirmation screenshots with a bounded visual-difference budget (`framesEquivalent`, 5% of sampled pixels, 12-level channel delta). Byte-identical captures still short-circuit; undecodable or differently sized frames stay fail-closed, so a replaced window or dialog is still rejected as `STALE_SCREENSHOT`.
+- Replace byte-exact confirmation screenshots with a bounded visual-difference budget (`framesEquivalent`, 12% of sampled pixels, 12-level channel delta, calibrated against a live Electron window where 5% rejected legitimate streaming frames). Byte-identical captures still short-circuit; undecodable or differently sized frames stay fail-closed, so a replaced window or dialog is still rejected as `STALE_SCREENSHOT`.
+- Retry `PrintWindow` up to three times (150 ms apart) before reporting `SCREENSHOT_UNAVAILABLE`, because GPU-composited windows intermittently fail a single capture; no overlap-prone screen-region fallback is added.
 - Fence native input to the exact semantic control instead of the whole accessibility tree: the selected element must keep its role, label, description, native ref and bounds within 2 device pixels, and focused-control identity is rechecked for untargeted key input. Varying text values and unrelated live regions no longer block clicks/typing.
 - Treat the window title as volatile metadata: `pid` + native window id are the identity, and the title is canonicalized from fresh OS discovery. A stale, truncated or renamed caller title is corrected; an unrelated title still fails closed.
 - Post-open title drift is allowed only when the host-approved rules are app-scoped (`scope.windowTitle` absent); title-scoped approvals keep the exact-title boundary for snapshot and action.
@@ -11,6 +12,8 @@
 - Apply immediately from the Tray: verified reloadable MCP owners reload, existing sessions close, and clients must reconnect; busy or non-reloadable owners are reported, never force-restarted.
 - Store the prompt once per profile in `mcp-agent-prompt.json` (mode 0600, 6000-character cap). It is guidance only and never grants OAuth scopes, Security Approval, project access or host file rights.
 - Add local authenticated Core routes (`GET`/`POST /api/desktop/mcp-agent-prompt`) with native Tray commands and focused unit plus regression coverage.
+- Show a per-owner `Session prompt` badge (active with size, or none) and a bounded newest-first change history in the Tray card; a Preview action renders the effective initialize instructions for the current draft without saving it.
+- Cover the real path with a reloadable staging owner: the live session is closed, a new backend generation starts, and its next initialize advertises the saved prompt.
 
 ## [1.14.110] - 2026-11-26
 ### Intent-based tool discovery and background Desktop UI inspection

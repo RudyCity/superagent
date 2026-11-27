@@ -49,7 +49,7 @@ describe("MCP agent knowledge prompt", () => {
   });
 
   it("persists the prompt privately and reads it back", () => {
-    expect(readMcpAgentPrompt()).toEqual({ prompt: "", updatedAt: null });
+    expect(readMcpAgentPrompt()).toEqual({ prompt: "", updatedAt: null, history: [] });
     const saved = saveMcpAgentPrompt("## Context\nUse the workspace inspection tool first.");
     expect(saved.prompt).toContain("workspace inspection tool");
     expect(saved.updatedAt).toBeGreaterThan(0);
@@ -65,14 +65,37 @@ describe("MCP agent knowledge prompt", () => {
     }
   });
 
+  it("keeps a bounded newest-first history of saved prompts", () => {
+    const first = saveMcpAgentPrompt("first prompt");
+    expect(first.history).toHaveLength(1);
+    const second = saveMcpAgentPrompt("second prompt is longer");
+    expect(second.history).toHaveLength(2);
+    expect(second.history[0].length).toBe(second.length);
+    expect(second.history[1].length).toBe(first.length);
+
+    // Re-saving identical text must not inflate the history.
+    expect(saveMcpAgentPrompt("second prompt is longer").history).toHaveLength(2);
+
+    for (let index = 0; index < 12; index += 1) saveMcpAgentPrompt(`prompt version ${index}`);
+    const bounded = readMcpAgentPrompt();
+    expect(bounded.history).toHaveLength(10);
+    expect(bounded.history[0].length).toBe(bounded.prompt.length);
+    expect(bounded.history.every(entry => entry.at > 0 && entry.length > 0)).toBe(true);
+  });
+
   it("ignores corrupt or unset state instead of failing a session", () => {
     saveMcpAgentPrompt("temporary value");
     fs.writeFileSync(getMcpAgentPromptPath(), "{ not json");
-    expect(readMcpAgentPrompt()).toEqual({ prompt: "", updatedAt: null });
+    expect(readMcpAgentPrompt()).toEqual({ prompt: "", updatedAt: null, history: [] });
     fs.writeFileSync(getMcpAgentPromptPath(), JSON.stringify({ version: 2, prompt: "future" }));
-    expect(readMcpAgentPrompt()).toEqual({ prompt: "", updatedAt: null });
+    expect(readMcpAgentPrompt()).toEqual({ prompt: "", updatedAt: null, history: [] });
     saveMcpAgentPrompt("");
     expect(readMcpAgentPrompt().prompt).toBe("");
+    fs.writeFileSync(getMcpAgentPromptPath(), JSON.stringify({
+      version: 1, prompt: "kept", updatedAt: 1,
+      history: [{ at: 0, length: 2 }, { at: 5, length: 99_999 }, "junk", { at: 10, length: 4 }],
+    }));
+    expect(readMcpAgentPrompt().history).toEqual([{ at: 10, length: 4 }]);
   });
 
   it("composes the operator section without dropping the canonical protocol", () => {

@@ -906,6 +906,20 @@ async fn set_mcp_agent_prompt(instructions: String) -> Result<Value, String> {
     .await
 }
 
+/// Compose a candidate draft with the canonical protocol without saving it.
+#[tauri::command]
+async fn preview_mcp_agent_prompt(instructions: String) -> Result<Value, String> {
+    if instructions.len() > 24_000 {
+        return Err("MCP agent prompt is too long".into());
+    }
+    core_request(
+        Method::POST,
+        "/api/desktop/mcp-agent-prompt/preview",
+        Some(json!({"instructions": instructions})),
+    )
+    .await
+}
+
 fn connection_body(input: Value, core_port: u16) -> Result<Value, String> {
     let object = input
         .as_object()
@@ -4744,6 +4758,7 @@ fn main() {
             configure_mcp,
             get_mcp_agent_prompt,
             set_mcp_agent_prompt,
+            preview_mcp_agent_prompt,
             get_tray_settings,
             tray_notification_center_action,
             tray_notification_center_begin_navigation,

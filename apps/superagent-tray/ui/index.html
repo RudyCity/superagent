@@ -1710,10 +1710,23 @@
                   <div class="runtime-mcp-prompt-actions">
                     <button type="button" class="button ghost" id="runtime-mcp-prompt-template">Insert template</button>
                     <button type="button" class="button ghost" id="runtime-mcp-prompt-clear">Clear</button>
+                    <button type="button" class="button ghost" id="runtime-mcp-prompt-preview-toggle" aria-expanded="false" aria-controls="runtime-mcp-prompt-preview">Preview effective</button>
                     <button type="button" class="button primary" id="runtime-mcp-prompt-save">Save &amp; apply</button>
                   </div>
                 </div>
                 <p id="runtime-mcp-prompt-feedback" class="runtime-mcp-prompt-feedback" role="status" aria-live="polite"></p>
+                <div id="runtime-mcp-prompt-preview" class="runtime-mcp-prompt-preview" hidden>
+                  <div class="runtime-mcp-prompt-preview-head">
+                    <strong>Effective initialize instructions</strong>
+                    <span id="runtime-mcp-prompt-preview-meta" class="runtime-mcp-prompt-preview-meta"></span>
+                  </div>
+                  <pre id="runtime-mcp-prompt-preview-body" class="runtime-mcp-prompt-preview-body" tabindex="0"
+                    aria-label="Effective MCP initialize instructions preview"></pre>
+                </div>
+                <details id="runtime-mcp-prompt-history" class="runtime-mcp-prompt-history" hidden>
+                  <summary>Prompt history <span id="runtime-mcp-prompt-history-count" class="runtime-mcp-prompt-history-count"></span></summary>
+                  <ul id="runtime-mcp-prompt-history-list" class="runtime-mcp-prompt-history-list"></ul>
+                </details>
               </section>
 
               <section class="runtime-remote-owners-section" aria-labelledby="runtime-remote-heading">

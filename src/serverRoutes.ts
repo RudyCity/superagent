@@ -1642,7 +1642,10 @@ export async function handleServerRoute(
   // Native Tray-only MCP agent knowledge prompt. The saved text extends the
   // canonical MCP initialize instructions for every owner; it never grants
   // OAuth scopes, Security Approval, project access or host file rights.
-  if (pathname === "/api/desktop/mcp-agent-prompt") {
+  // The /preview variant composes a candidate draft without persisting it.
+  if (pathname === "/api/desktop/mcp-agent-prompt" ||
+      pathname === "/api/desktop/mcp-agent-prompt/preview") {
+    const previewOnly = pathname.endsWith("/preview");
     res.setHeader("Cache-Control", "no-store");
     const loopback = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
     const localHost = /^(?:127\.0\.0\.1|localhost):([0-9]{2,5})$/i.exec(String(req.headers.host || ""));
@@ -1651,15 +1654,17 @@ export async function handleServerRoute(
       sendJSON(res, 403, { success: false, error: "MCP_PROMPT_LOCAL_AUTHENTICATED_ONLY" });
       return true;
     }
-    const { readMcpAgentPrompt, saveMcpAgentPrompt, MCP_AGENT_PROMPT_MAX_CHARS } =
-      await import("./core/mcp/mcpAgentPrompt.js");
-    if (req.method === "GET") {
+    const { readMcpAgentPrompt, saveMcpAgentPrompt, sanitizeMcpAgentPrompt,
+      MCP_AGENT_PROMPT_MAX_CHARS } = await import("./core/mcp/mcpAgentPrompt.js");
+    const { composeMcpSessionInstructions } = await import("./core/mcp/resourcesAndPrompts.js");
+    if (req.method === "GET" && !previewOnly) {
       const current = readMcpAgentPrompt();
       sendJSON(res, 200, {
         success: true,
         prompt: current.prompt,
         length: current.prompt.length,
         updatedAt: current.updatedAt,
+        history: current.history,
         maxChars: MCP_AGENT_PROMPT_MAX_CHARS,
       });
       return true;
@@ -1680,6 +1685,18 @@ export async function handleServerRoute(
         sendJSON(res, 400, { success: false, error: "MCP_PROMPT_REQUEST_INVALID" });
         return true;
       }
+      if (previewOnly) {
+        const draft = sanitizeMcpAgentPrompt(body.instructions);
+        const effective = composeMcpSessionInstructions(draft);
+        sendJSON(res, 200, {
+          success: true,
+          length: draft.length,
+          effective,
+          effectiveLength: effective.length,
+          maxChars: MCP_AGENT_PROMPT_MAX_CHARS,
+        });
+        return true;
+      }
       const saved = saveMcpAgentPrompt(body.instructions);
       const { applyMcpAgentPromptToRunningOwners } =
         await import("./core/runtime/mcpManagedTunnelOwner.js");
@@ -1689,6 +1706,7 @@ export async function handleServerRoute(
         prompt: saved.prompt,
         length: saved.length,
         updatedAt: saved.updatedAt,
+        history: saved.history,
         maxChars: MCP_AGENT_PROMPT_MAX_CHARS,
         applied: apply.applied,
         skipped: apply.skipped,

@@ -4965,6 +4965,27 @@ tbody tr:hover {
 .runtime-mcp-prompt-feedback:empty{display:none}
 .runtime-mcp-prompt-feedback[data-tone="error"]{color:var(--danger)}
 .runtime-mcp-prompt-feedback[data-tone="success"]{color:var(--success)}
+.runtime-mcp-prompt-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--border-subtle);
+  border-radius:var(--radius-sm);background:var(--bg-surface);font-size:11px;font-weight:600;color:var(--text-secondary)}
+.runtime-mcp-prompt-badge::before{content:"";width:6px;height:6px;border-radius:var(--radius-pill);background:var(--text-muted)}
+.runtime-mcp-prompt-badge[data-state="active"]{border-color:rgba(var(--r-ui-color-accent-primary-rgb),.35);
+  background:rgba(var(--r-ui-color-accent-primary-rgb),.08);color:var(--text-primary)}
+.runtime-mcp-prompt-badge[data-state="active"]::before{background:var(--success)}
+.runtime-mcp-prompt-badge[data-state="empty"]::before{background:var(--border-strong)}
+.runtime-mcp-prompt-preview{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--border-subtle);
+  border-radius:var(--radius-sm);background:var(--bg-surface-sunken)}
+.runtime-mcp-prompt-preview-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.runtime-mcp-prompt-preview-head strong{font-size:11px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;color:var(--text-secondary)}
+.runtime-mcp-prompt-preview-meta{font-size:10.5px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.runtime-mcp-prompt-preview-body{margin:0;max-height:240px;overflow:auto;scrollbar-width:thin;white-space:pre-wrap;
+  overflow-wrap:anywhere;font-family:var(--font-mono,monospace);font-size:11.5px;line-height:1.55;color:var(--text-secondary)}
+.runtime-mcp-prompt-preview-body:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--radius-xs)}
+.runtime-mcp-prompt-history{font-size:11px;color:var(--text-secondary)}
+.runtime-mcp-prompt-history summary{cursor:pointer;font-weight:650;color:var(--text-secondary)}
+.runtime-mcp-prompt-history summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--radius-xs)}
+.runtime-mcp-prompt-history-count{margin-left:6px;padding:1px 6px;border:1px solid var(--border-subtle);
+  border-radius:var(--radius-pill);font-size:10px;font-variant-numeric:tabular-nums;color:var(--text-muted)}
+.runtime-mcp-prompt-history-list{margin:8px 0 0;padding-left:16px;display:grid;gap:4px;font-variant-numeric:tabular-nums}
 @media(max-width:700px){
   .runtime-mcp-prompt{padding:15px}
   .runtime-mcp-prompt-actions{width:100%}

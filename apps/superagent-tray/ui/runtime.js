@@ -666,6 +666,7 @@ function runtimeRemoteCard(service) {
           ? "External cloudflared detected; public URL unknown and controls disabled."
           : "Public URL unavailable from verified owner metadata."}</div>` : ""}
     ${service.kind === "mcp" ? `<div class="runtime-mcp-owner-scope">OAuth + Security Approval · Chat YOLO tidak berlaku untuk MCP</div><div class="runtime-evidence">Tool catalog: ${runtimeEscape(service.toolExposure || "not recorded")} · Tool mode: ${runtimeEscape(service.toolMode || "not recorded")}</div>` : ""}
+    ${service.kind === "mcp" ? runtimeMcpPromptOwnerBadge() : ""}
     ${controls}
     ${service.controlReason
       ? `<div class="runtime-evidence">${runtimeEscape(service.controlReason)}</div>`
@@ -1166,6 +1167,49 @@ const RUNTIME_MCP_PROMPT_TEMPLATE = [
   "- Ask for an explicit grant before write, execute, or path-escaping actions.",
 ].join("\n");
 
+let runtimeMcpPromptSummary = null;
+
+function runtimeFormatChars(count) {
+  const value = Number(count);
+  if (!Number.isFinite(value) || value <= 0) return "0 chars";
+  return value >= 1000 ? `${(value / 1000).toFixed(1)}k chars` : `${value} chars`;
+}
+
+// Every MCP owner advertises the same profile-wide prompt, so the badge states
+// what a new session receives without implying a per-owner override exists.
+function runtimeMcpPromptOwnerBadge() {
+  if (!runtimeMcpPromptSummary) {
+    return '<div class="runtime-evidence runtime-mcp-prompt-badge" data-state="unknown">Session prompt: not checked yet</div>';
+  }
+  if (!runtimeMcpPromptSummary.length) {
+    return '<div class="runtime-evidence runtime-mcp-prompt-badge" data-state="empty">Session prompt: none · canonical instructions only</div>';
+  }
+  return `<div class="runtime-evidence runtime-mcp-prompt-badge" data-state="active">Session prompt: active · ${runtimeEscape(runtimeFormatChars(runtimeMcpPromptSummary.length))} · applied at the next initialize</div>`;
+}
+
+function runtimeRenderMcpPromptHistory(history) {
+  const details = rt("runtime-mcp-prompt-history");
+  const list = rt("runtime-mcp-prompt-history-list");
+  const count = rt("runtime-mcp-prompt-history-count");
+  const entries = (Array.isArray(history) ? history : [])
+    .filter(entry => entry && Number.isFinite(entry.at) && Number.isFinite(entry.length))
+    .slice(0, 10);
+  if (count) count.textContent = entries.length ? String(entries.length) : "";
+  if (details) details.hidden = entries.length === 0;
+  if (!list) return;
+  list.replaceChildren?.();
+  for (const entry of entries) {
+    const item = document.createElement("li");
+    item.textContent = `${new Date(entry.at).toLocaleString()} · ${runtimeFormatChars(entry.length)}`;
+    list.appendChild(item);
+  }
+}
+
+function runtimeSetMcpPromptSummary(length) {
+  runtimeMcpPromptSummary = { length: Math.max(0, Number(length) || 0) };
+  if (runtimeLastResult) runtimeRenderRemoteList();
+}
+
 function runtimeMcpPromptCounter() {
   const input = rt("runtime-mcp-prompt-input");
   const count = rt("runtime-mcp-prompt-count");
@@ -1200,6 +1244,8 @@ async function runtimeLoadMcpAgentPrompt() {
       input.maxLength = Math.min(result.maxChars, 20000);
     }
     runtimeMcpPromptCounter();
+    runtimeSetMcpPromptSummary(input.value.length);
+    runtimeRenderMcpPromptHistory(result?.history);
     runtimeMcpPromptState(result?.updatedAt ? "Saved prompt" : "Not set", "saved");
   } catch (error) {
     runtimeMcpPromptState("Unavailable", "error");
@@ -1225,6 +1271,8 @@ async function runtimeSaveMcpAgentPrompt() {
     if (result?.success !== true) throw new Error(result?.error || "Prompt was not saved");
     input.value = typeof result.prompt === "string" ? result.prompt : instructions;
     runtimeMcpPromptCounter();
+    runtimeSetMcpPromptSummary(result.length ?? input.value.length);
+    runtimeRenderMcpPromptHistory(result.history);
     runtimeMcpPromptState("Saved prompt", "saved");
     const applied = Array.isArray(result.applied) ? result.applied : [];
     const skipped = Array.isArray(result.skipped) ? result.skipped : [];
@@ -1270,6 +1318,37 @@ function runtimeMcpPromptClear() {
   input.value = "";
   runtimeMcpPromptCounter();
   input.focus?.();
+}
+
+async function runtimeMcpPromptTogglePreview() {
+  const input = rt("runtime-mcp-prompt-input");
+  const box = rt("runtime-mcp-prompt-preview");
+  const body = rt("runtime-mcp-prompt-preview-body");
+  const meta = rt("runtime-mcp-prompt-preview-meta");
+  const toggle = rt("runtime-mcp-prompt-preview-toggle");
+  if (!input || !box || !body) return;
+  if (!box.hidden) {
+    box.hidden = true;
+    toggle?.setAttribute?.("aria-expanded", "false");
+    return;
+  }
+  body.textContent = "Composing the effective instructions…";
+  if (meta) meta.textContent = "";
+  box.hidden = false;
+  toggle?.setAttribute?.("aria-expanded", "true");
+  try {
+    const result = await runtimeInvoke("preview_mcp_agent_prompt", { instructions: input.value });
+    if (result?.success !== true || typeof result.effective !== "string") {
+      throw new Error(result?.error || "Preview was not produced");
+    }
+    body.textContent = result.effective;
+    if (meta) {
+      meta.textContent = `${runtimeFormatChars(result.length)} prompt · ${runtimeFormatChars(result.effectiveLength)} with canonical protocol`;
+    }
+  } catch (error) {
+    body.textContent = "";
+    if (meta) meta.textContent = "Preview unavailable: " + String(error);
+  }
 }
 
 let runtimeResultReturnFocus = null;
@@ -1822,6 +1901,7 @@ function runtimeInstall() {
   rt("runtime-mcp-prompt-input")?.addEventListener("input", runtimeMcpPromptCounter);
   rt("runtime-mcp-prompt-template")?.addEventListener("click", runtimeMcpPromptInsertTemplate);
   rt("runtime-mcp-prompt-clear")?.addEventListener("click", runtimeMcpPromptClear);
+  rt("runtime-mcp-prompt-preview-toggle")?.addEventListener("click", runtimeMcpPromptTogglePreview);
   rt("runtime-mcp-prompt-save")?.addEventListener("click", runtimeSaveMcpAgentPrompt);
   void runtimeLoadMcpAgentPrompt();
   rt("runtime-remote-panel")?.addEventListener("click", event => {
