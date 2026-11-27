@@ -1,4 +1,11 @@
 import { DesktopUiError } from "./errors.js";
+import {
+  DEFAULT_MAX_FRAME_CHANGE_RATIO,
+  framesEquivalent,
+  frameChangeRatio,
+  regionChangeRatio,
+  type FrameRegion,
+} from "./frames.js";
 import { readPngSize, sha256 } from "./png.js";
 import type {
   AccessibilitySnapshot,
@@ -6,6 +13,7 @@ import type {
   DesktopBounds,
   DesktopModifier,
   DesktopPoint,
+  DesktopUiCapabilities,
   DesktopUiElement,
   DesktopUiSchema,
   DesktopUiSessionOptions,
@@ -16,6 +24,14 @@ import type {
   NativeDesktopAction,
   VisionDetection,
 } from "./types.js";
+
+/**
+ * Capability probing spawns a full OS helper process (~0.8-1.5 s on Windows).
+ * Re-probing for every snapshot and every pre-action check tripled the time a
+ * live window had to stay still, so a short memoization window is used while
+ * availability is healthy. Failures are never cached.
+ */
+const CAPABILITIES_TTL_MS = 5_000;
 
 function center(bounds: DesktopBounds): DesktopPoint {
   return {
@@ -29,6 +45,62 @@ function sameBounds(a: DesktopBounds, b: DesktopBounds): boolean {
     && a.y === b.y
     && a.width === b.width
     && a.height === b.height;
+}
+
+/**
+ * Accessibility bounds may jitter by a device pixel between two UIA reads
+ * without the control moving. Larger deltas mean layout/scroll/DOM changes and
+ * are treated as a different control position.
+ */
+const ELEMENT_BOUNDS_TOLERANCE_PX = 2;
+
+/**
+ * Share of the selected control's own pixels allowed to change between
+ * perception and dispatch. Accessibility already fences role/label/position;
+ * this budget only rejects a visually replaced control (for example a
+ * same-labelled element swapped for a different one at the same bounds).
+ */
+const ELEMENT_REGION_CHANGE_BUDGET = 0.35;
+
+function sameElementBounds(a: DesktopBounds, b: DesktopBounds): boolean {
+  return Math.abs(a.x - b.x) <= ELEMENT_BOUNDS_TOLERANCE_PX
+    && Math.abs(a.y - b.y) <= ELEMENT_BOUNDS_TOLERANCE_PX
+    && Math.abs(a.width - b.width) <= ELEMENT_BOUNDS_TOLERANCE_PX
+    && Math.abs(a.height - b.height) <= ELEMENT_BOUNDS_TOLERANCE_PX;
+}
+
+/**
+ * Element-level fencing: identity fields plus a bounded position tolerance.
+ * Varying text content (value) is intentionally excluded so live editors can
+ * stream while a control stays at the same place.
+ */
+function sameElementIdentity(a: DesktopUiElement, b: DesktopUiElement): boolean {
+  return a.role === b.role
+    && a.label === b.label
+    && a.description === b.description
+    && a.nativeRef === b.nativeRef
+    && sameElementBounds(a.bounds, b.bounds);
+}
+
+function containsActionableElement(elements: DesktopUiElement[], target: DesktopUiElement): boolean {
+  return elements.some((candidate) => candidate.actionable && sameElementIdentity(candidate, target));
+}
+
+/**
+ * Bounded pixel region of one control inside the captured frame, derived from
+ * the accessibility screen bounds and the screenshot/window ratio.
+ */
+function elementFrameRegion(schema: DesktopUiSchema, element: DesktopUiElement): FrameRegion | null {
+  const window = schema.screenshot.targetWindow.bounds;
+  const ratioX = schema.screenshot.pixelRatioX;
+  const ratioY = schema.screenshot.pixelRatioY;
+  if (!Number.isFinite(ratioX) || ratioX <= 0 || !Number.isFinite(ratioY) || ratioY <= 0) return null;
+  const x = (element.bounds.x - window.x) * ratioX;
+  const y = (element.bounds.y - window.y) * ratioY;
+  const width = element.bounds.width * ratioX;
+  const height = element.bounds.height * ratioY;
+  if (![x, y, width, height].every(Number.isFinite) || width < 1 || height < 1) return null;
+  return { x, y, width, height };
 }
 
 function sameWindowIdentity(
@@ -115,6 +187,7 @@ export class DesktopUiSession {
   private current: { capture: NativeCapture; schema: DesktopUiSchema } | null = null;
   private pinnedTarget: DesktopWindowTarget | null = null;
   private operationTail: Promise<void> = Promise.resolve();
+  private capabilities: { at: number; value: DesktopUiCapabilities } | null = null;
 
   constructor(options: DesktopUiSessionOptions) {
     this.options = {
@@ -131,8 +204,18 @@ export class DesktopUiSession {
     return this.runExclusive(() => this.snapshotUnlocked());
   }
 
+  private async capabilitiesCached(): Promise<DesktopUiCapabilities> {
+    const now = Date.now();
+    if (this.capabilities && now - this.capabilities.at < CAPABILITIES_TTL_MS) {
+      return this.capabilities.value;
+    }
+    const value = await this.options.adapter.probe();
+    this.capabilities = value.available ? { at: now, value } : null;
+    return value;
+  }
+
   private async snapshotUnlocked(): Promise<DesktopUiSchema> {
-    const capabilities = await this.options.adapter.probe();
+    const capabilities = await this.capabilitiesCached();
     if (!capabilities.available || !capabilities.screenshot) {
       throw new DesktopUiError(
         "SCREENSHOT_UNAVAILABLE",
@@ -164,18 +247,24 @@ export class DesktopUiSession {
     }
 
     const confirmation = await this.options.adapter.capture(candidateTarget);
-    if (
-      !sameWindowIdentity(capture.targetWindow, confirmation.targetWindow)
-      || sha256(confirmation.image) !== hash
-    ) {
+    const assembledChangeRatio = frameChangeRatio(capture.image, confirmation.image);
+    const confirmedStable = assembledChangeRatio === null
+      ? sha256(confirmation.image) === hash
+      : assembledChangeRatio <= DEFAULT_MAX_FRAME_CHANGE_RATIO;
+    if (!sameWindowIdentity(capture.targetWindow, confirmation.targetWindow) || !confirmedStable) {
       throw new DesktopUiError(
         "STALE_SCREENSHOT",
-        "Target window changed while the screenshot schema was being assembled.",
+        "Target window changed beyond the allowed visual budget while the screenshot schema was being assembled.",
       );
     }
 
     const elements = accessibilityElements(accessibility);
     const warnings = [...(accessibility.warnings ?? [])];
+    if (assembledChangeRatio !== null && assembledChangeRatio > 0) {
+      warnings.push(
+        `Perception assembled while ${(assembledChangeRatio * 100).toFixed(1)}% of sampled pixels changed (within budget).`,
+      );
+    }
 
     if (this.options.vision) {
       try {
@@ -197,6 +286,7 @@ export class DesktopUiSession {
       pixelRatioX: size.width / capture.targetWindow.bounds.width,
       pixelRatioY: size.height / capture.targetWindow.bounds.height,
       targetWindow: accessibility.window,
+      ...(assembledChangeRatio !== null ? { changeRatio: assembledChangeRatio } : {}),
     };
     const schema: DesktopUiSchema = {
       version: 1,
@@ -213,8 +303,8 @@ export class DesktopUiSession {
 
   async click(input: { elementId: string; expectedRevision: number; expectedHash: string }): Promise<DesktopActionReceipt> {
     return this.runExclusive(async () => {
-      const state = await this.prepareInput(input.expectedRevision, input.expectedHash);
-      const element = this.resolveElement(state.schema, input.elementId);
+      const element = this.resolveElement(this.requireCurrentSchema(), input.elementId);
+      const state = await this.prepareInput(input.expectedRevision, input.expectedHash, element);
       return this.dispatchAndVerify({
         kind: "click",
         target: this.currentTarget(),
@@ -234,8 +324,8 @@ export class DesktopUiSession {
       if (typeof input.text !== "string" || input.text.length > 32_768) {
         throw new DesktopUiError("INVALID_ACTION", "Text input must be a string no longer than 32768 characters.");
       }
-      const state = await this.prepareInput(input.expectedRevision, input.expectedHash);
-      const element = this.resolveElement(state.schema, input.elementId);
+      const element = this.resolveElement(this.requireCurrentSchema(), input.elementId);
+      const state = await this.prepareInput(input.expectedRevision, input.expectedHash, element);
       return this.dispatchAndVerify({
         kind: "type",
         target: this.currentTarget(),
@@ -295,8 +385,8 @@ export class DesktopUiSession {
       ) {
         throw new DesktopUiError("INVALID_ACTION", "Scroll deltas must be integers between -3 and 3 and not both zero.");
       }
-      const state = await this.prepareInput(input.expectedRevision, input.expectedHash);
-      const element = this.resolveElement(state.schema, input.elementId);
+      const element = this.resolveElement(this.requireCurrentSchema(), input.elementId);
+      const state = await this.prepareInput(input.expectedRevision, input.expectedHash, element);
       return this.dispatchAndVerify({
         kind: "scroll",
         target: this.currentTarget(),
@@ -335,14 +425,21 @@ export class DesktopUiSession {
     return element;
   }
 
-  private async prepareInput(expectedRevision: number, expectedHash: string) {
+  private requireCurrentSchema(): DesktopUiSchema {
+    if (!this.current) {
+      throw new DesktopUiError("STALE_SCREENSHOT", "Capture a screenshot schema before sending native input.");
+    }
+    return this.current.schema;
+  }
+
+  private async prepareInput(expectedRevision: number, expectedHash: string, target?: DesktopUiElement) {
     if (!this.options.allowInput) {
       throw new DesktopUiError(
         "INPUT_DISABLED",
         "Native desktop input is disabled. The integrator must opt in for the active session.",
       );
     }
-    const capabilities = await this.options.adapter.probe();
+    const capabilities = await this.capabilitiesCached();
     if (!capabilities.input) {
       throw new DesktopUiError(
         "INPUT_UNAVAILABLE",
@@ -353,7 +450,7 @@ export class DesktopUiSession {
       throw new DesktopUiError("STALE_SCREENSHOT", "Capture a screenshot schema before sending native input.");
     }
 
-    const { schema } = this.current;
+    const { capture, schema } = this.current;
     if (
       schema.screenshot.revision !== expectedRevision
       || schema.screenshot.sha256 !== expectedHash
@@ -364,10 +461,12 @@ export class DesktopUiSession {
       );
     }
 
+    // Fresh frame must stay inside the visual budget: identical for static
+    // targets, tolerant for live apps, still fail-closed for gross changes.
     const freshCapture = await this.options.adapter.capture(this.currentTarget());
     if (
       !sameWindowIdentity(schema.screenshot.targetWindow, freshCapture.targetWindow)
-      || sha256(freshCapture.image) !== expectedHash
+      || !framesEquivalent(capture.image, freshCapture.image)
     ) {
       throw new DesktopUiError(
         "STALE_SCREENSHOT",
@@ -382,29 +481,48 @@ export class DesktopUiSession {
     if (!sameWindowIdentity(schema.screenshot.targetWindow, latestAccessibility.window)) {
       throw new DesktopUiError("STALE_SCREENSHOT", "Target window identity changed during pre-action accessibility verification.");
     }
-    const expectedElements = schema.elements.filter((element) => element.source === "accessibility");
     const latestElements = accessibilityElements(latestAccessibility);
-    if (
-      expectedElements.length !== latestElements.length
-      || expectedElements.some((original, index) => {
-        const latest = latestElements[index];
-        return original.role !== latest.role
-          || original.label !== latest.label
-          || original.description !== latest.description
-          || original.value !== latest.value
-          || original.actionable !== latest.actionable
-          || original.focused !== latest.focused
-          || original.nativeRef !== latest.nativeRef
-          || !sameBounds(original.bounds, latest.bounds);
-      })
-    ) {
-      throw new DesktopUiError("STALE_SCREENSHOT", "The accessibility tree changed after the screenshot schema was captured.");
+    if (target) {
+      // Element-level fence: the exact control the caller selected must still
+      // exist at the same place. Unrelated regions of a live app may change.
+      if (!containsActionableElement(latestElements, target)) {
+        throw new DesktopUiError(
+          "STALE_SCREENSHOT",
+          "The target control moved, was replaced, or is no longer actionable; capture a new schema before sending input.",
+        );
+      }
+      // Pixel fence for that control only. Unmeasurable frames skip this
+      // supplementary check; identity, bounds and policy checks still apply.
+      const region = elementFrameRegion(schema, target);
+      const controlChangeRatio = region
+        ? regionChangeRatio(capture.image, freshCapture.image, region)
+        : null;
+      if (controlChangeRatio !== null && controlChangeRatio > ELEMENT_REGION_CHANGE_BUDGET) {
+        throw new DesktopUiError(
+          "STALE_SCREENSHOT",
+          "The selected control's pixels changed beyond the element budget; capture a new schema before sending input.",
+        );
+      }
+    } else {
+      const expectedFocused = schema.elements.filter(
+        (element) => element.source === "accessibility" && element.focused === true,
+      );
+      const latestFocused = latestElements.filter((element) => element.focused === true);
+      if (
+        expectedFocused.length !== latestFocused.length
+        || expectedFocused.some((original, index) => !sameElementIdentity(original, latestFocused[index]))
+      ) {
+        throw new DesktopUiError(
+          "STALE_SCREENSHOT",
+          "The focused control changed after the screenshot schema was captured.",
+        );
+      }
     }
 
     const confirmation = await this.options.adapter.capture(this.currentTarget());
     if (
       !sameWindowIdentity(schema.screenshot.targetWindow, confirmation.targetWindow)
-      || sha256(confirmation.image) !== expectedHash
+      || !framesEquivalent(capture.image, confirmation.image)
     ) {
       throw new DesktopUiError("STALE_SCREENSHOT", "Target pixels or window identity changed during pre-action verification.");
     }

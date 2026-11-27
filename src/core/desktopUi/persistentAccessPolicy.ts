@@ -198,3 +198,27 @@ export function hasRegisteredDesktopInputCandidate(
     rule.operations.includes("input") && matchesApp(rule.app,app) &&
     (!rule.scope.windowTitle || rule.scope.windowTitle === windowTitle));
 }
+
+/**
+ * True when the host-approved allow rules for this application and operation
+ * bind to an exact window title, i.e. drifting window titles keep their
+ * security meaning. Rules that approve the whole application (no
+ * `scope.windowTitle`) treat the title as volatile metadata, so a live
+ * editor/chat that renames itself does not invalidate an approved session.
+ *
+ * Fails closed: an unreadable policy, an unknown executable identity, or no
+ * matching allow rule all require the exact title.
+ */
+export function desktopAccessRequiresExactTitle(
+  rawPolicy: unknown,
+  app: ExecutableIdentity,
+  operation: DesktopOperation,
+): boolean {
+  const policy = parsePersistentAccessPolicy(rawPolicy);
+  if (!policy || !validIdentity(app) || !DESKTOP_OPERATIONS.has(operation)) return true;
+  const allowRules = policy.rules.filter((rule): rule is DesktopAccessRule =>
+    rule.kind === "desktop" && rule.effect === "allow" &&
+    rule.operations.includes(operation) && matchesApp(rule.app, app));
+  if (allowRules.length === 0) return true;
+  return allowRules.some(rule => Boolean(rule.scope.windowTitle));
+}

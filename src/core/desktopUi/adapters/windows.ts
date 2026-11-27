@@ -726,14 +726,28 @@ export function createWindowsDesktopUiAdapter(
       const dir = await mkdtemp(path.join(os.tmpdir(), "superagent-desktop-ui-"));
       const outputPath = path.join(dir, "capture.png");
       try {
-        const result = await runPowerShell(CAPTURE_SCRIPT, { ...target, outputPath });
-        const targetWindow = windowFrom(parseJson(result.stdout, "Windows screenshot"));
-        const image = await readFile(outputPath);
-        return {
-          image,
-          capturedAt: new Date().toISOString(),
-          targetWindow,
-        };
+        // PrintWindow intermittently fails while a GPU-composited window is
+        // painting (observed once per few attempts on a live Electron app).
+        // Retry a bounded number of times; every attempt still fails closed and
+        // no screen-region fallback is introduced.
+        const attempts = 3;
+        let lastError: unknown = null;
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+          try {
+            const result = await runPowerShell(CAPTURE_SCRIPT, { ...target, outputPath });
+            const targetWindow = windowFrom(parseJson(result.stdout, "Windows screenshot"));
+            const image = await readFile(outputPath);
+            return {
+              image,
+              capturedAt: new Date().toISOString(),
+              targetWindow,
+            };
+          } catch (error) {
+            lastError = error;
+            if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, 150));
+          }
+        }
+        throw lastError;
       } catch (error) {
         throw mapWindowsError(error, "SCREENSHOT_UNAVAILABLE", "Windows target-window capture failed");
       } finally {

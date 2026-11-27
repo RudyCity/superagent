@@ -1,5 +1,5 @@
 /**
- * desktopUiTools.ts — Native Desktop UI Automation & Semantic Schema Perception.
+ * desktopUiTools.ts â€” Native Desktop UI Automation & Semantic Schema Perception.
  *
  * Provides scoped single-window automation across Windows (UIA), macOS (AX),
  * and Linux (AT-SPI2/xdotool) using accessibility semantics with local UI-DETR vision fallback.
@@ -49,6 +49,7 @@ import {readTrustedInputPolicy,trustedWindowMatch,
 import {createTrustedInputPrompt,type TrustedInputPrompt} from "../desktopUi/trustedInputPrompt.js";
 import {readPermanentAccessRegistry} from "../desktopUi/permanentRegistryStore.js";
 import {evaluatePersistentAccess,hasRegisteredDesktopInputCandidate,
+  desktopAccessRequiresExactTitle,
   type ExecutableIdentity,type PersistentAccessPolicy}
   from "../desktopUi/persistentAccessPolicy.js";
 import {resolveNativeDesktopExecutable} from "../desktopUi/nativeExecutableIdentity.js";
@@ -60,6 +61,71 @@ export const MAX_SESSION_TTL_MS = 30 * 60 * 1000;
 export const MIN_SESSION_TTL_MS = 60 * 1000;
 export const DEFAULT_MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 export const LOCAL_DESKTOP_UI_OWNER = "local-agent";
+
+/**
+ * Machine-readable recovery guidance for Desktop UI failures. Clients should
+ * retry only `retryable` codes, and `retryAfterMs` tells them when. Nothing
+ * here authorizes input: every retry re-runs the full policy evaluation.
+ */
+export const DESKTOP_UI_ERROR_GUIDANCE: Readonly<Record<string, {
+  retryable: boolean; retryAfterMs?: number; nextAction: string;
+}>> = {
+  STALE_SCREENSHOT: {
+    retryable: true, retryAfterMs: 200,
+    nextAction: "Capture again with wait_ready or snapshot; never reuse an old revision/hash.",
+  },
+  TARGET_NOT_ACTIVE: {
+    retryable: true, retryAfterMs: 250,
+    nextAction: "Call focus_window with pid+nativeId, then open with allowInput=true.",
+  },
+  TARGET_NOT_FOUND: {
+    retryable: true, retryAfterMs: 250,
+    nextAction: "Re-run find_window or list_windows; the window may have been recreated.",
+  },
+  SCREENSHOT_UNAVAILABLE: {
+    retryable: true, retryAfterMs: 300,
+    nextAction: "Check that the window is visible and not minimized, then retry.",
+  },
+  ACCESSIBILITY_UNAVAILABLE: {
+    retryable: true, retryAfterMs: 300,
+    nextAction: "Retry once; if it persists, verify the interactive desktop session and UIAutomation availability.",
+  },
+  PROCESS_FAILED: {
+    retryable: true, retryAfterMs: 300,
+    nextAction: "Retry once; the OS helper process failed before producing a result.",
+  },
+  ELEMENT_NOT_FOUND: {
+    retryable: true, retryAfterMs: 200,
+    nextAction: "Capture a new schema; element ids are scoped to one screenshot revision.",
+  },
+  ELEMENT_NOT_ACTIONABLE: {
+    retryable: true, retryAfterMs: 200,
+    nextAction: "Capture a new schema and select an accessibility-backed actionable element.",
+  },
+  INPUT_DISABLED: {
+    retryable: false,
+    nextAction: "The operator must approve input for this exact application/window in SuperAgent Tray, then reopen the session.",
+  },
+  INVALID_ACTION: {
+    retryable: false, nextAction: "Fix the arguments against the tool schema; this call was rejected before dispatch.",
+  },
+  DESKTOP_UI_UNAVAILABLE: {
+    retryable: true, retryAfterMs: 500,
+    nextAction: "Retry after other sessions close; the concurrent session limit may be reached.",
+  },
+};
+
+const STABLE_SNAPSHOT_RETRY_CODES = new Set([
+  "STALE_SCREENSHOT", "SCREENSHOT_UNAVAILABLE", "ACCESSIBILITY_UNAVAILABLE",
+  "TARGET_NOT_FOUND", "PROCESS_FAILED",
+]);
+
+export function desktopUiErrorGuidance(code: string): {
+  retryable: boolean; retryAfterMs?: number; nextAction: string;
+} {
+  return DESKTOP_UI_ERROR_GUIDANCE[code]
+    ?? { retryable: false, nextAction: "Inspect the error message; this condition is not retryable automatically." };
+}
 const DESKTOP_UI_TARGET_ALLOWLIST_ENV = "SUPERAGENT_DESKTOP_UI_ALLOWED_TARGETS";
 const DESKTOP_UI_VISION_UPLOAD_ENV = "SUPERAGENT_DESKTOP_UI_ALLOW_VISION_UPLOAD";
 const DESKTOP_UI_VISION_TOKEN_ENV = "SUPERAGENT_DESKTOP_UI_VISION_AUTH_TOKEN";
@@ -89,6 +155,7 @@ export const DISCOVERY_COMMAND_FIELDS: Record<string, ReadonlySet<string>> = {
   find_window: new Set(["command", "action", "query", "pid", "limit"]),
   list_monitors: new Set(["command", "action"]),
   inspect_window: new Set(["command", "action", "pid", "nativeId", "includeScreenshotImage", "maxImageBytes", "approvalRequestId", "reason", "ttlMs"]),
+  wait_ready: new Set(["command", "action", "sessionToken", "timeoutMs", "includeScreenshotImage", "maxImageBytes"]),
   list_installed_apps: new Set(["command", "action", "limit"]),
   launch_app: new Set(["command", "action", "appId"]),
   focus_window: new Set(["command", "action", "pid", "nativeId"]),
@@ -291,6 +358,7 @@ export const desktopAppManager = new DesktopAppManager({
 export interface ActiveSessionRecord {
   token: string;
   ownerPrincipal: string;
+  /** `title` is canonicalized from fresh OS discovery; it is metadata, not authority. */
   target: DesktopWindowTarget & { nativeId: string; title: string };
   session: ReturnType<typeof createDesktopUiSession>;
   createdAt: number;
@@ -299,6 +367,9 @@ export interface ActiveSessionRecord {
   ttlMs: number;
   inputRequested: boolean;
   inputAllowed: boolean;
+  /** True when the approved rules are app-scoped, so a live title change is not a boundary. */
+  allowViewTitleDrift: boolean;
+  allowInputTitleDrift: boolean;
   trustedGrantId?: string;
   trustedTarget?: TrustedInputTarget;
   sessionApprovalGrantId?: string;
@@ -312,7 +383,8 @@ export interface ActiveSessionRecord {
 export interface OpenSessionParams {
   pid: number;
   nativeId: string;
-  title: string;
+  /** Optional; canonicalized from fresh OS discovery. Never used as authorization. */
+  title?: string;
   ownerPrincipal?: string;
   allowInput?: boolean;
   oneShotHostApproval?: boolean;
@@ -368,6 +440,29 @@ function normalizeOwnerPrincipal(ownerPrincipal?: string): string {
   return typeof ownerPrincipal === "string" && ownerPrincipal.trim()
     ? ownerPrincipal.trim()
     : LOCAL_DESKTOP_UI_OWNER;
+}
+
+/**
+ * Window titles are volatile metadata: applications rename themselves as the
+ * active document/conversation changes, and hosts truncate long titles with a
+ * trailing ellipsis. Callers may therefore pass a title that was exact at
+ * discovery time and is now stale. `pid` + native window id remain the only
+ * identity, and the canonical title is always re-read from fresh OS discovery.
+ */
+export function normalizeDesktopWindowTitle(value: string): string {
+  return value
+    .trim()
+    .replace(/\s*\.\.\.$/, "")
+    .replace(/\s*\u2026$/, "")
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("en-US");
+}
+
+export function desktopWindowTitlesMatch(requested: string, observed: string): boolean {
+  const a = normalizeDesktopWindowTitle(requested);
+  const b = normalizeDesktopWindowTitle(observed);
+  if (!a || !b) return true;
+  return a === b || b.startsWith(a) || a.startsWith(b);
 }
 
 function createHostAuthorizedVisionDetector(endpoint?: string): DesktopVisionDetector {
@@ -528,8 +623,9 @@ export class DesktopUiSessionManager {
     if (typeof params.nativeId !== "string" || !params.nativeId.trim()) {
       throw new DesktopUiError("INVALID_ACTION", "Target window nativeId must be a non-empty string.");
     }
-    if (typeof params.title !== "string" || !params.title.trim()) {
-      throw new DesktopUiError("INVALID_ACTION", "Target window title must be a non-empty string.");
+    // `title` is optional, volatile metadata. Identity is pid + nativeId.
+    if (params.title !== undefined && typeof params.title !== "string") {
+      throw new DesktopUiError("INVALID_ACTION", "Target window title must be a string when provided.");
     }
 
     this.pruneExpiredSessions();
@@ -546,7 +642,7 @@ export class DesktopUiSessionManager {
     const target: DesktopWindowTarget & { nativeId: string; title: string } = {
       pid: params.pid,
       nativeId: params.nativeId.trim(),
-      title: params.title.trim(),
+      title: params.title?.trim() ?? "",
     };
 
     // A Trusted-mode allowlist can auto-REQUEST consent when callers omit the
@@ -562,13 +658,16 @@ export class DesktopUiSessionManager {
       rule.operations.includes("input")));
     const trustedCandidate = !permanent && policy?.mode === "trusted" &&
       policy.targets.some(entry => entry.pid === target.pid &&
-        entry.nativeId === target.nativeId && entry.title === target.title &&
+        entry.nativeId === target.nativeId &&
+        (!target.title || entry.title === target.title) &&
         entry.expiresAt > Date.now());
     let inputRequested = params.allowInput === true ||
       (params.allowInput === undefined && (registeredCandidate || trustedCandidate));
     let backgroundReadOnlyFallback = false;
     const baseAdapter = params.adapter ?? createNativeDesktopUiAdapter();
     let registeredViewIdentity: ExecutableIdentity | undefined;
+    let allowViewTitleDrift = false;
+    let allowInputTitleDrift = false;
     if (permanent) {
       // A registered application must be explicitly approved for observation.
       // Window listing remains available so the owner can enroll a target.
@@ -577,12 +676,17 @@ export class DesktopUiSessionManager {
       }
       const discovery = await listDiscoveredWindows(baseAdapter, MAX_WINDOW_DISCOVERY_LIMIT);
       const observed = requireFreshWindowTarget(discovery, target.pid, target.nativeId);
-      if (observed.title !== target.title) {
+      // Canonicalize the volatile title from fresh discovery. A caller-supplied
+      // title only has to be recognizable (exact, truncated, or case-shifted);
+      // pid + nativeId remain the identity, matching the "metadata only" contract.
+      const requestedTitle = target.title;
+      if (requestedTitle && !desktopWindowTitlesMatch(requestedTitle, observed.title)) {
         throw new DesktopUiError(
           "INVALID_ACTION",
-          "Target window title changed or does not match fresh OS discovery. Re-run find_window or list_windows and pass the exact full title.",
+          "Target window title does not match fresh OS discovery. Re-run find_window or list_windows and pass the exact full title.",
         );
       }
+      target.title = observed.title;
       if (!observed.active) {
         if (params.allowInput === true) {
           throw new DesktopUiError(
@@ -603,6 +707,10 @@ export class DesktopUiSessionManager {
           kind: "desktop", app: identity, operation: "view", windowTitle: observed.title,
         }).effect !== "allow") throw Error("Viewing revoked during identity verification");
         registeredViewIdentity = identity;
+        // App-scoped approvals (no scope.windowTitle) make the title volatile
+        // metadata; title-scoped approvals keep the exact-title boundary.
+        allowViewTitleDrift = !desktopAccessRequiresExactTitle(fresh, identity, "view");
+        allowInputTitleDrift = !desktopAccessRequiresExactTitle(fresh, identity, "input");
       } catch {
         throw new DesktopUiError("INPUT_DISABLED", "Application viewing not registered or OS identity changed.");
       }
@@ -619,7 +727,9 @@ export class DesktopUiSessionManager {
       try {
         const windows = await listDiscoveredWindows(baseAdapter, MAX_WINDOW_DISCOVERY_LIMIT);
         const observed = requireFreshWindowTarget(windows, target.pid, target.nativeId);
-        if (observed.active && observed.title === target.title) {
+        // Drift-tolerant: app-scoped input rules are enforced by executable
+        // identity; title-scoped rules still have to match the fresh title.
+        if (observed.active) {
           const executable = await this.executableIdentity(target.pid);
           if (executable &&
               hasRegisteredDesktopInputCandidate(permanent, executable, observed.title)) {
@@ -654,6 +764,9 @@ export class DesktopUiSessionManager {
         try {
           const windows = await listDiscoveredWindows(baseAdapter, MAX_WINDOW_DISCOVERY_LIMIT);
           const observed = requireFreshWindowTarget(windows, target.pid, target.nativeId);
+          // v1 entries still bind to their approved exact title; only the
+          // caller-supplied metadata is refreshed before the exact comparison.
+          if (desktopWindowTitlesMatch(target.title, observed.title)) target.title = observed.title;
           const trustedEntry = trustedWindowMatch(policy, target, observed);
           if (trustedEntry) {
             const expiry = Math.min(Date.now() + ttlMs, trustedEntry.expiresAt);
@@ -740,6 +853,8 @@ export class DesktopUiSessionManager {
       ttlMs,
       inputRequested,
       inputAllowed,
+      allowViewTitleDrift,
+      allowInputTitleDrift,
       ...(trustedGrantId ? { trustedGrantId, trustedTarget } : {}),
       ...(sessionApprovalGrantId ? { sessionApprovalGrantId } : {}),
       ...(registeredGrantId ? { registeredGrantId, registeredIdentity } : {}),
@@ -798,7 +913,12 @@ export class DesktopUiSessionManager {
         throw new DesktopUiError("TARGET_NOT_FOUND", "Target window disappeared or native identity changed.");
       }
       if (observedTitle !== session.target.title) {
-        throw new DesktopUiError("INPUT_DISABLED", "Window title changed after session binding; viewing denied.");
+        if (!session.allowViewTitleDrift) {
+          throw new DesktopUiError("INPUT_DISABLED", "Window title changed after session binding; viewing denied.");
+        }
+        // App-scoped approval: refresh the volatile metadata and continue; the
+        // executable identity and policy are re-verified immediately below.
+        session.target.title = observedTitle;
       }
       const currentRegistry = currentViewRegistry;
       const currentIdentity = await this.executableIdentity(session.target.pid);
@@ -842,6 +962,38 @@ export class DesktopUiSessionManager {
       ...(screenshotImage ? { screenshotImage } : {}),
       ...(screenshotImageOmitted ? { screenshotImageOmitted } : {}),
     };
+  }
+
+  /**
+   * Bounded retry wrapper for live windows: polls `snapshot` until a schema is
+   * assembled or the deadline passes. Only capture-assembly failures are
+   * retried; permission and policy denials fail immediately and stay final.
+   */
+  async waitForStableSnapshot(params: SnapshotParams & {
+    timeoutMs?: number;
+    pollIntervalMs?: number;
+  }): Promise<{
+    schema: DesktopUiSchema;
+    screenshotImage?: string;
+    screenshotImageOmitted?: string;
+    attempts: number;
+    waitedMs: number;
+  }> {
+    const timeoutMs = Math.min(10_000, Math.max(500, params.timeoutMs ?? 3_000));
+    const pollIntervalMs = Math.min(1_000, Math.max(50, params.pollIntervalMs ?? 150));
+    const startedAt = Date.now();
+    let attempts = 0;
+    for (;;) {
+      attempts += 1;
+      try {
+        const snapshot = await this.snapshot(params);
+        return { ...snapshot, attempts, waitedMs: Date.now() - startedAt };
+      } catch (error) {
+        const code = (error as { code?: string } | null)?.code ?? "";
+        if (!STABLE_SNAPSHOT_RETRY_CODES.has(code) || Date.now() - startedAt >= timeoutMs) throw error;
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      }
+    }
   }
 
   async action(params: ActionParams): Promise<DesktopActionReceipt> {
@@ -894,9 +1046,18 @@ export class DesktopUiSessionManager {
         this.consentManager.revokeConsent(session.registeredGrantId);
         throw new DesktopUiError("INPUT_DISABLED", "Target window disappeared or native identity changed.");
       }
-      if (!observedActive || observedTitle !== session.target.title) {
+      if (!observedActive) {
         this.consentManager.revokeConsent(session.registeredGrantId);
         throw new DesktopUiError("INPUT_DISABLED", "Window title or foreground focus changed; input denied.");
+      }
+      if (observedTitle !== session.target.title) {
+        if (!session.allowInputTitleDrift) {
+          this.consentManager.revokeConsent(session.registeredGrantId);
+          throw new DesktopUiError("INPUT_DISABLED", "Window title or foreground focus changed; input denied.");
+        }
+        // App-scoped approval: refresh metadata, then re-verify the exact
+        // executable/element policy against the current title below.
+        session.target.title = observedTitle;
       }
       // Revocation and executable replacement must prevent the *next* input.
       const currentRegistry = this.permanentRegistry();
@@ -1122,7 +1283,8 @@ export const desktopUiTool: Tool = {
   description:
     "Perceive and automate native desktop application windows using bounded discovery and accessibility semantics. " +
     "Commands also expose installed-app inventory, verified Windows app lifecycle, guarded package planning/apply, and read-only security-prompt inspection. " +
-    "The open and inspect_window commands first create an exact-target one-shot session request in Tray Request Center; retry with approvalRequestId after native operator approval. View-only inspection (inspect_window and open with allowInput=false) captures by exact PID/window ID even when the target window is in the background (on Windows via PrintWindow and on macOS via screencapture -l <cgWindowId>); native input (open with allowInput=true and action) requires the target window to be foreground (use focus_window first if in background), and open requires the exact full title from find_window/list_windows. " +
+    "The open and inspect_window commands first create an exact-target one-shot session request in Tray Request Center; retry with approvalRequestId after native operator approval. View-only inspection (inspect_window and open with allowInput=false) captures by exact PID/window ID even when the target window is in the background (on Windows via PrintWindow and on macOS via screencapture -l <cgWindowId>); native input (open with allowInput=true and action) requires the target window to be foreground (use focus_window first if in background). " +
+    "pid+nativeId identify the window while title is volatile metadata canonicalized from fresh OS discovery, so renamed live apps remain usable; perception tolerates bounded animation but still fails closed on gross changes, and each action is fenced to the exact semantic element. " +
     "This does not bypass Host File Policy or permanent host ACL. Lifecycle mutation requires exact host consent; package mutation additionally requires separate host-operator approval bound to the exact operation.",
   parameters: {
     type: "object",
@@ -1130,12 +1292,12 @@ export const desktopUiTool: Tool = {
     properties: {
       command: {
         type: "string",
-        enum: ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "action", "close"],
+        enum: ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "wait_ready", "action", "close"],
         description: "Desktop UI command to execute.",
       },
       action: {
         type: "string",
-        enum: ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "action", "close", "click", "type", "key", "scroll"],
+        enum: ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "wait_ready", "action", "close", "click", "type", "key", "scroll"],
         description: "Alternative command name or action kind. command='action' with action='click' is supported.",
       },
       subAction: {
@@ -1147,7 +1309,7 @@ export const desktopUiTool: Tool = {
       query: { type: "string", minLength: 1, maxLength: 256, description: "Case-insensitive application/title query for find_window." },
       pid: { type: "integer", minimum: 1, description: "Exact process ID for open/inspect_window or optional find_window filter." },
       nativeId: { type: "string", minLength: 1, maxLength: 256, description: "Exact native window ID for open/inspect_window." },
-      title: { type: "string", minLength: 1, maxLength: 512, description: "Exact full window title from find_window/list_windows for 'open' (never truncated); metadata only, never used as authorization." },
+      title: { type: "string", maxLength: 512, description: "Optional window title from find_window/list_windows for 'open'. Canonicalized from fresh OS discovery; pid+nativeId are the identity and a stale/truncated title is corrected, never trusted." },
       allowInput: {
         type: "boolean",
         description: "true requests one-session native input; false requests view-only. A Request Center native approval is required before session creation.",
@@ -1174,6 +1336,12 @@ export const desktopUiTool: Tool = {
         minimum: MIN_SESSION_TTL_MS,
         maximum: MAX_SESSION_TTL_MS,
         description: "Absolute session TTL; activity does not extend it.",
+      },
+      timeoutMs: {
+        type: "integer",
+        minimum: 500,
+        maximum: 10000,
+        description: "wait_ready deadline in milliseconds; the command polls until a schema is assembled or this budget expires.",
       },
       sessionToken: {
         type: "string",
@@ -1237,7 +1405,7 @@ export const desktopUiTool: Tool = {
       let command = typeof args.command === "string" ? args.command.trim().toLowerCase() : "";
       const rawAction = typeof args.action === "string" ? args.action.trim().toLowerCase() : "";
       if (!command) {
-        command = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "action", "close"].includes(rawAction as any)
+        command = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "wait_ready", "action", "close"].includes(rawAction as any)
           ? rawAction
           : ["click", "type", "key", "scroll"].includes(rawAction)
             ? "action"
@@ -1340,6 +1508,16 @@ export const desktopUiTool: Tool = {
           }
           return JSON.stringify({ success: true, approvalConsumed: true, session }, null, 2);
         }
+        case "wait_ready": {
+          const snapshot = await desktopUiSessionManager.waitForStableSnapshot({
+            sessionToken: String(args.sessionToken ?? ""),
+            ownerPrincipal: LOCAL_DESKTOP_UI_OWNER,
+            includeScreenshotImage: args.includeScreenshotImage === true,
+            maxImageBytes: typeof args.maxImageBytes === "number" ? args.maxImageBytes : undefined,
+            timeoutMs: typeof args.timeoutMs === "number" ? args.timeoutMs : undefined,
+          });
+          return JSON.stringify({ success: true, ...snapshot }, null, 2);
+        }
         case "snapshot": {
           const snapshot = await desktopUiSessionManager.snapshot({
             sessionToken: String(args.sessionToken ?? ""),
@@ -1384,7 +1562,11 @@ export const desktopUiTool: Tool = {
     } catch (error: any) {
       const code = error?.code || "DESKTOP_UI_ERROR";
       const message = sanitizeDesktopUiLogText(error?.message || String(error)) || "Desktop UI error";
-      return JSON.stringify({ success: false, isError: true, code, error: message }, null, 2);
+      return JSON.stringify({
+        success: false, isError: true, code, error: message,
+        ...desktopUiErrorGuidance(code),
+      }, null, 2);
     }
   },
 };
+

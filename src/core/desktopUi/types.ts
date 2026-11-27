@@ -75,6 +75,11 @@ export interface DesktopScreenshotIdentity {
   pixelRatioX: number;
   pixelRatioY: number;
   targetWindow: DesktopWindow;
+  /**
+   * Observed share of sampled pixels that changed while this schema was being
+   * assembled (0 = static window). Diagnostic only: it never authorizes input.
+   */
+  changeRatio?: number;
 }
 
 export interface DesktopUiSchema {

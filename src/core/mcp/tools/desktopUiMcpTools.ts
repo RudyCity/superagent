@@ -8,6 +8,7 @@ import {
   assertDesktopUiDiscoveryCommandFields,
   assertNoDesktopUiRawCoordinates,
   desktopAppManager,
+  desktopUiErrorGuidance,
   desktopUiSessionManager,
   sanitizeDesktopUiLogText,
   type ActionParams,
@@ -30,7 +31,7 @@ export interface DesktopUiMcpContext {
 }
 
 const actionKinds = ["click", "type", "key", "scroll"] as const;
-const commands = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "live_inventory", "live_stop", "open", "snapshot", "action", "close"] as const;
+const commands = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "live_inventory", "live_stop", "open", "snapshot", "wait_ready", "action", "close"] as const;
 
 const inputSchema = {
   type: "object",
@@ -55,7 +56,7 @@ const inputSchema = {
     query: { type: "string", minLength: 1, maxLength: 256, description: "Case-insensitive application/title query for find_window." },
     pid: { type: "integer", minimum: 1, description: "Exact process ID for open/inspect_window or optional find_window filter." },
     nativeId: { type: "string", minLength: 1, maxLength: 256, description: "Exact native window ID for open/inspect_window." },
-    title: { type: "string", minLength: 1, maxLength: 512, description: "Exact full window title returned by find_window/list_windows (never truncated); metadata only, never authorization." },
+    title: { type: "string", maxLength: 512, description: "Optional window title from find_window/list_windows. The Core canonicalizes it from fresh OS discovery; pid+nativeId are the identity, so a stale, truncated, or renamed title is corrected instead of trusted." },
     allowInput: {
       type: "boolean",
       description: "true requests input; false forces read-only. Omission auto-requests only an exact currently Trusted window, and still requires a fresh native host approval.",
@@ -74,6 +75,12 @@ const inputSchema = {
       minimum: MIN_SESSION_TTL_MS,
       maximum: MAX_SESSION_TTL_MS,
       description: "Absolute session TTL; activity never extends it.",
+    },
+    timeoutMs: {
+      type: "integer",
+      minimum: 500,
+      maximum: 10000,
+      description: "wait_ready deadline in milliseconds (default 3000); polls perception until a schema is assembled or the budget expires.",
     },
     liveId: { type: "string", minLength: 1, maxLength: 210, description: "Exact Desktop Live inventory ID for releasing one owned session." },
     leaseToken: { type: "string", minLength: 32, maxLength: 128, pattern: "^[a-zA-Z0-9_-]{32,128}$", description: "Opaque owner capability issued for this exact desktop or CDP session." },
@@ -139,7 +146,10 @@ export const DESKTOP_UI_MCP_TOOL_DEFS = [
     name: "superagent_desktop_ui",
     description:
       "Dangerous host-local desktop perception, exact app lifecycle, package planning/apply, and read-only security-prompt inspection. "
-      + "The open command still creates only a scoped window session; view-only inspection (inspect_window and open with allowInput=false) captures by exact PID/window ID even when the target window is in the background (on Windows via PrintWindow and on macOS via screencapture -l <cgWindowId>), whereas input sessions/actions (open with allowInput=true and action) require the target window to be foreground (call focus_window first if needed) and open requires the exact full title from find_window/list_windows; launch_app separately launches a freshly verified installed application. "
+      + "The open command creates only a scoped window session; view-only inspection (inspect_window and open with allowInput=false) captures by exact PID/window ID even when the target window is in the background (on Windows via PrintWindow and on macOS via screencapture -l <cgWindowId>), whereas input sessions/actions (open with allowInput=true and action) require the target window to be foreground (call focus_window first if needed). "
+      + "pid+nativeId identify the window; title is volatile metadata that is canonicalized from fresh OS discovery, so live apps that rename themselves (active document, conversation name, progress suffix) stay usable. App-scoped host approvals (no windowTitle scope) tolerate title drift; title-scoped approvals still require the exact approved title. "
+      + "Perception tolerates bounded animation between captures while still failing closed on gross window changes, and every action is fenced to the exact semantic element and executable identity. "
+      + "wait_ready polls perception with a bounded deadline so live windows can settle; failures return retryable/retryAfterMs/nextAction guidance. "
       + "Lifecycle mutation requires exact host consent; package mutation requires one-shot host-operator approval bound to digest, principal, target, and invocation. "
       + "This tool is principal-bound and unavailable for SSH/chain workspaces; no raw shell, implicit elevation, or model-controlled approval is accepted.",
     inputSchema,
@@ -154,7 +164,10 @@ function errorResult(code: string, error: string): McpToolResult {
   return {
     content: [{
       type: "text",
-      text: JSON.stringify({ success: false, isError: true, code, error }, null, 2),
+      text: JSON.stringify({
+        success: false, isError: true, code, error,
+        ...desktopUiErrorGuidance(code),
+      }, null, 2),
     }],
     isError: true,
   };
@@ -311,6 +324,19 @@ export async function dispatchDesktopUiMcpTool(
           ownerPrincipal: context.principalId,
           includeScreenshotImage: rawArgs.includeScreenshotImage === true,
           maxImageBytes: typeof rawArgs.maxImageBytes === "number" ? rawArgs.maxImageBytes : undefined,
+        });
+        result = { success: true, ...snapshot };
+        break;
+      }
+      case "wait_ready": {
+        // Bounded retry for live windows: perception assembly may fail on a
+        // frame that moved; permission and policy denials are never retried.
+        const snapshot = await desktopUiSessionManager.waitForStableSnapshot({
+          sessionToken: String(rawArgs.sessionToken ?? ""),
+          ownerPrincipal: context.principalId,
+          includeScreenshotImage: rawArgs.includeScreenshotImage === true,
+          maxImageBytes: typeof rawArgs.maxImageBytes === "number" ? rawArgs.maxImageBytes : undefined,
+          timeoutMs: typeof rawArgs.timeoutMs === "number" ? rawArgs.timeoutMs : undefined,
         });
         result = { success: true, ...snapshot };
         break;
