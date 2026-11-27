@@ -904,7 +904,62 @@
     const secondaryGrid = make("div", "access-mcp-grid access-mcp-grid-secondary");
     secondaryGrid.append(identityCard);
 
-    pane.append(introduction, notice, workspaceGrid, telemetryGrid, secondaryGrid);
+    const discoveryCard = make("section", "access-stored access-mcp-card");
+    discoveryCard.id = "access-desktop-discovery-policy";
+    const discoveryHead = make("div", "access-mcp-intro-head");
+    discoveryHead.append(make("h3", "", "Penemuan read-only Desktop UI"));
+    const discoveryBody = make("div", "access-mcp-intro-copy");
+    discoveryBody.append(make("p", "",
+      "Tool MCP boleh membaca daftar jendela, judul, dan snapshot dari jendela yang sudah disetujui " +
+      "tanpa persetujuan Execute proyek. Default nonaktif. Input, peluncuran, dan penutupan aplikasi " +
+      "tetap memerlukan persetujuan operator."));
+    const discoveryToggle = make("label", "access-check");
+    const discoveryInput = make("input");
+    discoveryInput.id = "access-desktop-discovery-toggle";
+    discoveryInput.type = "checkbox";
+    discoveryInput.checked = false;
+    discoveryToggle.append(discoveryInput, make("span", "",
+      "Izinkan penemuan read-only tanpa persetujuan proyek"));
+    const discoveryState = make("span", "access-muted", "Memuat kebijakan...");
+    const describeDiscoveryPolicy = (requiresDangerous) => requiresDangerous
+      ? "Nonaktif: penemuan read-only tetap memerlukan persetujuan proyek."
+      : "Aktif: penemuan read-only diizinkan tanpa persetujuan proyek.";
+    if (typeof invoke === "function") {
+      discoveryInput.disabled = true;
+      discoveryInput.addEventListener("change", () => {
+        const requiresDangerous = discoveryInput.checked !== true;
+        void (async () => {
+          try {
+            const saved = await invoke("set_desktop_ui_discovery_policy", {
+              discoveryRequiresDangerousTool: requiresDangerous,
+            });
+            discoveryInput.checked = saved === false;
+            discoveryState.textContent = describeDiscoveryPolicy(saved !== false);
+            status("Kebijakan penemuan Desktop UI disimpan.", "success");
+          } catch {
+            discoveryInput.checked = !requiresDangerous;
+            discoveryState.textContent = "Gagal menyimpan kebijakan; pengaturan sebelumnya dipertahankan.";
+            status("Gagal menyimpan kebijakan penemuan Desktop UI.", "error");
+          }
+        })();
+      });
+      void (async () => {
+        try {
+          const requiresDangerous = await invoke("get_desktop_ui_discovery_policy");
+          discoveryInput.checked = requiresDangerous === false;
+          discoveryState.textContent = describeDiscoveryPolicy(requiresDangerous !== false);
+        } catch {
+          discoveryState.textContent = "Kebijakan tidak terbaca; default ketat berlaku.";
+        } finally {
+          discoveryInput.disabled = false;
+        }
+      })();
+    } else {
+      discoveryInput.disabled = true;
+      discoveryState.textContent = "Kebijakan hanya dapat diubah dari Tray.";
+    }
+    discoveryCard.append(discoveryHead, discoveryBody);
+    pane.append(introduction, notice, workspaceGrid, telemetryGrid, secondaryGrid, discoveryCard);
     return pane;
   }
 

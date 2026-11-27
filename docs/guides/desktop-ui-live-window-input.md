@@ -121,6 +121,11 @@ dangerous-tool project Execute gate: `probe`, `list_windows`, `list_monitors`,
 `open`, `action`, `close`, `launch_app`, `restart_app`, `close_app`,
 `live_stop`, `plan_package_change` and `apply_package_change` always require it.
 
+The Tray exposes this as a checkbox in the MCP connections pane ("Izinkan
+penemuan read-only tanpa persetujuan proyek"); enabling it writes the file through
+an authenticated, atomic, symlink-safe command. The checkbox reflects the effective
+state and leaves the previous value untouched when a save fails.
+
 Missing, malformed, oversized or symlinked policy files fail closed to the strict
 default. MCP clients cannot self-grant this: only the host-side file changes it.
 Host file policy, window identity, permanent access rules and native consent are

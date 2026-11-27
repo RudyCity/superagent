@@ -4774,6 +4774,8 @@ fn main() {
             desktop_input_trust::revoke_desktop_input_window,
             desktop_input_trust::revoke_all_desktop_input_windows,
             desktop_access_registry::get_permanent_access_registry,
+            desktop_access_registry::get_desktop_ui_discovery_policy,
+            desktop_access_registry::set_desktop_ui_discovery_policy,
             desktop_access_registry::list_installed_desktop_apps,
             desktop_access_registry::pick_permanent_access_executable,
             desktop_access_registry::pick_permanent_access_path,

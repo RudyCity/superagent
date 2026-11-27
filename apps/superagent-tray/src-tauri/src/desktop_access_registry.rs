@@ -1242,6 +1242,87 @@ pub(crate) fn deny_pending_active_rule_request(
     let _ = tauri::Emitter::emit(&app, "access-manager://requests-updated", ());
     Ok(items)
 }
+const UI_POLICY_FILENAME: &str = "desktop-ui-policy.json";
+const MAX_UI_POLICY_BYTES: u64 = 4096;
+
+/// Operator intent for read-only Desktop UI discovery. Stored beside the
+/// registry so the Tray owns the decision; Core reads the same file.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DesktopUiPolicy {
+    version: u8,
+    discovery_requires_dangerous_tool: bool,
+}
+impl Default for DesktopUiPolicy {
+    fn default() -> Self {
+        Self { version: 1, discovery_requires_dangerous_tool: true }
+    }
+}
+fn ui_policy_path(dir: &Path) -> PathBuf {
+    dir.join(UI_POLICY_FILENAME)
+}
+/// Missing, malformed, oversized or symlinked policies fail closed to strict.
+fn read_ui_policy(dir: &Path) -> DesktopUiPolicy {
+    let target = ui_policy_path(dir);
+    let Ok(meta) = fs::symlink_metadata(&target) else { return DesktopUiPolicy::default() };
+    if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > MAX_UI_POLICY_BYTES {
+        return DesktopUiPolicy::default();
+    }
+    let Ok(bytes) = fs::read(&target) else { return DesktopUiPolicy::default() };
+    match serde_json::from_slice::<DesktopUiPolicy>(&bytes) {
+        Ok(policy) if policy.version == 1 => policy,
+        _ => DesktopUiPolicy::default(),
+    }
+}
+fn write_ui_policy(dir: &Path, requires_dangerous: bool) -> Result<DesktopUiPolicy, String> {
+    fs::create_dir_all(dir).map_err(|_| "Cannot create config directory")?;
+    let target = ui_policy_path(dir);
+    if let Ok(meta) = fs::symlink_metadata(&target) {
+        if !meta.is_file() || meta.file_type().is_symlink() {
+            return Err("Unsafe policy destination".into());
+        }
+    }
+    let policy = DesktopUiPolicy {
+        version: 1,
+        discovery_requires_dangerous_tool: requires_dangerous,
+    };
+    let bytes = serde_json::to_vec_pretty(&policy).map_err(|_| "Cannot encode policy")?;
+    let tmp = dir.join(format!("desktop-ui-policy-{}.tmp", uuid::Uuid::new_v4()));
+    {
+        let mut file = OpenOptions::new().create_new(true).write(true).open(&tmp)
+            .map_err(|_| "Cannot create policy transaction")?;
+        if file.write_all(&bytes).and_then(|_| file.sync_all()).is_err() {
+            let _ = fs::remove_file(&tmp);
+            return Err("Cannot commit policy transaction".into());
+        }
+    }
+    if fs::rename(&tmp, &target).is_err() {
+        let _ = fs::remove_file(&tmp);
+        return Err("Cannot replace policy atomically".into());
+    }
+    Ok(policy)
+}
+
+#[tauri::command]
+pub(crate) async fn get_desktop_ui_discovery_policy(
+    window: tauri::WebviewWindow,
+) -> Result<bool, String> {
+    focused(&window, false)?;
+    let dir = super::config_dir()?;
+    Ok(read_ui_policy(&dir).discovery_requires_dangerous_tool)
+}
+
+#[tauri::command]
+pub(crate) async fn set_desktop_ui_discovery_policy(
+    window: tauri::WebviewWindow,
+    discovery_requires_dangerous_tool: bool,
+) -> Result<bool, String> {
+    focused(&window, false)?;
+    let dir = super::config_dir()?;
+    write_ui_policy(&dir, discovery_requires_dangerous_tool)
+        .map(|policy| policy.discovery_requires_dangerous_tool)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1434,6 +1515,17 @@ mod tests {
         assert!(make(Some(TitlePolicy::App)).same_target(&make(Some(TitlePolicy::App))));
         assert!(!make(Some(TitlePolicy::App)).same_target(&make(Some(TitlePolicy::Exact))));
         assert!(!make(Some(TitlePolicy::App)).same_target(&make(None)));
+    }
+    #[test]
+    fn desktop_ui_discovery_policy_defaults_strict_and_round_trips() {
+        let root = std::env::temp_dir().join(format!("ui-policy-{}", uuid::Uuid::new_v4()));
+        assert!(read_ui_policy(&root).discovery_requires_dangerous_tool);
+        let written = write_ui_policy(&root, false).unwrap();
+        assert!(!written.discovery_requires_dangerous_tool);
+        assert!(!read_ui_policy(&root).discovery_requires_dangerous_tool);
+        fs::write(ui_policy_path(&root), b"{\"version\":2,\"discoveryRequiresDangerousTool\":false}").unwrap();
+        assert!(read_ui_policy(&root).discovery_requires_dangerous_tool);
+        let _ = fs::remove_dir_all(root);
     }
     #[test]
     fn audit_entry_appends_and_reads_back() {

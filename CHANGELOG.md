@@ -1,3 +1,9 @@
+## [1.14.119] - 2026-11-27
+### Tray toggle for read-only Desktop UI discovery
+- Add a Tray control that writes `desktop-ui-policy.json`: "Izinkan penemuan read-only tanpa persetujuan proyek". Default stays strict; enabling it lets only the read-only Desktop UI commands skip the project Execute grant, while input, launch, close, lifecycle and package actions still require operator approval.
+- Add authenticated Tauri commands `get_desktop_ui_discovery_policy` / `set_desktop_ui_discovery_policy` with atomic, symlink-safe writes and fail-closed reads (missing, malformed, oversized or symlinked files stay strict).
+- Show the effective state next to the toggle, report save failures without changing the stored policy, and cover the reader/writer with a Rust test plus the existing Tray UI regression suite.
+
 ## [1.14.118] - 2026-11-27
 ### Tray writes explicit registry v3 title policies
 - New Tray approvals now emit an explicit `titlePolicy` on desktop rules: `exact` when the operator approved one window title, `app` when the whole application is approved. Existing entries without the field keep the legacy inference, so no migration is required.
