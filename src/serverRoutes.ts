@@ -3546,6 +3546,55 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Read-only CDP session projection for authenticated local desktop clients.
+  // Returns claim metadata only: no tokens, cookies, or page content.
+  if (pathname === "/api/browser/sessions") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    if (req.method !== "GET") {
+      sendJSON(res, 405, { ok: false, error: "GET required." });
+      return true;
+    }
+    const remote = req.socket.remoteAddress;
+    if (remote !== "127.0.0.1" && remote !== "::1" && remote !== "::ffff:127.0.0.1") {
+      sendJSON(res, 403, { ok: false, error: "Local desktop clients only." });
+      return true;
+    }
+    try {
+      const { listCdpSessions } = await import("./core/tools/chromeCdpSessionManager.js");
+      const sessions = await listCdpSessions();
+      const agents = new Set<string>();
+      const projected = sessions.map(session => {
+        const participants = (session.participants ?? []).map(member => ({
+          agentId: member.agentId,
+          role: member.role,
+        }));
+        for (const member of participants) agents.add(member.agentId);
+        return {
+          key: session.key,
+          port: session.port,
+          targetId: session.targetId,
+          agentId: session.agentId,
+          mode: session.mode,
+          revision: session.revision ?? 0,
+          paused: session.paused === true,
+          generation: session.generation,
+          claimedAt: session.claimedAt,
+          expiresAt: session.expiresAt,
+          participants,
+        };
+      });
+      sendJSON(res, 200, {
+        ok: true,
+        sessions: projected,
+        summary: { activeTabs: projected.length, activeAgents: agents.size },
+      });
+    } catch {
+      sendJSON(res, 500, { ok: false, error: "CDP session metadata unavailable." });
+    }
+    return true;
+  }
+
   // Explicitly scoped browser sharing API for authenticated T-Line clients.
   // No arbitrary CDP action execution through this endpoint.
     // Secure Human Takeover API & UI (Milestone M3)
