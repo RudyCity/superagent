@@ -1,3 +1,8 @@
+## [1.14.124] - 2026-11-28
+### Windows standalone packaging: host digest without cmdlet dependency
+- `scripts/build-desktop-host.ps1` computed the staged host digest with `Get-FileHash`, which the trusted Windows Actions runner could not resolve, so `bun run installer:prepare` failed with `[standalone] Desktop UI host build failed (code 1, error none)` after the Rust release build had already succeeded. The script now hashes the PE image with `System.Security.Cryptography.SHA256` directly and keeps the same lowercase 64-hex contract consumed by `desktop-host.sha256`, `installer:verify` and `desktopUiHostArtifact`.
+- Local evidence: `powershell.exe -NoProfile -File scripts/build-desktop-host.ps1` prints `DESKTOP_HOST_BUILD_PASS sha256=872e0476... size=36352` and writes the matching sidecar. `installer:prepare` still fails closed on a developer desktop with `Only a trusted hosted Windows Actions runner may package native UIA`, which is the intended gate; the Windows runner is the certifying environment.
+
 ## [1.14.123] - 2026-11-28
 ### CI regression repair: Tray MCP prompt contract, registry-aware provider tests and globstar search
 - **Tray Runtime mount contract.** `runtime.js` hydrates the operator MCP agent prompt before the first scan, so `desktopRuntimeUi` now asserts the real mount order (prompt hydration first, exactly one `detect_runtime`) and stubs `get_mcp_agent_prompt` in the harness instead of assuming a fixed call index. This single assertion had kept `SuperAgent Installer and Tray CI` (linux-x64, macos-arm64, windows-x64) and `MCP Fast Regression` red for four consecutive pushes.

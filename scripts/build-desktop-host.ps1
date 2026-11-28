@@ -30,6 +30,20 @@ if ($sources.Count -eq 0) {
   throw "Desktop host source set is empty: $sourceDir"
 }
 
+# Digest the built image without depending on the Get-FileHash cmdlet, which is
+# not resolvable in every restricted CI PowerShell session.
+function Get-HostFileSha256([string] $path) {
+  $stream = [System.IO.File]::OpenRead($path)
+  try {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+      return ([System.BitConverter]::ToString($sha.ComputeHash($stream)) -replace "-", "").ToLowerInvariant()
+    }
+    finally { $sha.Dispose() }
+  }
+  finally { $stream.Dispose() }
+}
+
 # System assemblies that ship with every Windows .NET Framework 4.x install.
 $frameworkReferences = @(
   (Join-Path $frameworkDir "System.dll"),
@@ -123,7 +137,7 @@ try {
   $exe = Join-Path $buildDir "desktop-host.exe"
   Invoke-HostCompile $exe
   $imageSize = Assert-HostImage $exe
-  $digest = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+  $digest = Get-HostFileSha256 $exe
   if ($digest -notmatch '^[a-f0-9]{64}$') {
     throw "Desktop host digest is unavailable."
   }
