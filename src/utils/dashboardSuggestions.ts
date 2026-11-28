@@ -15,6 +15,8 @@ import {
   SERVER_TUNNEL_SUGGESTIONS,
   BRAIN_SUGGESTIONS,
   BRAIN_SUGGESTION_DESCRIPTIONS,
+  DOCTOR_SUGGESTIONS,
+  DOCTOR_SUGGESTION_DESCRIPTIONS,
 } from "../core/commands/commandCatalog.js";
 
 const DASHBOARD_DISABLED_COMMANDS = new Set(["/goal"]);
@@ -991,6 +993,10 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       return filterSuggestions(["/tunnels", "/tunnel list"], query);
     }
 
+    if (mainCommand === "/doctor") {
+      return filterSuggestions(DOCTOR_SUGGESTIONS, query);
+    }
+
     if (mainCommand === "/security") {
       return filterSuggestions(["/security", "/security sandbox status", "/security sandbox doctor", "/security sandbox enable", "/security sandbox disable", "/security block add", "/security block remove", "/security block list", "/security block check", "/security block clear"], query);
     }
@@ -1052,7 +1058,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
 
 
 export function getSuggestionDescriptions(): Record<string, string> {
-  const desc: Record<string, string> = { ...BUILTIN_DESCRIPTIONS };
+  const desc: Record<string, string> = { ...BUILTIN_DESCRIPTIONS, ...DOCTOR_SUGGESTION_DESCRIPTIONS };
   for (const [suggestion, description] of Object.entries(BRAIN_SUGGESTION_DESCRIPTIONS)) {
     desc[suggestion] = description;
     desc[suggestion.replace(/^\/brain/, "/scratch")] = description;

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { statusCommand } from "../src/core/commands/serviceStatusCommand.js";
-import { doctorCommand } from "../src/core/commands/processDoctorCommand.js";
+import { doctorCommand } from "../src/core/commands/doctorCommand.js";
 import { getProcessSupervisor, resetProcessSupervisorForTest } from "../src/core/process/processSupervisor.js";
 import { getRuntimeGeneration, type ProcessRecord } from "../src/core/process/processRegistry.js";
 
@@ -103,6 +103,6 @@ describe("Process CLI read-only observability and workspace privacy", () => {
   });
   it("/doctor refuses unsupported input instead of other OS scans", async () => {
     await doctorCommand.execute("all",ctx());
-    expect(lines.join("\n")).toContain("Usage: /doctor processes");
+    expect(lines.join("\n")).toContain("Usage: /doctor [processes|terminal|tools");
   });
 });

@@ -13,6 +13,28 @@ export const COMMAND_DOMAIN_DESCRIPTIONS: Record<CommandDomain, string> = {
   server: "Manage SuperAgent's REST/SSE server exposure.",
 };
 
+/**
+ * `/doctor` is a single read-only dispatcher: process supervisor, interactive
+ * terminal state, and the MCP tool catalog audit.
+ */
+export const DOCTOR_SUGGESTIONS = [
+  "/doctor",
+  "/doctor processes",
+  "/doctor terminal",
+  "/doctor tools",
+  "/doctor tools all",
+  "/doctor tools fast",
+];
+
+export const DOCTOR_SUGGESTION_DESCRIPTIONS: Record<string, string> = {
+  "/doctor": "Read-only diagnostics for the process supervisor, terminal input and MCP tool catalog",
+  "/doctor processes": "Process supervisor registry, ownership and reconciliation findings",
+  "/doctor terminal": "Interactive stdin/TTY state, last mount snapshot, and one verdict",
+  "/doctor tools": "Audit MCP tool catalog schema, dependencies and readiness",
+  "/doctor tools all": "Run the full MCP tool audit including smoke tests",
+  "/doctor tools fast": "Run the MCP tool audit without smoke tests",
+};
+
 export const MUSE_TUNNEL_SUGGESTIONS = [
   "/muse tunnel list",
   "/muse tunnel start",

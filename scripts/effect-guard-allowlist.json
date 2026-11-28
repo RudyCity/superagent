@@ -1,0 +1,3 @@
+{
+  "322d0b50": "Removed both process.stdin.resume() calls (App mount effect and pre-render CLI bootstrap) while converting effects to lifecycle logging, leaving the TUI rendered but deaf to keys. Both were restored in 1.14.126 and 1.14.127, and source guards now pin them. Entry retained so the historical commit does not fail every run; do not add new SHAs without a reviewed reason."
+}
