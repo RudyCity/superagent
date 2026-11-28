@@ -1,3 +1,10 @@
+## [1.14.136] - 2026-11-28
+### Runtime log: the durable line is on disk before the call returns
+- Root cause of the remaining `ubuntu-24.04` Core guardian failure: `logToSuperAgentServerFile` appended asynchronously (`fs.appendFile(..., () => {})`). A short-lived host that decides and exits in the same tick — exactly what `core boot` does on the already-running path — could exit before the write was flushed, so its "verified owner already active" decision line never reached `superagent-server.log` on Linux (it happened to survive on Windows).
+- The durable sink now uses `fs.appendFileSync`, so a logged line is readable as soon as the logger returns. The cost is one small synchronous append per log line; durability of the decision record is worth it for a log the Tray and the acceptance scripts read back.
+- `tests/runtimeLog.test.ts` pins the behaviour: log a marker, read the log synchronously, expect the marker — no event-loop turn in between.
+- Guardian acceptance verified locally end to end: `bun scripts/verify-core-guardian.ts` exits 0 with all 30 checks on the rebuilt `dist/`.
+
 ## [1.14.135] - 2026-11-28
 ### Guardian boot check: accept either runtime-log channel and print the evidence
 - After `1.14.134` the Windows matrix job passed but `ubuntu-24.04` still failed the same check, so the durable-line assertion alone does not cover every channel the boot child can use. The check now accepts the no-op decision from the durable `superagent-server.log` line **or** an echoed stdout line, and still requires exit status 0 so a boot that restarts or takes over the owner keeps failing closed.

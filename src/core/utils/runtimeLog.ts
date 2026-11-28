@@ -121,7 +121,10 @@ export function logToSuperAgentServerFile(message: string): void {
     if (size !== null && size > SERVER_LOG_MAX_BYTES) {
       fs.writeFileSync(filePath, `[${timestamp}] [INFO] Log file rotated (exceeded 5MB limit)\n`);
     }
-    fs.appendFile(filePath, logLine, () => {});
+    // Synchronous append: a short-lived host (for example `core boot`, which
+    // decides and exits in the same tick) must not lose its last line when the
+    // process ends before an async write is flushed.
+    fs.appendFileSync(filePath, logLine);
   } catch {
     // Ignore logging errors.
   }

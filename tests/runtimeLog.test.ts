@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +8,7 @@ import {
   describeRuntimeLogEcho,
   formatRuntimeLogArgs,
   isRuntimeLogTerminalEchoEnabled,
+  logToSuperAgentServerFile,
   parseRuntimeLogEchoOverride,
   runtimeLogEchoState,
   setRuntimeLogTerminalEcho,
@@ -157,5 +159,16 @@ describe("server wiring guards", () => {
   it("keeps one durable sink definition for the Tray log", () => {
     expect(serverSource).not.toContain("function logToSuperAgentServerFile");
     expect(serverSource).toMatch(/export \{ logToSuperAgentServerFile/);
+  });
+});
+
+describe("durable sink timing", () => {
+  // A short-lived host (`core boot` decides and exits in the same tick) used to
+  // lose its decision line because the append was asynchronous. The durable
+  // line must be on disk by the time the call returns.
+  it("writes the line before returning, without waiting for an event loop turn", () => {
+    const marker = "durable-sync-" + crypto.randomUUID();
+    logToSuperAgentServerFile(marker);
+    expect(readFileSync(superAgentServerLogPath(), "utf8")).toContain(marker);
   });
 });
