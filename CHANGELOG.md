@@ -23,6 +23,13 @@
 - **Regression lock.** `tests/cliStdin.test.ts` covers resume-on-paused-TTY, resumed-when-already-flowing, never-resume-piped/non-TTY, a throwing `resume()`, the diagnostic snapshot defaults, and a source guard asserting the mount effect still calls `ensureCliStdinFlowing(process.stdin)` next to `App component mounted` — the exact edit that caused this incident.
 - **Verification.** `bun --bun x tsc` exits 0; the focused input suite (`cliStdin`, `cliInputDoctor`, `cliInputResponsiveness`, `chatTextInputEscape`) is 16/16 green; `scripts/write-core-build-manifest.ts` rebuilds `dist/core-build-identity.json` (1074 files, `fresh: true`) and `dist/app.js` now carries `ensureCliStdinFlowing(process.stdin)`.
 
+## [1.14.129] - 2026-11-28
+### Test reporting: stop the directory-frame EISDIR from masking unhandled errors
+- `Bun Runtime Validation` had been red since 2026-11-24 even though the whole regression passed (1129 files, 8999 tests). Vitest renders an unhandled error's stack by feeding each frame's `file` to `readFileSync`; a native frame prints as `at spawn (native)`, that relative path resolves to this repository's `native/` **directory**, and the read throws `EISDIR`. Vitest then reported the formatting failure as the unhandled error, so the real error never appeared and the job exited 1.
+- `patches/vitest@4.1.10.patch` (registered through `patchedDependencies`, the same mechanism already used for `ink-text-input` and `mammoth`) wraps that read in `try/catch` and returns no sourcemap for an unreadable frame. Error messages, frames and test results are unaffected; only the crash is removed.
+- Evidence: a full local run before the patch reported `EISDIR` twice and `Errors 10`; after the patch `EISDIR` is 0 and the remaining 8 unhandled errors are the expected `ffmpeg`-missing rejections of this host (ffmpeg is installed on the CI runner, where those suites pass).
+- Release parity: `package.json` was ahead of `tauri.conf.json`/`Cargo.toml` after the `/doctor` work, so all four version fields are aligned at `1.14.129` again.
+
 ## [1.14.125] - 2026-11-28
 ### Code-to-Video: no unhandled rejection from the FFmpeg stall guard
 - `renderStudioBrowserVideo` raced `stdin`'s `drain` against `closed.then(() => { throw ... })`. When the drain won — normal backpressure on a busy runner — the guard promise rejected with no handler, so Vitest reported unhandled rejections and `Bun Runtime Validation` failed with 2 "Test Run Error" entries even though all 1129 test files passed.

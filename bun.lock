@@ -64,6 +64,7 @@
     "r-memory",
   ],
   "patchedDependencies": {
+    "vitest@4.1.10": "patches/vitest@4.1.10.patch",
     "ink-text-input@6.0.0": "patches/ink-text-input@6.0.0.patch",
     "mammoth@1.12.0": "patches/mammoth@1.12.0.patch",
   },

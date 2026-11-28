@@ -1,0 +1,17 @@
+diff --git a/dist/chunks/cli-api.BK8pd4xc.js b/dist/chunks/cli-api.BK8pd4xc.js
+index 1fbd189a39af6fbc5dac2d572ce1e414e52afdfa..063053a4521adc5a0cffd6296c70b9bb3457e3a5 100644
+--- a/dist/chunks/cli-api.BK8pd4xc.js
++++ b/dist/chunks/cli-api.BK8pd4xc.js
+@@ -12633,7 +12633,11 @@ class TestRun {
+ 				else error.stacks = parseErrorStacktrace(error, {
+ 					frameFilter: project.config.onStackTrace,
+ 					getSourceMap(file) {
+-						if (!project.vite.moduleGraph.getModuleById(file)?.transformResult && existsSync(file)) return extractSourcemapFromFile(readFileSync(file, "utf-8"), file)?.map;
++						if (!project.vite.moduleGraph.getModuleById(file)?.transformResult && existsSync(file)) {
++							// A frame like "at spawn (native)" resolves to a repository directory;
++							// reading it throws EISDIR and replaces the real error. Skip such frames.
++							try { return extractSourcemapFromFile(readFileSync(file, "utf-8"), file)?.map; } catch { return void 0; }
++						}
+ 					}
+ 				});
+ 			});

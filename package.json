@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.14.128",
+  "version": "1.14.129",
   "description": "Terminal-native general-purpose AI assistant for research, writing, productivity, automation and software development",
   "type": "module",
   "bin": {
@@ -134,7 +134,8 @@
   },
   "patchedDependencies": {
     "ink-text-input@6.0.0": "patches/ink-text-input@6.0.0.patch",
-    "mammoth@1.12.0": "patches/mammoth@1.12.0.patch"
+    "mammoth@1.12.0": "patches/mammoth@1.12.0.patch",
+    "vitest@4.1.10": "patches/vitest@4.1.10.patch"
   },
   "trustedDependencies": [
     "r-memory"
