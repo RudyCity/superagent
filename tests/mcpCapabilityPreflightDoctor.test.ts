@@ -16,7 +16,7 @@
  * 15. Dynamic gateway discovery and aliases compatibility.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { runToolPreflight } from "../src/core/mcp/mcpToolPreflight.js";
 import { runToolDoctor } from "../src/core/mcp/mcpToolDoctor.js";
 import { doctorCommand } from "../src/core/commands/coreCommands.js";

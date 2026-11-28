@@ -11,7 +11,9 @@ describe("SuperAgent optional community support", () => {
     expect(link?.[0]).toContain('target="_blank"');
     expect(link?.[0]).toMatch(/rel="(?=[^"]*noopener)(?=[^"]*noreferrer)[^"]+"/);
     expect(link?.[0]).toMatch(/aria-label="Support SuperAgent development on Ko-fi/);
-    expect(link?.[0]).toContain("Support on Ko-fi");
+    // The sidebar chip shows the short brand label; the full sentence lives in
+    // the aria-label so screen readers keep the descriptive name.
+    expect(link?.[0]).toMatch(/>\s*Ko-fi\s*</);
   });
 
   it("keeps funding optional and matches the GitHub sponsor setting", () => {

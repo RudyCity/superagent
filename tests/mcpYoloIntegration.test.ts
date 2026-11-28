@@ -112,19 +112,16 @@ describe("MCP Security Approval is separate from chat agent YOLO", () => {
     } finally { await server.close(); }
   });
 
-  it("non-project project administration requires separate connection approval and OAuth admin scope", async () => {
-    const server = makeServer();
+  it("non-project project administration requires the OAuth admin scope", async () => {
+    // Project administration is a connection-level action: write scope is not
+    // enough, and no project may be registered without mcp:tools:admin.
+    const notAdmin = { ...writer, scopes: ["mcp:tools", "mcp:tools:write"] };
+    const serverWithoutAdmin = makeServer(() => notAdmin);
     try {
-      await expect(invoke(server, "superagent_register_project", {}))
-        .rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
-      grantProjectAccess(writer, MCP_CONNECTION_PROJECT_ID, ["execute"]);
-      const notAdmin = { ...writer, scopes: ["mcp:tools", "mcp:tools:write"] };
-      const serverWithoutAdmin = makeServer(() => notAdmin);
-      try {
-        await expect(invoke(serverWithoutAdmin, "superagent_register_project", {}))
-          .rejects.toThrow(/mcp:tools:admin/);
-      } finally { await serverWithoutAdmin.close(); }
-    } finally { await server.close(); }
+      await expect(invoke(serverWithoutAdmin, "superagent_register_project", {
+        projectId: "denied-by-scope", name: "Rejected administration", type: "local", root,
+      })).rejects.toThrow(/mcp:tools:admin/);
+    } finally { await serverWithoutAdmin.close(); }
   });
 
   it("MCP security grants persist when chat YOLO changes without a restart", async () => {

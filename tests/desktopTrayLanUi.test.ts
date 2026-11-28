@@ -10,6 +10,7 @@ const fingerprint = "a".repeat(64);
 type MockNode = {
   children: MockNode[]; textContent: string; value: string; checked: boolean;
   hidden: boolean; disabled: boolean; listeners: Map<string, (e?: any) => unknown>;
+  dataset: Record<string, string>;
   classList: { toggle: (name: string, on: boolean) => void };
   type: string; className: string; focus: () => void; click: () => unknown; width: number; height: number; style: Record<string,string>;
   getContext: (kind: string, options?: unknown) => any;
@@ -21,6 +22,7 @@ function node(): MockNode {
   const el = {
     children: [] as MockNode[], textContent: "", value: "", checked: false,
     hidden: false, disabled: false, listeners: new Map<string, (e?: any) => unknown>(),
+    dataset: {} as Record<string, string>,
     type: "", className: "", width: 320, height: 320, style: {},
     classList: { toggle: () => {} },
     focus: () => {},

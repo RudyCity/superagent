@@ -10,7 +10,7 @@
  * but rejects unmediated files.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -137,7 +137,7 @@ describe("Secure Browser Upload Ingress Pipeline", () => {
   it("Scenario 12: rejects relative paths and path traversal attempts", async () => {
     const operationId = crypto.randomBytes(16).toString("hex");
 
-    expect(
+    await expect(
       stageUploadArtifact({
         sourcePath: "../../etc/passwd",
         operationId,
@@ -152,7 +152,7 @@ describe("Secure Browser Upload Ingress Pipeline", () => {
     await fs.writeFile(fakePng, "NOT_A_PNG_FILE_DATA");
     const operationId = crypto.randomBytes(16).toString("hex");
 
-    expect(
+    await expect(
       stageUploadArtifact({
         sourcePath: fakePng,
         operationId,
@@ -167,7 +167,7 @@ describe("Secure Browser Upload Ingress Pipeline", () => {
     const operationId = crypto.randomBytes(16).toString("hex");
 
     // Test with non-existent file
-    expect(
+    await expect(
       stageUploadArtifact({
         sourcePath: path.join(FIXTURE_DIR, "missing.bin"),
         operationId,
@@ -189,7 +189,7 @@ describe("Secure Browser Upload Ingress Pipeline", () => {
     expect(receipt).toBeDefined();
 
     // Replay with identical operationId must be rejected
-    expect(
+    await expect(
       stageUploadArtifact({
         sourcePath: fixturePath,
         operationId,

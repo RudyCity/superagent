@@ -7,6 +7,8 @@ import { registerProject, removeProject, updateProject } from "../src/core/proje
 import type { ResolvedProjectContext } from "../src/core/project/providers/types.js";
 import { execFileSync } from "node:child_process";
 import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
+import { identityOfSelf } from "../src/core/tools/registeredFileToolGate.js";
+import { PERMANENT_ACCESS_FILENAME } from "../src/core/desktopUi/permanentRegistryStore.js";
 
 const directories: string[] = [];
 function createProjectRoot(): string {
@@ -15,11 +17,53 @@ function createProjectRoot(): string {
   return root;
 }
 
+function configDir(): string {
+  return process.env.SUPERAGENT_CONFIG_DIR ?? path.join(os.homedir(), ".superagent-r");
+}
+
+const registrySnapshots = new Map<string, string | null>();
+
+// Listing and search are registry-aware: without an allow rule the provider
+// correctly fails closed. Provision the same explicit rule a real operator
+// would have approved, then assert the provider behaviour behind it.
+function allowRootInPermanentRegistry(root: string): void {
+  const identity = identityOfSelf();
+  if (!identity) throw new Error("Expected executable identity in test.");
+  const registryFile = path.join(configDir(), PERMANENT_ACCESS_FILENAME);
+  if (!registrySnapshots.has(registryFile)) {
+    registrySnapshots.set(registryFile,
+      fs.existsSync(registryFile) ? fs.readFileSync(registryFile, "utf8") : null);
+  }
+  const canonical = (p: string) => fs.realpathSync.native(p).replace(/^\\\\\?\\/, "");
+  const current = fs.existsSync(registryFile)
+    ? JSON.parse(fs.readFileSync(registryFile, "utf8"))
+    : { version: 2, defaultEffect: "deny", rules: [] };
+  const rules = Array.isArray(current.rules) ? current.rules : [];
+  current.rules = [
+    ...rules.filter((rule: { id?: string }) => rule.id !== "allow-local-provider-fixture"),
+    {
+      id: "allow-local-provider-fixture",
+      kind: "file",
+      effect: "allow",
+      app: identity,
+      operations: ["read", "write"],
+      scope: { path: canonical(root), recursive: true },
+    },
+  ];
+  fs.mkdirSync(path.dirname(registryFile), { recursive: true });
+  fs.writeFileSync(registryFile, JSON.stringify(current));
+}
+
 afterEach(() => {
   removeProject("local-fixture");
   for (const directory of directories.splice(0)) {
     fs.rmSync(directory, { recursive: true, force: true });
   }
+  for (const [registryFile, previous] of [...registrySnapshots]) {
+    if (previous === null) fs.rmSync(registryFile, { force: true });
+    else fs.writeFileSync(registryFile, previous);
+  }
+  registrySnapshots.clear();
 });
 
 function context(root: string, workspace = root): ResolvedProjectContext {
@@ -87,6 +131,7 @@ describe("LocalProjectProvider", () => {
     fs.writeFileSync(path.join(outside, "outside.txt"), "outside-provider-marker" + String.fromCharCode(10), "utf8");
     const selected = context(root);
     const provider = new LocalProjectProvider();
+    allowRootInPermanentRegistry(root);
 
     const read = await provider.readFiles(selected, { filePaths: ["provider-fixture.txt"] });
     expect(read.isError).toBeUndefined();
@@ -107,7 +152,9 @@ describe("LocalProjectProvider", () => {
 
     const escaped = await provider.readFiles(selected, { filePaths: [path.join(outside, "outside.txt")] });
     expect(escaped.isError).toBe(true);
-    expect(escaped.text).toMatch(/outside|escapes|workspace/i);
+    // Either the workspace-escape guard or the permanent access registry
+    // rejects the read first; both are denials and neither leaks the file.
+    expect(escaped.text).toMatch(/outside|escapes|workspace|denied|denies/i);
   });
 
   it("routes write, command, and Git operations through the local provider while preserving safety guards", async () => {

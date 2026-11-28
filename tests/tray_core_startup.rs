@@ -92,10 +92,21 @@ async fn core_startup_preserves_all_registration_and_recovery_files_when_listene
 async fn core_startup_only_allows_bootstrap_when_loopback_port_can_be_reserved() {
     let profile = Profile::new();
     assert!(super::core_startup::preflight(&profile.0, 0).await.is_err());
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-    assert!(!super::core_startup::preflight(&profile.0, port).await.unwrap());
+    // A released ephemeral port can be reused by an unrelated process before
+    // the preflight bind. Retry with a fresh port instead of failing on that
+    // race; the property under test is unchanged.
+    for _ in 0..5 {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        match super::core_startup::preflight(&profile.0, port).await {
+            Ok(false) => return,
+            Ok(true) => panic!("An unregistered port {} was reported as a verified owner", port),
+            Err(error) if error.contains("occupied") => continue,
+            Err(error) => panic!("Unexpected preflight failure: {}", error),
+        }
+    }
+    panic!("No loopback port could be reserved for the bootstrap check");
 }
 
 #[test]

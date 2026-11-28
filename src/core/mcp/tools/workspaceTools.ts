@@ -599,7 +599,12 @@ export async function handleFindFiles(args: any): Promise<McpToolResult> {
     let out="^";
     for(let i=0;i<glob.length;i++){
       const ch=glob[i]!;
-      if(ch==="*"&&glob[i+1]==="*"){ out+=".*"; i++; }
+      if(ch==="*"&&glob[i+1]==="*"){
+        // Globstar: `**/` matches zero or more directories, so root-level
+        // files match `**/*.txt` exactly like nested ones do.
+        if(glob[i+2]==="/"){ out+="(?:.*/)?"; i+=2; }
+        else { out+=".*"; i++; }
+      }
       else if(ch==="*") out+="[^/\\\\]*";
       else if(ch==="?") out+="[^/\\\\]";
       else out+=escape(ch);

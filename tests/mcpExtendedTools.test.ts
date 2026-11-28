@@ -19,7 +19,7 @@ describe("Superagent Extended MCP Tools Execution Suite", () => {
     setYoloMode(true);
     fs.mkdirSync(testDir, { recursive: true });
     registerProject({id:projectId,name:"Extended tools fixture",type:"local",root:testDir});
-    grantProjectAccess(identity,projectId,["read","write","git","planning"]);
+    grantProjectAccess(identity,projectId,["read","write","git","planning","execute"]);
     grantProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,["execute"]);
   });
 

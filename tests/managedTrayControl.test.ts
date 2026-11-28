@@ -33,13 +33,9 @@ describe("managed Tray runtime build provenance",()=>{
       .toBe("previous-release");
   });
 });
-beforeAll(()=>{
-  expect(fs.existsSync(binary)).toBe(true);
-  expect(process.env.VITEST).toBeTruthy();
-  process.env.SUPERAGENT_CONFIG_DIR=temp;
-  process.env.SUPERAGENT_TRAY_EXECUTABLE=binary;
-  process.env.SUPERAGENT_TRAY_LIFECYCLE_TEST="1";
-});
+// The provenance suite below runs on every platform; only the native Windows
+// lifecycle suite needs the debug binary, so its preconditions live in that
+// suite's beforeAll instead of failing collection everywhere.
 afterAll(async()=>{
   const owner=readManagedTrayOwner();
   // Cleanup only the exact test-created debug child; no normal desktop process
@@ -71,6 +67,13 @@ async function perform(p:any){
     ...(port?{port}:{}),noCoreShutdown,confirm:true}) as any;
 }
 describe.skipIf(process.platform !== "win32" || !fs.existsSync(binary))("native Tauri Tray: authentic owner-scoped lifecycle",()=>{
+  beforeAll(()=>{
+    expect(fs.existsSync(binary)).toBe(true);
+    expect(process.env.VITEST).toBeTruthy();
+    process.env.SUPERAGENT_CONFIG_DIR=temp;
+    process.env.SUPERAGENT_TRAY_EXECUTABLE=binary;
+    process.env.SUPERAGENT_TRAY_LIFECYCLE_TEST="1";
+  });
   it("fails closed without a plan, and refuses a stale or forged owner",async()=>{
     await expect(manageServices({action:"stop",service:"tray",confirm:true}))
       .rejects.toThrow("SERVICE_TRAY_PLAN_REQUIRED");

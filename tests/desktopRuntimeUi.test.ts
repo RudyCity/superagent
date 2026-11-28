@@ -14,6 +14,7 @@ function mountRuntime(snapshot: unknown, extra: {
   mcpRequests?: any[];
   mcpIdentities?: any[];
   mcpClients?: any[];
+  mcpPrompt?: Record<string, unknown>;
   failMcp?: boolean;
 } = {}) {
   const elements = new Map<string, any>();
@@ -49,6 +50,9 @@ function mountRuntime(snapshot: unknown, extra: {
       __TAURI__: { core: { invoke: async (action: string, args: unknown) => {
         requested.push({ action, args });
         if (action === "detect_runtime") return snapshot;
+        if (action === "get_mcp_agent_prompt") {
+          return extra.mcpPrompt ?? { prompt: "", updatedAt: null, history: [], maxChars: 6000 };
+        }
         if (action === "configure_mcp") return extra.configureMcpResult ?? {success:false,error:"fixture missing"};
         if (action === "desktop_live_action") return extra.gateway ?? { active: false };
         if (action === "get_named_tunnel_health") return extra.named ?? null;
@@ -129,7 +133,10 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
       ],
     });
     await new Promise((r) => setImmediate(r));
-    expect(ui.requested[0]?.action).toBe("detect_runtime");
+    // Mounting hydrates the MCP agent prompt card first, so the scan is no
+    // longer the first native call; it must still be issued exactly once.
+    expect(ui.requested[0]?.action).toBe("get_mcp_agent_prompt");
+    expect(ui.requested.filter((call) => call.action === "detect_runtime")).toHaveLength(1);
     expect(ui.byId("runtime-core-count").textContent).toBe("1");
     expect(ui.byId("runtime-process-count").textContent).toBe("1");
     expect(ui.byId("runtime-servers").innerHTML).toContain("Core · :7888");

@@ -16,7 +16,7 @@ import {startMcpHttpServer} from "../src/core/mcp/mcpHttpTransport.js";
 import {setYoloMode,setFullYoloMode} from "../src/core/permissions.js";
 import {requestCoreSupervisor} from "../src/core/runtime/coreSupervisor.js";
 import {grantProjectAccess} from "../src/core/project/projectAccessPolicy.js";
-import {MCP_CONNECTION_PROJECT_ID} from "../src/core/project/projectAccessRequestStore.js";
+import {registerProject,removeProject} from "../src/core/project/projectRegistry.js";
 
 const previousDir=process.env.SUPERAGENT_CONFIG_DIR;
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),"core-oauth-http-stage-"));
@@ -43,6 +43,7 @@ async function freePort():Promise<number>{
 }
 const base="https://core-oauth-staging.trycloudflare.com";
 const redirect="https://chatgpt.example/oauth/callback";
+const lifecycleProjectId="oauth-lifecycle-fixture";
 function grant(store:McpOAuthStore,scope:string[]) {
   const id="core-stage-"+scope.join("-");
   const verifier=randomToken(32);
@@ -63,6 +64,7 @@ function grant(store:McpOAuthStore,scope:string[]) {
 }
 afterAll(async()=>{
   for(const close of cleanupClients.reverse())await close().catch(()=>{});
+  removeProject(lifecycleProjectId);
   killOwned(owner?.pid||0);
   for(const pid of owned)killOwned(pid);
   setFullYoloMode(false);
@@ -75,6 +77,9 @@ describe("OAuth HTTP authenticated live Core restart and idempotent replay",()=>
   it("read/write OAuth scopes control an isolated Core without changing MCP ingress",async()=>{
     process.env.SUPERAGENT_CONFIG_DIR=temp;
     setYoloMode(true);
+    // Dangerous non-project MCP tools require Execute on the local project the
+    // session workspace resolves to, so register the staging workspace first.
+    registerProject({id:lifecycleProjectId,name:"OAuth lifecycle fixture",type:"local",root:process.cwd()});
     ownerPort=await freePort();
     if(ownerPort===7888||ownerPort===8857)throw new Error("Protected production port");
     owner=spawn(process.execPath,[path.join(process.cwd(),"src","cli.tsx"),
@@ -120,6 +125,12 @@ describe("OAuth HTTP authenticated live Core restart and idempotent replay",()=>
     const writerGrant=grant(store,["mcp:tools","mcp:tools:write"]);
     const writer=await connect(writerGrant.accessToken);
     expect((await writer.listTools()).tools.map(t=>t.name)).toContain("superagent_core_restart");
+    // Operator approval is the Execute grant on the resolved local project.
+    // Without it the lifecycle call is denied and the worker must not move.
+    await expect(writer.callTool({name:"superagent_core_plan",
+      arguments:{port:ownerPort,action:"restart"}})).rejects.toThrow(/PROJECT_GRANT_MISSING/);
+    expect((await requestCoreSupervisor("status",ownerPort)).active.pid).toBe(before.active.pid);
+    grantProjectAccess({mode:"oauth",subject:writerGrant.clientId},lifecycleProjectId,["execute"]);
     const prepared=await writer.callTool({name:"superagent_core_plan",
       arguments:{port:ownerPort,action:"restart"}});
     expect(prepared.isError).not.toBe(true);
@@ -127,10 +138,6 @@ describe("OAuth HTTP authenticated live Core restart and idempotent replay",()=>
     expect(plan.supervisorPid).toBe(owner.pid);
     const args={port:ownerPort,operationId:plan.operationId,
       expectedBuildDigest:plan.expectedBuildDigest,confirm:true};
-    await expect(writer.callTool({name:"superagent_core_restart",arguments:args}))
-      .rejects.toThrow("MCP_APPROVAL_REQUIRED");
-    expect((await requestCoreSupervisor("status",ownerPort)).active.pid).toBe(before.active.pid);
-    grantProjectAccess({mode:"oauth",subject:writerGrant.clientId},MCP_CONNECTION_PROJECT_ID,["execute"]);
     const restarted=await writer.callTool({name:"superagent_core_restart",arguments:args});
     expect(restarted.isError).not.toBe(true);
     const output=JSON.parse((restarted.content as any[])[0].text);

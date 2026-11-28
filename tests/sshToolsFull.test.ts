@@ -219,7 +219,7 @@ describe("Full SSH Tool Suite Interception", () => {
     const res = await gitActionTool.execute({
       action: "restore",
     }, "/mock/local");
-    expect(res).toContain("'files' parameter is required");
+    expect(res).toContain("explicit file paths are required");
   });
 
   it("should intercept gitWorktreeTool list and route to SSH", async () => {
