@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/core-guardian.yml"
+      - "src/core/utils/runtimeLog.ts"
       - "src/core/runtime/coreGuardian.ts"
       - "src/core/runtime/coreColdStartAudit.ts"
       - "src/core/runtime/coreRecoveryEvidence.ts"
@@ -87,6 +88,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/core-guardian.yml"
+      - "src/core/utils/runtimeLog.ts"
       - "src/core/runtime/coreGuardian.ts"
       - "src/core/runtime/coreColdStartAudit.ts"
       - "src/core/runtime/coreRecoveryEvidence.ts"

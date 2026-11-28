@@ -1,3 +1,9 @@
+## [1.14.137] - 2026-11-28
+### Core Guardian coverage: the runtime log is now a trigger path
+- `Core Guardian and Restart Acceptance` lists its trigger paths explicitly and `src/core/utils/runtimeLog.ts` was missing from both the `push` and `pull_request` lists — the exact file whose asynchronous append broke that acceptance on `ubuntu-24.04` for three commits. As a result the `1.14.136` fix never ran in the workflow that needed it.
+- Added `src/core/utils/runtimeLog.ts` to both path lists, so any future change to the durable runtime-log contract re-runs the guardian acceptance.
+- Certified with a manual dispatch on `1.14.136` ([run 46135467483](https://github.com/RudyCity/superagent/actions/runs/46135467483)): both `Core guardian / ubuntu-24.04` and `Core guardian / windows-2025` passed, including the step that had failed on `8635983c`, `947807d6` and `9daa280f`.
+
 ## [1.14.136] - 2026-11-28
 ### Runtime log: the durable line is on disk before the call returns
 - Root cause of the remaining `ubuntu-24.04` Core guardian failure: `logToSuperAgentServerFile` appended asynchronously (`fs.appendFile(..., () => {})`). A short-lived host that decides and exits in the same tick — exactly what `core boot` does on the already-running path — could exit before the write was flushed, so its "verified owner already active" decision line never reached `superagent-server.log` on Linux (it happened to survive on Windows).
