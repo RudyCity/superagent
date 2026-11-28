@@ -22,6 +22,19 @@ function cleanupStaleTestHomes(): void {
 }
 
 export default async function setup(): Promise<() => void> {
+  // TEMP-DIAG: the main process also reports unhandled errors; log their raw
+  // stacks because Vitest's sourcemap reader can fail with EISDIR first.
+  process.on("unhandledRejection", (reason: unknown) => {
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    try {
+      console.error("[main-unhandled] " + String(error.stack ?? reason));
+    } catch {}
+  });
+  process.on("uncaughtExceptionMonitor", (error: Error, origin: string) => {
+    try {
+      console.error("[main-uncaught] " + origin + " " + String(error?.stack ?? error));
+    } catch {}
+  });
   // Remove leftovers only before workers start and after every worker has exited.
   cleanupStaleTestHomes();
   return cleanupStaleTestHomes;
