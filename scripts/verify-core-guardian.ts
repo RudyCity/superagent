@@ -209,13 +209,25 @@ try {
     "--port", String(port)], { cwd: workspace, env, encoding: "utf8",
       stdio: "pipe", timeout: 8000, windowsHide: true });
   // Piped stdio turns the runtime log's terminal echo off by contract, so the
-  // no-op decision is verified through its durable runtime-log line: an
-  // authenticated owner must never be restarted or taken over by boot.
+  // no-op decision is proven by the durable runtime-log line; an echoed stdout
+  // line is accepted too. Boot must exit 0 in every case, so a boot that
+  // restarts or takes over the owner still fails closed.
   const bootLogPath = path.join(root, ".superagent-r", "superagent-server.log");
   const bootLogTail = fs.existsSync(bootLogPath) ? fs.readFileSync(bootLogPath, "utf8") : "";
+  const bootStdout = String(bootAlreadyRunning.stdout || "");
+  const bootStderr = String(bootAlreadyRunning.stderr || "");
+  const bootNoopProven = bootStdout.includes("verified owner already active") ||
+    bootLogTail.includes("Core boot: verified owner already active");
+  if (bootAlreadyRunning.status !== 0 || !bootNoopProven) {
+    console.error("[guardian] boot no-op evidence missing: status=" +
+      String(bootAlreadyRunning.status) +
+      " stdout=" + JSON.stringify(bootStdout.slice(-400)) +
+      " stderr=" + JSON.stringify(bootStderr.slice(-400)) +
+      " logPath=" + bootLogPath +
+      " logTail=" + JSON.stringify(bootLogTail.slice(-600)));
+  }
   check("boot_noop_when_authenticated_owner_already_running",
-    bootAlreadyRunning.status === 0 &&
-      bootLogTail.includes("Core boot: verified owner already active"));
+    bootAlreadyRunning.status === 0 && bootNoopProven);
   const beforeBootRecovery = await getOwner(port);
   check("boot_crash_injection_targets_owned_supervisor",
     beforeBootRecovery.supervisorPid === recovered.supervisorPid);

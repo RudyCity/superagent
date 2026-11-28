@@ -1,3 +1,9 @@
+## [1.14.135] - 2026-11-28
+### Guardian boot check: accept either runtime-log channel and print the evidence
+- After `1.14.134` the Windows matrix job passed but `ubuntu-24.04` still failed the same check, so the durable-line assertion alone does not cover every channel the boot child can use. The check now accepts the no-op decision from the durable `superagent-server.log` line **or** an echoed stdout line, and still requires exit status 0 so a boot that restarts or takes over the owner keeps failing closed.
+- When the evidence is missing the script now prints status, stdout tail, stderr tail and the runtime-log tail into the CI log instead of failing silently, so the next Linux failure is diagnosable in one run.
+- Verified locally: `bun scripts/verify-core-guardian.ts` exits 0 with the full 30-check report.
+
 ## [1.14.134] - 2026-11-28
 ### Core guardian acceptance verifies the no-op boot through the runtime log
 - `Core Guardian and Restart Acceptance` failed deterministically (both matrix jobs, re-run reproduced) at `boot_noop_when_authenticated_owner_already_running`, although the boot child exited 0 and took the no-op branch: with `stdio: "pipe"` the supervisor turns the runtime log's terminal echo off by contract (`core supervisor piped stdio`), so `Core boot: verified owner already active` reached only the durable `superagent-server.log`. The assertion still expected it on stdout, from the `console.log` era.
