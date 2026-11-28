@@ -35,5 +35,20 @@ namespace DesktopHost
             builder.EndObject();
             stdout.WriteLine(builder.ToString());
         }
+
+        /// <summary>
+        /// Announced, planned exit. The client treats this line as a rotation
+        /// request (respawn and re-issue exactly once), never as a crash.
+        /// </summary>
+        internal static void WriteRotating(TextWriter stdout, string reason, long served)
+        {
+            JsonBuilder builder = new JsonBuilder();
+            builder.StartObject();
+            builder.Name("type").Value("rotating");
+            builder.Name("reason").Value(reason);
+            builder.Name("served").Value(served);
+            builder.EndObject();
+            stdout.WriteLine(builder.ToString());
+        }
     }
 }

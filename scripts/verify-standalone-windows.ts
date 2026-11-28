@@ -9,10 +9,12 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { verifyWindowsWgcArtifactPair } from "../src/core/desktopUi/adapters/windowsWgcArtifact.js";
+import { verifyDesktopHostArtifactPair } from "../src/core/desktopUi/adapters/desktopHostArtifact.js";
 import { verifyVisionStandaloneAsset } from "./vision-standalone-asset.js";
 
 export const WINDOWS_UIA_RELATIVE_DIR = path.join("native", "desktop-live-windows-input");
 export const WINDOWS_UIA_SOURCE_RELATIVE = path.join(WINDOWS_UIA_RELATIVE_DIR, "windowsRemoteSemantic.cpp");
+export const WINDOWS_DESKTOP_HOST_RELATIVE_DIR = path.join("native", "desktop-host");
 
 export interface WindowsNativeBuildContext {
   readonly commitSha: string;
@@ -100,6 +102,34 @@ export function windowsNativeCiContext(env: NodeJS.ProcessEnv = process.env): Wi
   return context;
 }
 
+/**
+ * Verify the fixed native Desktop UI host pair inside a built or staged Core
+ * tree (<coreRoot>/dist/native/desktop-host). Mirrors the WGC gate: the exact
+ * pair must exist, stay inside the fixed size bounds, be a PE x64 image and
+ * match its sha256 sidecar. No environment, CLI or UI path override exists.
+ * Returns the executable digest for the standalone manifest and audit trail.
+ */
+export function verifyWindowsDesktopHostPackaging(coreRoot: string): string {
+  const directory = path.join(coreRoot, "dist", WINDOWS_DESKTOP_HOST_RELATIVE_DIR);
+  const exePath = path.join(directory, "desktop-host.exe");
+  const digestPath = path.join(directory, "desktop-host.sha256");
+  check(fs.existsSync(directory), "Missing staged native Desktop UI host directory: " + directory);
+  const folder = fs.lstatSync(directory);
+  check(folder.isDirectory() && !folder.isSymbolicLink(), "Native Desktop UI host directory must be real: " + directory);
+  let verified: string | null;
+  try {
+    verified = verifyDesktopHostArtifactPair(exePath, digestPath);
+  } catch (error) {
+    throw new Error("[standalone-verify] Native Desktop UI host failed fixed artifact verification: " +
+      (error instanceof Error ? error.message : String(error)));
+  }
+  check(verified !== null, "Portable Core must include the checksum-pinned native Desktop UI host pair: " + directory);
+  check(fs.readdirSync(directory).sort().join(",") ===
+    ["desktop-host.exe", "desktop-host.sha256"].sort().join(","),
+    "Native Desktop UI host staging includes unapproved files: " + directory);
+  return digest(fs.readFileSync(exePath));
+}
+
 /** CLI verification is isolated from imports used by preparation and unit tests. */
 if (import.meta.main) {
   const root = path.resolve(import.meta.dir, "..");
@@ -120,6 +150,8 @@ if (import.meta.main) {
   check(verifyWindowsWgcArtifactPair(path.join(bundledWgcDir, "wgc.exe"),
     path.join(bundledWgcDir, "wgc.sha256")) !== null,
     "Portable Core must include checksum-verified Windows Graphics Capture helper.");
+  const desktopHostDigest = verifyWindowsDesktopHostPackaging(stage);
+  console.log("[standalone-verify] Verified fixed native Desktop UI host pair: " + desktopHostDigest);
   const uiaSource = path.join(root, WINDOWS_UIA_SOURCE_RELATIVE);
   const sourceHash = verifyWindowsRemoteNativePackaging(
     path.join(root, "dist", WINDOWS_UIA_RELATIVE_DIR), uiaSource, context);
@@ -137,6 +169,10 @@ if (import.meta.main) {
   check(app.optionalVisionScript?.path === "standalone/scripts/vision_server.py" &&
     app.optionalVisionScript?.sha256 === verifyVisionStandaloneAsset(root, stage),
     "Staged Vision helper must match source and manifest SHA-256");
+  check(app.desktopUiHostArtifact?.installedRelativePath ===
+    "standalone/dist/native/desktop-host/desktop-host.exe" &&
+    app.desktopUiHostArtifact?.sha256 === desktopHostDigest,
+    "Staged native Desktop UI host must match the fixed pair and manifest SHA-256");
   check(app.optionalWindowsRemoteSemanticInput?.installedRelativeDirectory ===
     "standalone/native/desktop-live-windows-input" &&
     app.optionalWindowsRemoteSemanticInput?.sha256 === stagedHash &&

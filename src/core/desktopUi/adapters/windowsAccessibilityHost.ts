@@ -24,6 +24,17 @@
  * single authority for element retention and the security-relevant
  * `actionable` flag.
  *
+ * Payload budget (Chromium/Electron):
+ * - A full Electron web tree is large (measured on this host: DeepSeek Harness
+ *   ~360 elements, Antigravity ~1.2K elements) and most of the surplus is
+ *   offscreen virtualized content plus unlabeled layout structure. Both the
+ *   PowerShell walk and the normalizer therefore enforce the same documented
+ *   budget, in priority order: actionable > focused > focusable > labelled
+ *   context > decoration. Offscreen context is capped (it can never be
+ *   actionable), and unlabeled decoration stops being recorded once its own
+ *   budget is spent; actionable/focused/focusable controls are never dropped.
+ *   The absolute {@link ACCESSIBILITY_ELEMENT_LIMIT} still applies last.
+ *
  * Fail open ONLY to the caller's fallback: any spawn/parse/protocol failure
  * closes the host and rejects, and `windows.ts` then uses the original one-shot
  * script. No executable path, script or argument is accepted from a caller.
@@ -84,6 +95,21 @@ function Write-Line($text) { $stdout.WriteLine([string]$text) }
 $maxDepth = 24
 $maxElements = 2000
 $maxVisited = 6000
+# Payload budget (kept aligned with ACCESSIBILITY_OFFSCREEN_CONTEXT_LIMIT and
+# ACCESSIBILITY_DECORATION_LIMIT in TypeScript). An Electron web tree exposes
+# far more offscreen virtualized content and unlabeled layout structure than is
+# useful. Offscreen nodes can never be actionable, so after this many offscreen
+# records only actionable/focused/focusable nodes are still recorded; the same
+# applies to unlabeled structure after its own budget. Children of a skipped
+# node are still traversed, so no real control can hide behind a dropped
+# container.
+$offscreenRecordBudget = 192
+$decorationRecordBudget = 96
+# Roles that can be actionable in TypeScript (superset: includes "custom", whose
+# ExpandCollapse pattern decides it there). Used only to protect a node from the
+# payload budget, never to grant actionability here.
+$actionableRecordRoles = @("button","edit","hyperlink","menuitem","checkbox","radiobutton",
+  "combobox","listitem","tabitem","slider","spinner","custom")
 # ControlView starvation threshold: below this, RawView is walked as well.
 $controlFallbackMin = 48
 # Chromium windows whose ControlView is still a skeleton are re-walked while the
@@ -120,12 +146,15 @@ function Get-ChildElements($walker, $node) {
 # One bounded depth-first walk. Records are raw UIA signals only: TypeScript
 # decides retention and actionability. Children are still traversed for
 # elements without a usable rectangle so a zero-size container never hides its
-# descendants.
+# descendants, and a node dropped by the payload budget still has its children
+# pushed for the same reason.
 function Invoke-TreeWalk($walker, $rootNode, [int]$requestedPid, $hwnd, [int]$depthLimit, [int]$elementLimit) {
   $records = New-Object System.Collections.ArrayList
   $validCount = 0
   $visited = 0
   $valueReads = 0
+  $offscreenRecords = 0
+  $decorationRecords = 0
   $stack = New-Object System.Collections.Stack
   $stack.Push([pscustomobject]@{ node = $rootNode; depth = 0 })
   while ($stack.Count -gt 0 -and $records.Count -lt $elementLimit -and $visited -lt $maxVisited) {
@@ -133,6 +162,7 @@ function Invoke-TreeWalk($walker, $rootNode, [int]$requestedPid, $hwnd, [int]$de
     $node = $entry.node
     $depth = [int]$entry.depth
     $visited++
+    $record = $null
     try {
       $current = $node.Current
       $rect = $current.BoundingRectangle
@@ -157,11 +187,9 @@ function Invoke-TreeWalk($walker, $rootNode, [int]$requestedPid, $hwnd, [int]$de
             }
           } catch {}
         }
-        $name = Get-CleanText $current.Name
-        $help = Get-CleanText $current.HelpText
-        $automationId = Get-CleanText $current.AutomationId
-        $runtimeId = ""
-        try { $runtimeId = (($node.GetRuntimeId()) -join ".") } catch {}
+        # Cheap signals first: the payload budget is decided before any optional
+        # property read, so a capped node costs at most five cross-process reads
+        # instead of twelve.
         $enabled = $false
         try { $enabled = [bool]$current.IsEnabled } catch {}
         $offscreen = $false
@@ -170,41 +198,65 @@ function Invoke-TreeWalk($walker, $rootNode, [int]$requestedPid, $hwnd, [int]$de
         try { $focusable = [bool]$current.IsKeyboardFocusable } catch {}
         $hasFocus = $false
         try { $hasFocus = [bool]$current.HasKeyboardFocus } catch {}
-        $expandable = $false
-        if ($expandableRoles -contains $role) {
-          try {
-            $expandPattern = $null
-            if ($node.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern, [ref]$expandPattern)) {
-              $expandable = $null -ne $expandPattern
-            }
-          } catch {}
+        $essential = ($actionableRecordRoles -contains $role) -or $hasFocus -or $focusable
+        $keep = $true
+        if ($offscreen -and -not $essential -and $offscreenRecords -ge $offscreenRecordBudget) {
+          $keep = $false
         }
-        $value = $null
-        if ($valueReads -lt $maxValueReads -and ($valueRoles -contains $role)) {
-          $valueReads++
-          try {
-            $valuePattern = $null
-            if ($node.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$valuePattern)) {
-              $value = Get-CleanText $valuePattern.Current.Value
-            }
-          } catch {}
+        $name = ""
+        if ($keep) {
+          $name = Get-CleanText $current.Name
+          if (-not $essential -and -not $offscreen -and -not $name -and
+              $decorationRecords -ge $decorationRecordBudget) {
+            $keep = $false
+          }
         }
-        [void]$records.Add([pscustomobject]@{
-          role = $role.ToLowerInvariant()
-          label = $name
-          description = $help
-          value = $value
-          bounds = [pscustomobject]@{ x=$rect.X; y=$rect.Y; width=$rect.Width; height=$rect.Height }
-          enabled = $enabled
-          offscreen = $offscreen
-          focusable = $focusable
-          expandable = $expandable
-          focused = $hasFocus
-          automationId = $automationId
-          runtimeId = $runtimeId
-        })
+        if ($keep) {
+          $help = Get-CleanText $current.HelpText
+          $automationId = Get-CleanText $current.AutomationId
+          $runtimeId = ""
+          try { $runtimeId = (($node.GetRuntimeId()) -join ".") } catch {}
+          $expandable = $false
+          if ($expandableRoles -contains $role) {
+            try {
+              $expandPattern = $null
+              if ($node.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern, [ref]$expandPattern)) {
+                $expandable = $null -ne $expandPattern
+              }
+            } catch {}
+          }
+          $value = $null
+          if ($valueReads -lt $maxValueReads -and ($valueRoles -contains $role)) {
+            $valueReads++
+            try {
+              $valuePattern = $null
+              if ($node.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$valuePattern)) {
+                $value = Get-CleanText $valuePattern.Current.Value
+              }
+            } catch {}
+          }
+          $record = [pscustomobject]@{
+            role = $role.ToLowerInvariant()
+            label = $name
+            description = $help
+            value = $value
+            bounds = [pscustomobject]@{ x=$rect.X; y=$rect.Y; width=$rect.Width; height=$rect.Height }
+            enabled = $enabled
+            offscreen = $offscreen
+            focusable = $focusable
+            expandable = $expandable
+            focused = $hasFocus
+            automationId = $automationId
+            runtimeId = $runtimeId
+          }
+          if (-not $essential) {
+            if ($offscreen) { $offscreenRecords++ }
+            elseif (-not $name) { $decorationRecords++ }
+          }
+        }
       }
     } catch {}
+    if ($null -ne $record) { [void]$records.Add($record) }
     if ($depth -lt $depthLimit) {
       $children = Get-ChildElements $walker $node
       for ($i=$children.Count-1; $i -ge 0; $i--) {
@@ -363,6 +415,32 @@ const ACTIONABLE_ROLES = new Set(ACCESSIBILITY_ACTIONABLE_ROLES);
 /** Hard bound on one snapshot after merging both UIA views. */
 export const ACCESSIBILITY_ELEMENT_LIMIT = 2000;
 
+/**
+ * How many offscreen elements may be retained as read-only context. Chromium
+ * exposes every virtualized/offscreen node it knows about (Antigravity measured
+ * ~1.2K elements where most of the surplus is offscreen), and offscreen content
+ * can never be actionable, so keeping an unbounded tail only inflates the
+ * payload and the prompt. Mirrors `$offscreenRecordBudget` in the carrier walk.
+ */
+export const ACCESSIBILITY_OFFSCREEN_CONTEXT_LIMIT = 192;
+
+/**
+ * How many unlabeled, non-interactive layout/decoration nodes may be retained
+ * once the payload budget is spent. Mirrors `$decorationRecordBudget` in the
+ * carrier walk. Labelled context (text, headings, list content) is ranked above
+ * decoration and keeps its own allowance up to
+ * {@link ACCESSIBILITY_CONTEXT_LIMIT}.
+ */
+export const ACCESSIBILITY_DECORATION_LIMIT = 96;
+
+/**
+ * How many non-essential elements (labelled context + decoration) may be
+ * retained. Actionable, focused and keyboard-focusable controls are kept
+ * regardless of this budget, so it can never hide a control the caller could
+ * act on.
+ */
+export const ACCESSIBILITY_CONTEXT_LIMIT = 768;
+
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/g;
 const FORBIDDEN_REF_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
@@ -404,7 +482,23 @@ export interface AccessibilityNormalizationOptions {
    * Defaults to `true`.
    */
   retainOffscreen?: boolean;
+  /**
+   * Cap on offscreen context retained per view. Defaults to
+   * {@link ACCESSIBILITY_OFFSCREEN_CONTEXT_LIMIT}; `0` drops offscreen context
+   * entirely. Offscreen elements are never actionable, so this cap can never
+   * remove a control.
+   */
+  maxOffscreenContext?: number;
+  /**
+   * Budget for retained non-essential elements (labelled context first, then
+   * unlabeled decoration). Defaults to {@link ACCESSIBILITY_CONTEXT_LIMIT}.
+   * Actionable, focused and keyboard-focusable elements are always kept.
+   */
+  contextLimit?: number;
+  /** Cap on unlabeled decoration retained within {@link AccessibilityNormalizationOptions.contextLimit}. Defaults to {@link ACCESSIBILITY_DECORATION_LIMIT}. */
+  decorationLimit?: number;
 }
+
 
 function asBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
@@ -477,6 +571,19 @@ function identityKey(role: string, nativeRef: string | undefined, bounds: Deskto
   return nativeRef ? `${nativeRef}@${geometry}` : `${role}@${geometry}|${label ?? ""}`;
 }
 
+function budgetOption(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+}
+
+/** One retained candidate plus the ranking signals the payload budget needs. */
+interface RetentionCandidate {
+  element: AccessibilitySnapshot["elements"][number];
+  /** Actionable, focused or keyboard-focusable: never dropped by the budget. */
+  essential: boolean;
+  offscreen: boolean;
+  labelled: boolean;
+}
+
 /**
  * Normalize raw UIA records from one or more views (ControlView first, then
  * RawView) into the public snapshot element shape.
@@ -487,8 +594,17 @@ function identityKey(role: string, nativeRef: string | undefined, bounds: Deskto
  *   or value, and only as read-only context (`actionable` is always false).
  *   Unlabeled offscreen structure is dropped to keep the snapshot signal dense.
  * - Duplicate identities keep the first (ControlView) occurrence.
- * - The merged list is bounded; actionable and focused elements are preserved
- *   first when the bound is exceeded.
+ * - Payload budget, in priority order: actionable > focused > focusable >
+ *   labelled context (on-screen before offscreen) > unlabeled decoration.
+ *   Essential controls are always retained. Offscreen context is capped by
+ *   {@link AccessibilityNormalizationOptions.maxOffscreenContext}, and the
+ *   remaining context/decoration tail is capped by
+ *   {@link AccessibilityNormalizationOptions.contextLimit} +
+ *   {@link AccessibilityNormalizationOptions.decorationLimit}. This bounds a
+ *   Chromium/Electron snapshot without ever hiding a control the caller could
+ *   act on.
+ * - Finally the merged list is bounded by `maxElements` (absolute backstop),
+ *   still preserving actionable/focused/focusable controls first.
  */
 export function normalizeAccessibilityElements(
   records: readonly unknown[],
@@ -498,9 +614,12 @@ export function normalizeAccessibilityElements(
     ? (options.maxElements as number)
     : ACCESSIBILITY_ELEMENT_LIMIT;
   const retainOffscreen = options.retainOffscreen !== false;
-  const normalized: AccessibilitySnapshot["elements"] = [];
+  const maxOffscreenContext = budgetOption(options.maxOffscreenContext, ACCESSIBILITY_OFFSCREEN_CONTEXT_LIMIT);
+  const contextLimit = budgetOption(options.contextLimit, ACCESSIBILITY_CONTEXT_LIMIT);
+  const decorationLimit = budgetOption(options.decorationLimit, ACCESSIBILITY_DECORATION_LIMIT);
+  const candidates: RetentionCandidate[] = [];
   const seen = new Set<string>();
-  const focusableIndexes = new Set<number>();
+  let offscreenKept = 0;
   for (const raw of records) {
     if (!raw || typeof raw !== "object") continue;
     const record = raw as RawAccessibilityElement;
@@ -511,13 +630,13 @@ export function normalizeAccessibilityElements(
     const label = asText(record.label);
     const description = asText(record.description);
     const value = asText(record.value);
+    const labelled = label !== null || description !== null || value !== null;
     const enabled = asBoolean(record.enabled);
     const offscreen = asBoolean(record.offscreen);
     const expandable = asBoolean(record.expandable);
     if (offscreen === true) {
       if (!retainOffscreen) continue;
-      const labeled = label !== null || description !== null || value !== null;
-      if (!labeled || enabled === false) continue;
+      if (!labelled || enabled === false) continue;
     }
     const focused = asBoolean(record.focused);
     const focusable = asBoolean(record.focusable);
@@ -525,33 +644,70 @@ export function normalizeAccessibilityElements(
     const nativeRef = asNativeRef(record);
     const key = identityKey(role, nativeRef, bounds, label);
     if (seen.has(key)) continue;
+    // Actionability already requires an on-screen element, so an "essential"
+    // offscreen record can only be focused/focusable: those stay uncapped.
+    const essential = actionable || focused === true || focusable === true;
+    if (offscreen === true && !essential) {
+      if (offscreenKept >= maxOffscreenContext) continue;
+      offscreenKept++;
+    }
     seen.add(key);
-    normalized.push({
-      role,
-      label,
-      description,
-      value,
-      bounds,
-      center: {
-        x: bounds.x + bounds.width / 2,
-        y: bounds.y + bounds.height / 2,
+    candidates.push({
+      element: {
+        role,
+        label,
+        description,
+        value,
+        bounds,
+        center: {
+          x: bounds.x + bounds.width / 2,
+          y: bounds.y + bounds.height / 2,
+        },
+        actionable,
+        ...(focused === undefined ? {} : { focused }),
+        ...(nativeRef === undefined ? {} : { nativeRef }),
       },
-      actionable,
-      ...(focused === undefined ? {} : { focused }),
-      ...(nativeRef === undefined ? {} : { nativeRef }),
+      essential,
+      offscreen: offscreen === true,
+      labelled,
     });
-    // IsKeyboardFocusable is not part of the public element shape, so it is only
-    // used to rank which elements survive the bound (see below).
-    if (focusable === true) focusableIndexes.add(normalized.length - 1);
   }
-  if (normalized.length <= maxElements) return normalized;
-  // Keep document order, but guarantee actionable/focused/focusable controls
-  // survive the bound instead of being truncated away by a long structural tail.
-  const ranked = normalized.map((element, index) => ({
-    element,
+  // Payload budget. Essential controls are kept unconditionally; the remaining
+  // allowance is spent on on-screen labelled context, then offscreen labelled
+  // context, then unlabeled decoration (which also has its own smaller cap).
+  const essentialCandidates: RetentionCandidate[] = [];
+  const onscreenContext: RetentionCandidate[] = [];
+  const offscreenContext: RetentionCandidate[] = [];
+  const decorationCandidates: RetentionCandidate[] = [];
+  for (const candidate of candidates) {
+    if (candidate.essential) essentialCandidates.push(candidate);
+    else if (candidate.labelled) (candidate.offscreen ? offscreenContext : onscreenContext).push(candidate);
+    else decorationCandidates.push(candidate);
+  }
+  const kept = new Set<RetentionCandidate>(essentialCandidates);
+  let allowance = contextLimit;
+  for (const group of [onscreenContext, offscreenContext]) {
+    for (const candidate of group) {
+      if (allowance <= 0) break;
+      kept.add(candidate);
+      allowance--;
+    }
+  }
+  let decorationAllowance = Math.min(allowance, decorationLimit);
+  for (const candidate of decorationCandidates) {
+    if (decorationAllowance <= 0) break;
+    kept.add(candidate);
+    decorationAllowance--;
+  }
+  const retained = candidates.filter((candidate) => kept.has(candidate));
+  if (retained.length <= maxElements) return retained.map((candidate) => candidate.element);
+  // Absolute backstop: drop the lowest-ranked tail but never an essential
+  // control, then restore document order.
+  const ranked = retained.map((candidate, index) => ({
+    element: candidate.element,
     index,
-    priority: (element.actionable ? 4 : 0) + (element.focused === true ? 2 : 0) +
-      (focusableIndexes.has(index) ? 1 : 0),
+    priority: (candidate.element.actionable ? 4 : 0) + (candidate.element.focused === true ? 2 : 0) +
+      (candidate.essential && !candidate.element.actionable ? 1 : 0),
   }));
   ranked.sort((left, right) => right.priority - left.priority || left.index - right.index);
   ranked.length = maxElements;
@@ -643,7 +799,10 @@ class AccessibilityHost {
     if (ready?.type !== "ready") { this.close(); throw this.failure; }
   }
 
-  async inspect(target: { pid: number; nativeId?: string }): Promise<AccessibilitySnapshot> {
+  async inspect(
+    target: { pid: number; nativeId?: string },
+    normalization: AccessibilityNormalizationOptions = {},
+  ): Promise<AccessibilitySnapshot> {
     if (this.busy) throw this.failure;
     if (!Number.isSafeInteger(target.pid) || target.pid <= 0 ||
         typeof target.nativeId !== "string" || !/^[0-9]+$/.test(target.nativeId)) {
@@ -669,7 +828,7 @@ class AccessibilityHost {
       ];
       return {
         window: response.window,
-        elements: normalizeAccessibilityElements(merged),
+        elements: normalizeAccessibilityElements(merged, normalization),
         ...(Array.isArray(response.warnings) ? { warnings: response.warnings } : {}),
       };
     } catch (error) {
@@ -689,13 +848,16 @@ let sharedHost: AccessibilityHost | null = null;
 
 /**
  * Inspect one window through the shared persistent host. Callers must fall back
- * to their one-shot implementation when this rejects.
+ * to their one-shot implementation when this rejects. The optional
+ * `normalization` argument only overrides payload-retention budgets; it can
+ * never widen element retention beyond the documented bounds.
  */
 export async function inspectViaPersistentAccessibilityHost(
   target: { pid: number; nativeId?: string },
+  normalization: AccessibilityNormalizationOptions = {},
 ): Promise<AccessibilitySnapshot> {
   if (process.platform !== "win32") throw new DesktopUiError("ACCESSIBILITY_UNAVAILABLE", "Windows only.");
   if (!sharedHost) sharedHost = new AccessibilityHost();
-  return sharedHost.inspect(target);
+  return sharedHost.inspect(target, normalization);
 }
 

@@ -93,14 +93,15 @@
   }
   function titlePolicyBadge(policy) {
     const descriptor = policy === "exact"
-      ? { label: "Judul persis", cls: "op-input",
+      ? { label: "Judul persis", variant: "exact",
           hint: "Aturan terikat pada satu judul jendela persis yang terverifikasi." }
       : policy === "app"
-        ? { label: "Judul volatil", cls: "op-view",
+        ? { label: "Judul volatil", variant: "app",
             hint: "Aturan berlaku untuk seluruh jendela aplikasi; judul jendela hanya metadata volatil." }
-        : { label: "Legacy", cls: "op-write",
+        : { label: "Legacy", variant: "legacy",
             hint: "Aturan lama tanpa kebijakan judul eksplisit; judul mengikuti inferensi legacy." };
-    const badge = make("span", "access-op-chip " + descriptor.cls + " access-title-policy-badge",
+    const badge = make("span",
+      "access-policy-chip access-policy-chip-" + descriptor.variant + " access-title-policy-badge",
       descriptor.label);
     badge.title = descriptor.hint;
     badge.setAttribute("aria-label", "Kebijakan judul: " + descriptor.hint);

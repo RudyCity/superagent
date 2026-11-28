@@ -5167,3 +5167,79 @@ tbody tr:hover {
   font-weight: 600;
 }
 
+/* ==========================================================================
+   Security Approval Manager — desktop title-policy chips
+   Rendered by access-manager.js. A title policy explains how a permanent
+   desktop rule is bound to a window title, so it gets its own chip family
+   instead of borrowing the operation-chip palette (view/input/write) where a
+   policy could be mistaken for a granted operation.
+   Material-inspired: 1px hairline border, tinted surface, pill radius, a dot
+   that carries the semantic colour and text that stays AA-readable on the
+   tint in every Canvas theme.
+   ========================================================================== */
+.access-policy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px 1px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-ui-radius-pill, 9999px);
+  font-family: var(--r-ui-font-sans, -apple-system, "Segoe UI", Roboto, sans-serif);
+  font-size: var(--r-ui-font-nano, 10px);
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  vertical-align: middle;
+  cursor: default;
+}
+.access-policy-chip::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+.access-policy-chip-app {
+  color: var(--r-ui-color-info, #38bdf8);
+  background-color: var(--r-ui-color-info-soft, rgba(56, 189, 248, 0.12));
+  border-color: rgba(var(--r-ui-color-accent-primary-rgb, 56, 189, 248), 0.3);
+}
+.access-policy-chip-exact {
+  color: var(--r-ui-color-success, #10b981);
+  background-color: var(--r-ui-color-success-soft, rgba(16, 185, 129, 0.12));
+  border-color: rgba(16, 185, 129, 0.32);
+}
+.access-policy-chip-legacy {
+  color: var(--r-ui-color-warning, #f59e0b);
+  background-color: var(--r-ui-color-warning-soft, rgba(245, 158, 11, 0.12));
+  border-color: rgba(245, 158, 11, 0.32);
+}
+/* Light surfaces need the darker Material tone for AA contrast on the tint. */
+html[data-theme="light"] .access-policy-chip-app,
+[data-r-ui-theme="clean-light"] .access-policy-chip-app,
+[data-r-ui-theme="warm-sepia"] .access-policy-chip-app {
+  color: #0b57d0;
+  border-color: rgba(11, 87, 208, 0.28);
+}
+html[data-theme="light"] .access-policy-chip-exact,
+[data-r-ui-theme="clean-light"] .access-policy-chip-exact,
+[data-r-ui-theme="warm-sepia"] .access-policy-chip-exact {
+  color: #0b6b3a;
+  border-color: rgba(11, 107, 58, 0.28);
+}
+html[data-theme="light"] .access-policy-chip-legacy,
+[data-r-ui-theme="clean-light"] .access-policy-chip-legacy,
+[data-r-ui-theme="warm-sepia"] .access-policy-chip-legacy {
+  color: #8a5300;
+  border-color: rgba(138, 83, 0, 0.28);
+}
+@media (forced-colors: active) {
+  .access-policy-chip {
+    border-color: CanvasText;
+    color: CanvasText;
+    background-color: Canvas;
+  }
+}
+

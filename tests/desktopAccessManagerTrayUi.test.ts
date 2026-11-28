@@ -400,6 +400,34 @@ describe("explicit desktop title policy choice",()=>{
         .find((child:any)=>child.className?.includes("access-title-policy-badge"))?.textContent);
     expect(badges).toEqual(["Legacy","Judul persis","Judul volatil"]);
   });
+  it("styles title-policy badges with dedicated access-policy-chip variants",async()=>{
+    const ui=boot(true,{registryRules:[
+      {id:"legacy-desktop",kind:"desktop",effect:"allow",app,
+        operations:["view"],scope:{windowTitle:"Antigravity editor"}},
+      {id:"exact-desktop",kind:"desktop",effect:"allow",app,
+        operations:["view"],titlePolicy:"exact",scope:{windowTitle:"Antigravity editor"}},
+      {id:"app-desktop",kind:"desktop",effect:"allow",app,
+        operations:["input"],titlePolicy:"app",scope:{}},
+    ]});
+    await flush();
+    const chips=ui.document.getElementById("access-rule-list")!.children
+      .map((row:any)=>row.children[1].children[0].children
+        .find((child:any)=>child.className?.includes("access-title-policy-badge")));
+    expect(chips.map((chip:any)=>chip.className)).toEqual([
+      "access-policy-chip access-policy-chip-legacy access-title-policy-badge",
+      "access-policy-chip access-policy-chip-exact access-title-policy-badge",
+      "access-policy-chip access-policy-chip-app access-title-policy-badge",
+    ]);
+    // A title policy must not borrow the granted-operation chip palette.
+    expect(chips.some((chip:any)=>chip.className.includes("access-op-chip"))).toBe(false);
+  });
+  it("ships title-policy chip styling for light and dark themes",()=>{
+    for (const variant of ["app","exact","legacy"]) {
+      expect(trayStyles).toContain(".access-policy-chip-" + variant);
+    }
+    expect(trayStyles).toContain(".access-policy-chip {");
+    expect(trayStyles).toMatch(/\[data-r-ui-theme="clean-light"\]\s*\.access-policy-chip-app,?/);
+  });
   it("locks the title policy to app-wide when an installed application is selected",async()=>{
     const ui=boot();await flush();
     ui.document.getElementById("access-src-installed")!.click();await flush();

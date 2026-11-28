@@ -11,7 +11,7 @@ import { attestWindowsStandaloneCoreBuild } from "../src/core/runtime/coreBuildI
 import { stageVisionStandaloneAsset } from "./vision-standalone-asset.js";
 import {
   WINDOWS_UIA_RELATIVE_DIR, WINDOWS_UIA_SOURCE_RELATIVE,
-  verifyWindowsRemoteNativePackaging, windowsNativeCiContext,
+  verifyWindowsDesktopHostPackaging, verifyWindowsRemoteNativePackaging, windowsNativeCiContext,
 } from "./verify-standalone-windows.js";
 
 const root = path.resolve(import.meta.dir, "..");
@@ -42,6 +42,46 @@ const wgcInput = path.join(root, "dist", wgcRelative);
 assert(verifyWindowsWgcArtifactPair(path.join(wgcInput, "wgc.exe"),
   path.join(wgcInput, "wgc.sha256")) !== null,
   "Missing verified WGC helper; run scripts/build-desktop-live-wgc.ps1 before installer preparation.");
+
+// The native Desktop UI host is one fixed, checksum-pinned pair. It is built
+// offline from native/desktop-host/*.cs into dist/native/desktop-host and must
+// reach the standalone stage at the exact path resolved by
+// desktopHostArtifact.ts (<stage>/dist/native/desktop-host). Rebuild it only
+// through the offline PowerShell toolchain when the build output is missing or
+// older than its sources; never accept a caller-supplied executable or digest.
+const desktopHostSourceDir = path.join(root, "native", "desktop-host");
+const desktopHostBuildDir = path.join(root, "dist", "native", "desktop-host");
+assert(fs.existsSync(desktopHostSourceDir), "Missing Desktop UI host sources: " + desktopHostSourceDir);
+function newestDesktopHostSourceMtime(): number {
+  let newest = 0;
+  for (const name of fs.readdirSync(desktopHostSourceDir)) {
+    if (!name.endsWith(".cs")) continue;
+    const source = path.join(desktopHostSourceDir, name);
+    const info = fs.lstatSync(source);
+    assert(info.isFile() && !info.isSymbolicLink(), "Desktop UI host source must be a regular file: " + source);
+    newest = Math.max(newest, info.mtimeMs);
+  }
+  assert(newest > 0, "Desktop UI host source set is empty: " + desktopHostSourceDir);
+  return newest;
+}
+function ensureDesktopHostBuilt(): void {
+  const exe = path.join(desktopHostBuildDir, "desktop-host.exe");
+  const digest = path.join(desktopHostBuildDir, "desktop-host.sha256");
+  const exeInfo = fs.existsSync(exe) ? fs.lstatSync(exe) : null;
+  const digestInfo = fs.existsSync(digest) ? fs.lstatSync(digest) : null;
+  if (exeInfo?.isFile() && digestInfo?.isFile() && exeInfo.mtimeMs >= newestDesktopHostSourceMtime()) return;
+  const buildScript = path.join(root, "scripts", "build-desktop-host.ps1");
+  assert(fs.existsSync(buildScript), "Missing Desktop UI host builder: " + buildScript);
+  console.log("[standalone] Building the native Desktop UI host from source (offline .NET Framework compiler)...");
+  const build = spawnSync("powershell.exe", [
+    "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", buildScript,
+  ], { cwd: root, stdio: "inherit", timeout: 120_000, windowsHide: true });
+  assert(!build.error && build.status === 0,
+    `Desktop UI host build failed (code ${build.status}, error ${build.error ?? "none"}).`);
+}
+ensureDesktopHostBuilt();
+const desktopHostHash = verifyWindowsDesktopHostPackaging(root);
+console.log("[standalone] Verified native Desktop UI host: " + desktopHostHash);
 
 // The checkout-local native/*.obj, *.dll, *.lib, *.exp and SHA are never inputs.
 // Only the new, checksum-pinned build under dist is allowed, when stamped by
@@ -78,6 +118,10 @@ assert(verifyWindowsRemoteNativePackaging(uiaStage, uiaSource, nativeContext) ==
 const stagedWgc = path.join(stage, "dist", wgcRelative);
 assert(verifyWindowsWgcArtifactPair(path.join(stagedWgc, "wgc.exe"),
   path.join(stagedWgc, "wgc.sha256")) !== null, "Verified WGC helper missing from standalone stage.");
+const stagedDesktopHostHash = verifyWindowsDesktopHostPackaging(stage);
+assert(stagedDesktopHostHash === desktopHostHash,
+  "Staged native Desktop UI host must match the source-built fixed artifact pair.");
+console.log("[standalone] Verified staged native Desktop UI host: " + stagedDesktopHostHash);
 // Re-attest the exact trusted relocation, not a general rebuild or bypass.
 // The source tree must have a valid pre-staging manifest; no other JS/JSON
 // bytes (including package.json) may change during installer preparation.
@@ -116,6 +160,10 @@ const metadata = {
   cli: "superagent.exe", entrypoint: "standalone/dist/cli.js",
   requiresGlobalBun: false, requiresGlobalNode: false,
   optionalVisionScript: { path: "standalone/scripts/vision_server.py", sha256: visionScriptSha256 },
+  desktopUiHostArtifact: {
+    installedRelativePath: "standalone/dist/native/desktop-host/desktop-host.exe",
+    sha256: desktopHostHash,
+  },
   optionalWindowsRemoteSemanticInput: {
     installedRelativeDirectory: "standalone/native/desktop-live-windows-input",
     sha256: uiaHash, activated: false,

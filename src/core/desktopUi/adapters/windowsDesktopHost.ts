@@ -8,6 +8,13 @@
  * timeouts, one automatic restart after a crash, idle close, and validation of
  * every response against the requested target identity.
  *
+ * Bounded lifetime: every child is spawned with a request cap and wall-clock
+ * lifetime (sanitized here, enforced natively). The host announces a planned
+ * exit with a typed `rotating` line; this client respawns it and re-issues the
+ * pending request exactly once, counts rotations and exposes them through the
+ * hook surface. Two rotations in a row mean the host is unusable and the
+ * adapter falls back through the unchanged PowerShell paths.
+ *
  * Fail closed, never weaken: any protocol, identity or size violation rejects
  * the request and closes the carrier so `windows.ts` can fall back to the
  * existing PowerShell capture worker / UIA carrier / one-shot script. Pure
@@ -33,16 +40,43 @@ import { locateVerifiedDesktopHost } from "./desktopHostArtifact.js";
 export const DESKTOP_HOST_NONCE_ENV = "SUPERAGENT_DESKTOP_HOST_NONCE";
 export const DESKTOP_HOST_REQUEST_TIMEOUT_MS = 15_000;
 export const DESKTOP_HOST_IDLE_CLOSE_MS = 60_000;
+/** Grace for buffered stdout to beat the process `exit` event on a rotation. */
+const DESKTOP_HOST_EXIT_GRACE_MS = 50;
 /** Command lines are tiny; a multi-megabyte command is a framing violation. */
 export const DESKTOP_HOST_MAX_COMMAND_CHARS = 2 * 1024 * 1024;
 /** Response lines are bounded separately: a full frame is larger than 2 MB. */
 export const DESKTOP_HOST_MAX_RESPONSE_CHARS = 12 * 1024 * 1024;
+/**
+ * Bounded-lifetime protocol. The host reads these environment variables and
+ * announces a planned rotation before the request that would exceed either
+ * bound; this client forces the sanitized values into every child and absorbs
+ * exactly one rotation per request, re-issuing that request so it is never lost.
+ */
+export const DESKTOP_HOST_MAX_REQUESTS_ENV = "SUPERAGENT_DESKTOP_HOST_MAX_REQUESTS";
+export const DESKTOP_HOST_MAX_LIFETIME_MS_ENV = "SUPERAGENT_DESKTOP_HOST_MAX_LIFETIME_MS";
+export const DESKTOP_HOST_DEFAULT_MAX_REQUESTS = 500;
+export const DESKTOP_HOST_DEFAULT_MAX_LIFETIME_MS = 600_000;
+export const DESKTOP_HOST_MAX_REQUESTS_CEILING = 1_000_000;
+export const DESKTOP_HOST_MAX_LIFETIME_CEILING_MS = 86_400_000;
+/** A second rotation without a served response means the host is unusable. */
+export const DESKTOP_HOST_MAX_ROTATIONS_PER_REQUEST = 1;
 const MAX_FRAME_BASE64_CHARS = 11_200_000;
 const MIN_IMAGE_BYTES = 24;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_RECORDED_RESPONSE_LINES = 4;
 const MAX_ELEMENT_RECORDS = 4096;
 const MAX_WARNINGS = 8;
+
+/** Why the native host planned its own exit; the client respawns it. */
+export type DesktopHostRotationReason = "request-cap" | "lifetime" | "unknown";
+
+/** Bounded lifetime the client forces into every host child. */
+export interface DesktopHostBudget {
+  /** Commands one host process serves before it announces a rotation. */
+  maxRequests: number;
+  /** Wall-clock lifetime of one host process before it announces a rotation. */
+  maxLifetimeMs: number;
+}
 
 /** Minimal child-process surface so tests can inject a scripted fake. */
 export interface DesktopHostChild {
@@ -60,6 +94,8 @@ export interface DesktopHostMetricHooks {
   onFallback?: (reason: string) => void;
   /** One automatic restart after a crash was granted. */
   onRestart?: () => void;
+  /** The host announced a planned rotation and the client respawned it. */
+  onRotation?: (reason: DesktopHostRotationReason) => void;
 }
 
 export interface WindowsDesktopHostOptions {
@@ -69,10 +105,18 @@ export interface WindowsDesktopHostOptions {
   hooks?: DesktopHostMetricHooks;
   requestTimeoutMs?: number;
   idleCloseMs?: number;
+  /** Force the request cap instead of resolving it from the environment. */
+  maxRequests?: number;
+  /** Force the lifetime bound instead of resolving it from the environment. */
+  maxLifetimeMs?: number;
 }
 
+type HostReadOutcome =
+  | { kind: "line"; line: string }
+  | { kind: "rotating"; reason: DesktopHostRotationReason };
+
 interface HostWaiter {
-  resolve: (line: string) => void;
+  resolve: (outcome: HostReadOutcome) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 }
@@ -81,6 +125,81 @@ const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function boundedPositiveInteger(value: unknown, fallback: number, ceiling: number): number {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 && value <= ceiling ? value : fallback;
+  }
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  if (!/^[0-9]+$/.test(trimmed)) return fallback;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= ceiling ? parsed : fallback;
+}
+
+/**
+ * Resolve the bounded-lifetime budget. Explicit options win over the
+ * environment so tests and embedding code can force a small cap without
+ * mutating process state. Invalid values fall back to the defaults; the host
+ * re-validates the sanitized values it receives and fails closed if they are
+ * ever malformed.
+ */
+export function resolveDesktopHostBudget(
+  env: NodeJS.ProcessEnv = process.env,
+  overrides: { maxRequests?: number; maxLifetimeMs?: number } = {},
+): DesktopHostBudget {
+  return {
+    maxRequests: boundedPositiveInteger(
+      overrides.maxRequests ?? env[DESKTOP_HOST_MAX_REQUESTS_ENV],
+      DESKTOP_HOST_DEFAULT_MAX_REQUESTS,
+      DESKTOP_HOST_MAX_REQUESTS_CEILING,
+    ),
+    maxLifetimeMs: boundedPositiveInteger(
+      overrides.maxLifetimeMs ?? env[DESKTOP_HOST_MAX_LIFETIME_MS_ENV],
+      DESKTOP_HOST_DEFAULT_MAX_LIFETIME_MS,
+      DESKTOP_HOST_MAX_LIFETIME_CEILING_MS,
+    ),
+  };
+}
+
+/**
+ * The host writes its planned-exit line in fixed field order, so a cheap prefix
+ * check keeps multi-megabyte frame payloads out of the JSON parser on the hot
+ * path. `parseRotationLine` remains the authority for the full shape.
+ */
+function isLikelyRotationLine(line: string): boolean {
+  return line.length <= 512 && line.startsWith('{"type":"rotating"');
+}
+
+/** Parse a planned-exit line. Anything that is not a rotation returns null. */
+export function parseRotationLine(line: string): DesktopHostRotationReason | null {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || parsed.type !== "rotating") return null;
+  if (parsed.reason === "request-cap") return "request-cap";
+  if (parsed.reason === "lifetime") return "lifetime";
+  return "unknown";
+}
+
+/**
+ * A typed startup refusal (for example ELEVATED_TOKEN or
+ * PRIVILEGE_HARDENING_FAILED) arrives instead of the ready line. Identify it so
+ * the carrier can fail permanently with the host's own code instead of
+ * retrying into a process that refuses to serve.
+ */
+export function parseHostErrorCode(line: string): string | null {
+  if (line.length > 4096 || !line.startsWith('{"type":"error"')) return null;
+  try {
+    const parsed = JSON.parse(line);
+    return parsed && typeof parsed.code === "string" ? parsed.code : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -285,6 +404,7 @@ function defaultCreateNonce(): string {
 export class WindowsDesktopHost {
   private readonly executablePath: string;
   private readonly options: WindowsDesktopHostOptions;
+  private readonly budget: DesktopHostBudget;
   private child: DesktopHostChild | null = null;
   private buffer = "";
   private waiter: HostWaiter | null = null;
@@ -294,15 +414,33 @@ export class WindowsDesktopHost {
   private busy = false;
   private restartsRemaining = 1;
   private permanentlyFailed = false;
+  private rotations = 0;
+  private served = 0;
 
   constructor(executablePath: string, options: WindowsDesktopHostOptions = {}) {
     this.executablePath = executablePath;
     this.options = options;
+    this.budget = resolveDesktopHostBudget(process.env, options);
   }
 
   /** True while the host is believed usable (never a permission decision). */
   get available(): boolean {
     return !this.permanentlyFailed;
+  }
+
+  /** Planned host rotations this carrier absorbed without losing a request. */
+  get rotationCount(): number {
+    return this.rotations;
+  }
+
+  /** Responses successfully served to callers by the native host. */
+  get servedRequestCount(): number {
+    return this.served;
+  }
+
+  /** The bounded lifetime forced into every host child. */
+  get lifetimeBudget(): DesktopHostBudget {
+    return { ...this.budget };
   }
 
   async capture(target: DesktopWindowTarget): Promise<NativeCapture> {
@@ -321,6 +459,7 @@ export class WindowsDesktopHost {
       this.rejectResponse(error);
       throw error;
     }
+    this.served += 1;
     this.options.hooks?.onFrame?.("capture");
     return capture;
   }
@@ -345,6 +484,7 @@ export class WindowsDesktopHost {
       this.rejectResponse(error);
       throw error;
     }
+    this.served += 1;
     this.options.hooks?.onFrame?.("inspect");
     return snapshot;
   }
@@ -368,19 +508,40 @@ export class WindowsDesktopHost {
     this.busy = true;
     this.clearIdleTimer();
     try {
-      await this.ensureStarted();
       const command = JSON.stringify(payload);
       if (command.length > DESKTOP_HOST_MAX_COMMAND_CHARS) {
         this.releaseChild(true);
         throw new DesktopUiError("INVALID_ACTION", "Native desktop host command exceeded the 2 MB line bound.");
       }
-      this.writeLine(command);
-      const line = await this.readLine();
-      if (line.length > DESKTOP_HOST_MAX_RESPONSE_CHARS) {
-        this.releaseChild(true);
-        throw new DesktopUiError("PROCESS_FAILED", "Native desktop host exceeded the response line bound.");
+      // One attempt, plus exactly one re-issue after a planned rotation, so a
+      // request is never lost when the host reaches its cap or lifetime.
+      for (let attempt = 1; attempt <= 1 + DESKTOP_HOST_MAX_ROTATIONS_PER_REQUEST; attempt++) {
+        await this.ensureStarted();
+        // Register the receiver before writing: a rotation line can be delivered
+        // before the command write returns, and it must not be lost.
+        const pending = this.readLine();
+        try {
+          this.writeLine(command);
+        } catch (error) {
+          // writeLine released the carrier, which rejects the waiter; consume it
+          // so the original transport error is the one the caller sees.
+          pending.catch(() => undefined);
+          throw error;
+        }
+        const outcome = await pending;
+        if (outcome.kind === "rotating") {
+          // handleRotation already tore the carrier down cleanly; the next
+          // attempt spawns the replacement and re-issues this exact command.
+          continue;
+        }
+        if (outcome.line.length > DESKTOP_HOST_MAX_RESPONSE_CHARS) {
+          this.releaseChild(true);
+          throw new DesktopUiError("PROCESS_FAILED", "Native desktop host exceeded the response line bound.");
+        }
+        return outcome.line;
       }
-      return line;
+      this.failPermanently("Native desktop host rotated twice without serving the request.");
+      throw new DesktopUiError("PROCESS_FAILED", "Native desktop host rotated twice without serving the request.");
     } catch (error) {
       throw error instanceof DesktopUiError
         ? error
@@ -410,7 +571,14 @@ export class WindowsDesktopHost {
     const createNonce = this.options.createNonce ?? defaultCreateNonce;
     const spawnChild = this.options.spawnChild ?? defaultSpawnChild;
     const nonce = createNonce();
-    const env: NodeJS.ProcessEnv = { ...process.env, [DESKTOP_HOST_NONCE_ENV]: nonce };
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      [DESKTOP_HOST_NONCE_ENV]: nonce,
+      // Always send sanitized bounds: a malformed inherited value must never be
+      // what the native host validates, and the client knows what it will absorb.
+      [DESKTOP_HOST_MAX_REQUESTS_ENV]: String(this.budget.maxRequests),
+      [DESKTOP_HOST_MAX_LIFETIME_MS_ENV]: String(this.budget.maxLifetimeMs),
+    };
     let child: DesktopHostChild;
     try {
       child = spawnChild(this.executablePath, env);
@@ -426,20 +594,50 @@ export class WindowsDesktopHost {
     } catch {
       /* stderr is drained only to keep the pipe empty; it is never logged. */
     }
+    try {
+      // A host that rotates while a command is pending can leave the stdin pipe
+      // closed; an unhandled EPIPE on stdin would otherwise take down the Core.
+      (child.stdin as { on?: (event: string, listener: (...args: any[]) => void) => unknown }).on?.(
+        "error",
+        () => undefined,
+      );
+    } catch {
+      /* injected doubles may expose a non-evented stdin */
+    }
     child.stdout.on("data", (chunk: Buffer | string) => this.onData(child, chunk));
     child.on("error", () => this.onTransportFailure(child));
-    child.on("exit", () => this.onTransportFailure(child));
-    let readyLine: string;
+    // A planned rotation writes its line and then exits, and Node can emit
+    // `exit` before the already-buffered stdout chunk. Defer the crash decision
+    // by one short grace so the rotation line always wins.
+    child.on("exit", () => this.onChildExit(child));
+    let ready: HostReadOutcome;
     try {
-      readyLine = await this.readLine();
+      ready = await this.readLine();
     } catch (error) {
       if (this.child === child) this.releaseChild(true);
       throw error instanceof DesktopUiError
         ? error
         : new DesktopUiError("PROCESS_FAILED", "Native desktop host never became ready.");
     }
+    if (ready.kind !== "line") {
+      // A planned exit before the handshake proves the configured budget is
+      // unusable; retrying would only spawn another host that rotates again.
+      this.failPermanently("Native desktop host rotated before the handshake completed.");
+      throw new DesktopUiError("PROCESS_FAILED", "Native desktop host rotated before the handshake completed.");
+    }
+    const startupErrorCode = parseHostErrorCode(ready.line);
+    if (startupErrorCode) {
+      // ELEVATED_TOKEN / PRIVILEGE_HARDENING_FAILED / TOKEN_UNAVAILABLE: the host
+      // refused to run. Never restart into it; surfacing the code keeps the
+      // refusal auditable while the adapter falls back.
+      this.failPermanently(`Native desktop host refused to start (${startupErrorCode}).`);
+      throw new DesktopUiError(
+        "DESKTOP_UI_UNAVAILABLE",
+        `Native desktop host refused to start (${startupErrorCode}).`,
+      );
+    }
     try {
-      validateReadyLine(readyLine, nonce);
+      validateReadyLine(ready.line, nonce);
     } catch (error) {
       // A nonce mismatch means this is not our process; never restart into it.
       this.failPermanently("Native desktop host handshake was rejected.");
@@ -457,11 +655,18 @@ export class WindowsDesktopHost {
     const split = extractHostLines(this.buffer);
     this.buffer = split.rest;
     for (const line of split.lines) {
+      if (isLikelyRotationLine(line)) {
+        const reason = parseRotationLine(line);
+        if (reason !== null) {
+          this.handleRotation(child, reason);
+          return;
+        }
+      }
       if (this.waiter) {
         const waiter = this.waiter;
         this.waiter = null;
         clearTimeout(waiter.timer);
-        waiter.resolve(line);
+        waiter.resolve({ kind: "line", line });
       } else if (this.queue.length < MAX_RECORDED_RESPONSE_LINES) {
         this.queue.push(line);
       } else {
@@ -469,6 +674,24 @@ export class WindowsDesktopHost {
         return;
       }
     }
+  }
+
+  /**
+   * The host announced a planned exit. Tear the carrier down without spending
+   * the crash-restart budget, count the rotation, and hand the pending request
+   * back to `request` so it re-issues on the replacement host.
+   */
+  private handleRotation(child: DesktopHostChild, reason: DesktopHostRotationReason): void {
+    if (this.child !== child) return;
+    this.rotations += 1;
+    const waiter = this.waiter;
+    this.waiter = null;
+    if (waiter) {
+      clearTimeout(waiter.timer);
+      waiter.resolve({ kind: "rotating", reason });
+    }
+    this.releaseChild(false);
+    this.options.hooks?.onRotation?.(reason);
   }
 
   private writeLine(line: string): void {
@@ -482,12 +705,12 @@ export class WindowsDesktopHost {
     }
   }
 
-  private readLine(): Promise<string> {
-    if (this.queue.length > 0) return Promise.resolve(this.queue.shift()!);
+  private readLine(): Promise<HostReadOutcome> {
+    if (this.queue.length > 0) return Promise.resolve({ kind: "line", line: this.queue.shift()! });
     if (!this.child) {
       return Promise.reject(new DesktopUiError("PROCESS_FAILED", "Native desktop host is not running."));
     }
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<HostReadOutcome>((resolve, reject) => {
       const timer = setTimeout(
         () => this.onTransportFailure(this.child),
         this.options.requestTimeoutMs ?? DESKTOP_HOST_REQUEST_TIMEOUT_MS,
@@ -501,6 +724,14 @@ export class WindowsDesktopHost {
     if (child !== null && this.child !== child) return;
     if (!this.child) return;
     this.releaseChild(true);
+  }
+
+  private onChildExit(child: DesktopHostChild): void {
+    if (this.child !== child) return;
+    const timer = setTimeout(() => {
+      if (this.child === child) this.onTransportFailure(child);
+    }, DESKTOP_HOST_EXIT_GRACE_MS);
+    timer.unref?.();
   }
 
   /** Close a carrier whose response shape violated the protocol. */

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACCESSIBILITY_CONTEXT_LIMIT,
+  ACCESSIBILITY_DECORATION_LIMIT,
   ACCESSIBILITY_ELEMENT_LIMIT,
+  ACCESSIBILITY_OFFSCREEN_CONTEXT_LIMIT,
   normalizeAccessibilityElements,
 } from "../../src/core/desktopUi/adapters/windowsAccessibilityHost.js";
 
@@ -226,11 +229,93 @@ describe("accessibility element normalization", () => {
     expect(elements.map((element) => element.label)).toEqual(["body 0", "body 1", "focusable inline link target"]);
   });
 
-  it("defaults to the documented hard element bound", () => {
+  it("defaults to the documented hard element bound and keeps the payload budget tight", () => {
     expect(ACCESSIBILITY_ELEMENT_LIMIT).toBe(2000);
-    const records = Array.from({ length: ACCESSIBILITY_ELEMENT_LIMIT + 25 }, (_, index) =>
-      raw({ role: "text", label: `n${index}`, runtimeId: `default.${index}`, actionable: undefined }));
-    expect(normalizeAccessibilityElements(records)).toHaveLength(ACCESSIBILITY_ELEMENT_LIMIT);
+    const records: Record<string, unknown>[] = [];
+    for (let index = 0; index < 6; index++) {
+      records.push(raw({
+        role: "text",
+        label: `n${index}`,
+        runtimeId: `default.${index}`,
+        actionable: undefined,
+      }));
+    }
+    expect(normalizeAccessibilityElements(records)).toHaveLength(6);
+    expect(ACCESSIBILITY_ELEMENT_LIMIT).toBeGreaterThan(ACCESSIBILITY_CONTEXT_LIMIT);
+  });
+
+  it("bounds a Chromium-sized payload while keeping every actionable control", () => {
+    const records: Record<string, unknown>[] = [];
+    // A large labelled context tail (Chromium text nodes) followed by controls:
+    // no budget may truncate the controls that the caller can act on.
+    for (let index = 0; index < ACCESSIBILITY_ELEMENT_LIMIT; index++) {
+      records.push(raw({
+        role: "text",
+        label: `line ${index}`,
+        runtimeId: `payload.context.${index}`,
+        actionable: undefined,
+      }));
+    }
+    for (let index = 0; index < 5; index++) {
+      records.push(raw({ role: "button", label: `action ${index}`, runtimeId: `payload.action.${index}` }));
+    }
+    const elements = normalizeAccessibilityElements(records);
+    expect(elements).toHaveLength(ACCESSIBILITY_CONTEXT_LIMIT + 5);
+    expect(elements.filter((element) => element.actionable)).toHaveLength(5);
+    // Lifting the budget restores the documented absolute backstop.
+    const unbounded = normalizeAccessibilityElements(records, {
+      contextLimit: Number.MAX_SAFE_INTEGER,
+      decorationLimit: Number.MAX_SAFE_INTEGER,
+      maxOffscreenContext: Number.MAX_SAFE_INTEGER,
+    });
+    expect(unbounded).toHaveLength(ACCESSIBILITY_ELEMENT_LIMIT);
+  });
+
+  it("caps retained offscreen context without dropping any actionable control", () => {
+    const records: Record<string, unknown>[] = [];
+    for (let index = 0; index < ACCESSIBILITY_OFFSCREEN_CONTEXT_LIMIT + 40; index++) {
+      records.push(raw({
+        role: "text",
+        label: `virtualized ${index}`,
+        runtimeId: `offscreen.${index}`,
+        offscreen: true,
+      }));
+    }
+    records.push(raw({ role: "button", label: "Act now", runtimeId: "offscreen.action" }));
+    const elements = normalizeAccessibilityElements(records);
+    expect(elements).toHaveLength(ACCESSIBILITY_OFFSCREEN_CONTEXT_LIMIT + 1);
+    expect(elements.filter((element) => element.actionable).map((element) => element.label)).toEqual(["Act now"]);
+    // A zero cap removes offscreen context entirely and keeps only the control.
+    expect(normalizeAccessibilityElements(records, { maxOffscreenContext: 0 })).toHaveLength(1);
+  });
+
+  it("keeps actionable and focusable controls ahead of a long context tail", () => {
+    const records: Record<string, unknown>[] = [];
+    for (let index = 0; index < 20; index++) {
+      records.push(raw({ role: "text", label: `body ${index}`, runtimeId: `context.${index}` }));
+    }
+    records.push(raw({ role: "button", label: "Deferred action", runtimeId: "context.action" }));
+    records.push(raw({ role: "text", label: "focusable rail", runtimeId: "context.focus", focusable: true }));
+    const elements = normalizeAccessibilityElements(records, { contextLimit: 3, decorationLimit: 0 });
+    expect(elements.map((element) => element.label)).toEqual([
+      "body 0", "body 1", "body 2", "Deferred action", "focusable rail",
+    ]);
+    expect(elements.find((element) => element.label === "Deferred action")?.actionable).toBe(true);
+  });
+
+  it("stops retaining unlabeled layout structure once the context budget is spent", () => {
+    const records: Record<string, unknown>[] = [];
+    for (let index = 0; index < 5; index++) {
+      records.push(raw({ role: "pane", label: "", description: "", value: "", runtimeId: `slot.${index}` }));
+    }
+    records.push(raw({ role: "text", label: "Real content", runtimeId: "slot.text" }));
+    // Labelled context outranks decoration, so a one-element budget keeps the text.
+    const labelledFirst = normalizeAccessibilityElements(records, { contextLimit: 1, decorationLimit: 0 });
+    expect(labelledFirst.map((element) => element.label)).toEqual(["Real content"]);
+    // The decoration allowance only fills what the context budget leaves over.
+    const withDecoration = normalizeAccessibilityElements(records, { contextLimit: 3, decorationLimit: 2 });
+    expect(withDecoration.map((element) => element.label)).toEqual([null, null, "Real content"]);
+    expect(ACCESSIBILITY_DECORATION_LIMIT).toBeLessThanOrEqual(ACCESSIBILITY_CONTEXT_LIMIT);
   });
 
   it("emits exactly the public snapshot element shape", () => {

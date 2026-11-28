@@ -13,6 +13,14 @@ namespace DesktopHost
         internal const uint DwmwaCloaked = 14;
         internal const uint PwRenderFullContent = 2;
 
+        // Token access and privilege constants (winnt.h).
+        internal const uint TokenAdjustPrivileges = 0x0020;
+        internal const uint TokenQuery = 0x0008;
+        internal const int TokenElevationClass = 20;
+        internal const uint SePrivilegeRemoved = 0x00000004;
+        internal const uint ErrorNotAllAssigned = 1300;
+        internal const uint ErrorNoSuchPrivilege = 1313;
+
         [StructLayout(LayoutKind.Sequential)]
         internal struct Rect
         {
@@ -21,6 +29,68 @@ namespace DesktopHost
             public int Right;
             public int Bottom;
         }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct Luid
+        {
+            public uint LowPart;
+            public int HighPart;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct LuidAndAttributes
+        {
+            public Luid Luid;
+            public uint Attributes;
+        }
+
+        /// <summary>Single-privilege TOKEN_PRIVILEGES buffer.</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct TokenPrivileges
+        {
+            public uint PrivilegeCount;
+            public LuidAndAttributes Privileges;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct TokenElevation
+        {
+            public int TokenIsElevated;
+        }
+
+        [DllImport("kernel32.dll")]
+        internal static extern IntPtr GetCurrentProcess();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool CloseHandle(IntPtr handle);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetTokenInformation(
+            IntPtr tokenHandle,
+            int tokenInformationClass,
+            out TokenElevation tokenInformation,
+            int tokenInformationLength,
+            out int returnLength);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool LookupPrivilegeValue(string systemName, string name, out Luid luid);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool AdjustTokenPrivileges(
+            IntPtr tokenHandle,
+            [MarshalAs(UnmanagedType.Bool)] bool disableAllPrivileges,
+            ref TokenPrivileges newState,
+            int bufferLength,
+            IntPtr previousState,
+            IntPtr returnLength);
 
         internal delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 

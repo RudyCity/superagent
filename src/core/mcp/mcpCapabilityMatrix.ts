@@ -381,6 +381,24 @@ const MULTI_ACTION_CAPABILITY_REGISTRY: Record<string, Record<string, Partial<Ac
       readiness: "ready",
       testStatus: "smoke_tested",
     },
+    // Certified read-only discovery (CERTIFIED_DESKTOP_DISCOVERY +
+    // DISCOVERY_COMMAND_FIELDS) is declared explicitly so capability preflight
+    // never derives it from the generic tool classification. `stats` returns a
+    // bounded metrics snapshot only: no titles, no screenshot, no window
+    // session, no input. Classification stays as conservative as its siblings.
+    stats: {
+      description: "Read bounded Desktop UI perception metrics (latency, carrier health, change ratio).",
+      oauthScopes: ["mcp:tools", "mcp:tools:write"],
+      projectCapability: "execute",
+      hostFilePolicy: "certified_read",
+      nativeApproval: "not_required",
+      dependencies: [],
+      runtimeService: null,
+      targetSessionRequirement: "none",
+      pathFileScope: "none",
+      readiness: "ready",
+      testStatus: "smoke_tested",
+    },
     list_windows: {
       description: "List desktop windows and bounds.",
       oauthScopes: ["mcp:tools", "mcp:tools:write"],

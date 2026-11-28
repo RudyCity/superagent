@@ -3,17 +3,24 @@
 // protocol on stdin/stdout.
 //
 // Hardening rules (fail closed, never recover):
+// - the host refuses an elevated token and strips every token privilege it does
+//   not need before touching any window (PrivilegeGuard.cs);
 // - one command per line; a line above 2 MB, malformed JSON, or the third
 //   protocol violation terminates the process with a non-zero exit code;
 // - no caller-supplied path, script, argument or file name is ever accepted;
 // - UTF-8 output through one StreamWriter, flushed per line, no stdout logging
 //   and no stdin echo, so stdout is protocol-only;
 // - the ready line echoes a Core-generated nonce from the environment; a host
-//   started without a nonce exits without ever printing ready.
+//   started without a nonce exits without ever printing ready;
+// - the served-request count and wall-clock lifetime are bounded
+//   (HostBudget.cs). Before a request that would exceed either bound, the host
+//   writes a typed `rotating` line and exits 0 so the Core respawns it and
+//   re-issues that exact request once. A request is never lost to rotation.
 using System;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Threading;
 
 namespace DesktopHost
 {
@@ -21,6 +28,7 @@ namespace DesktopHost
     {
         private const int MaxCommandChars = 2 * 1024 * 1024;
         private const int MaxProtocolViolations = 3;
+        private const int WatchdogIntervalMs = 250;
         private const string NonceEnvironmentVariable = "SUPERAGENT_DESKTOP_HOST_NONCE";
         private const string CloseCommand = "close";
         private const string CaptureCommandName = "capture";
@@ -32,6 +40,9 @@ namespace DesktopHost
         private const int ExitMalformedJson = 4;
         private const int ExitMissingNonce = 5;
         private const int ExitUnexpected = 6;
+        private const int ExitElevated = 7;
+        private const int ExitPrivilegeHardening = 8;
+        private const int ExitInvalidConfiguration = 9;
 
         [STAThread]
         private static int Main()
@@ -50,6 +61,26 @@ namespace DesktopHost
             {
                 string nonce = Environment.GetEnvironmentVariable(NonceEnvironmentVariable);
                 if (string.IsNullOrEmpty(nonce)) return ExitMissingNonce;
+
+                string hardeningCode;
+                string hardeningMessage;
+                int privilegesRemoved;
+                if (!PrivilegeGuard.TryHarden(out hardeningCode, out hardeningMessage, out privilegesRemoved))
+                {
+                    ProtocolJson.WriteError(stdout, hardeningCode, hardeningMessage);
+                    stdout.Flush();
+                    return hardeningCode == PrivilegeGuard.ElevatedCode ? ExitElevated : ExitPrivilegeHardening;
+                }
+
+                HostBudget budget;
+                string budgetError;
+                if (!HostBudget.TryCreate(out budget, out budgetError))
+                {
+                    ProtocolJson.WriteError(stdout, "HOST_CONFIG_INVALID", budgetError);
+                    stdout.Flush();
+                    return ExitInvalidConfiguration;
+                }
+
                 if (!DpiAwareness.EnablePerMonitorV2())
                 {
                     ProtocolJson.WriteError(stdout, "DPI_CONTEXT_UNAVAILABLE", "PER_MONITOR_AWARE_V2 could not be established.");
@@ -59,9 +90,14 @@ namespace DesktopHost
                 ready.StartObject();
                 ready.Name("type").Value("ready");
                 ready.Name("nonce").Value(nonce);
+                ready.Name("elevated").Value(false);
+                ready.Name("privilegesRemoved").Value((long)privilegesRemoved);
+                ready.Name("maxRequests").Value(budget.MaxRequests);
+                ready.Name("maxLifetimeMs").Value(budget.MaxLifetimeMs);
                 ready.EndObject();
                 stdout.WriteLine(ready.ToString());
-                return RunCommandLoop(stdin, stdout);
+                StartLifetimeWatchdog(budget, stdout);
+                return RunCommandLoop(stdin, stdout, budget);
             }
             catch (Exception)
             {
@@ -81,7 +117,7 @@ namespace DesktopHost
             }
         }
 
-        private static int RunCommandLoop(TextReader stdin, TextWriter stdout)
+        private static int RunCommandLoop(TextReader stdin, TextWriter stdout, HostBudget budget)
         {
             int violations = 0;
             while (true)
@@ -138,6 +174,24 @@ namespace DesktopHost
                     continue;
                 }
 
+                string rotationReason;
+                BudgetDecision decision = budget.TryBeginRequest(out rotationReason);
+                if (decision == BudgetDecision.Rotate)
+                {
+                    // Planned exit announced in-band: the Core respawns the host
+                    // and re-issues this request exactly once.
+                    ProtocolJson.WriteRotating(stdout, rotationReason, budget.ServedRequests);
+                    stdout.Flush();
+                    return ExitClean;
+                }
+                if (decision == BudgetDecision.AlreadyRotating)
+                {
+                    // The idle watchdog owns the announced exit; give it time to
+                    // write the line before this thread ends the process.
+                    Thread.Sleep(WatchdogIntervalMs);
+                    return ExitClean;
+                }
+
                 try
                 {
                     if (string.Equals(commandName, CaptureCommandName, StringComparison.Ordinal))
@@ -156,7 +210,45 @@ namespace DesktopHost
                     // Core treats the error line as a refused frame.
                     ProtocolJson.WriteError(stdout, error.Code, error.Message);
                 }
+                finally
+                {
+                    budget.EndRequest();
+                }
             }
+        }
+
+        /// <summary>
+        /// Lifetime bound for an idle host. When no command is in flight and the
+        /// budget expired, announce the rotation and exit 0. The main loop owns
+        /// the same decision while it is serving commands.
+        /// </summary>
+        private static void StartLifetimeWatchdog(HostBudget budget, TextWriter stdout)
+        {
+            Thread watchdog = new Thread(delegate()
+            {
+                try
+                {
+                    while (true)
+                    {
+                        Thread.Sleep(WatchdogIntervalMs);
+                        if (budget.RotatingClaimed) return;
+                        string reason;
+                        if (!budget.TryClaimIdleRotation(out reason)) continue;
+                        ProtocolJson.WriteRotating(stdout, reason, budget.ServedRequests);
+                        stdout.Flush();
+                        Environment.Exit(ExitClean);
+                        return;
+                    }
+                }
+                catch (Exception)
+                {
+                    // The watchdog is best-effort; the main loop still enforces
+                    // the budget by refusing the next command with a rotation.
+                }
+            });
+            watchdog.IsBackground = true;
+            watchdog.Name = "desktop-host-lifetime";
+            watchdog.Start();
         }
 
         private static bool TryReadCommandName(JsonValue command, out string commandName)
