@@ -39,9 +39,18 @@ export function resolveDesktopHostArtifactDirectory(modulePath: string): string 
   throw new DesktopUiError("DESKTOP_UI_UNAVAILABLE", "Unknown Desktop UI host module layout.");
 }
 
-const ARTIFACT_DIRECTORY = resolveDesktopHostArtifactDirectory(fileURLToPath(import.meta.url));
-export const DESKTOP_HOST_EXECUTABLE_PATH = path.join(ARTIFACT_DIRECTORY, "desktop-host.exe");
-export const DESKTOP_HOST_DIGEST_PATH = path.join(ARTIFACT_DIRECTORY, "desktop-host.sha256");
+/**
+ * Resolved on first use, never at import: the dist/scripts bundles import this
+ * module transitively on startup paths that never touch the host, so an
+ * unrecognised bundle layout must only fail closed when it is actually used.
+ */
+function desktopHostArtifactPaths(): { executable: string; digest: string } {
+  const directory = resolveDesktopHostArtifactDirectory(fileURLToPath(import.meta.url));
+  return {
+    executable: path.join(directory, "desktop-host.exe"),
+    digest: path.join(directory, "desktop-host.sha256"),
+  };
+}
 
 function regularFile(name: string): boolean {
   try {
@@ -112,7 +121,8 @@ let cachedArtifact: { resolved: boolean; path: string | null } = { resolved: fal
 export function locateVerifiedDesktopHost(): string | null {
   if (process.platform !== "win32") return null;
   if (cachedArtifact.resolved) return cachedArtifact.path;
-  const verified = verifyDesktopHostArtifactPair(DESKTOP_HOST_EXECUTABLE_PATH, DESKTOP_HOST_DIGEST_PATH);
+  const { executable, digest } = desktopHostArtifactPaths();
+  const verified = verifyDesktopHostArtifactPair(executable, digest);
   cachedArtifact = { resolved: true, path: verified };
   return verified;
 }

@@ -33,9 +33,18 @@ export function resolveWindowsWgcArtifactDirectory(modulePath: string): string {
   throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "Unknown WGC helper module layout.");
 }
 
-const ARTIFACT_DIRECTORY = resolveWindowsWgcArtifactDirectory(fileURLToPath(import.meta.url));
-const EXECUTABLE_PATH = path.join(ARTIFACT_DIRECTORY, "wgc.exe");
-const DIGEST_PATH = path.join(ARTIFACT_DIRECTORY, "wgc.sha256");
+/**
+ * Resolved on first use, never at import: the dist/scripts bundles import this
+ * module transitively on startup paths that never touch the helper, so an
+ * unrecognised bundle layout must only fail closed when it is actually used.
+ */
+function wgcArtifactPaths(): { executable: string; digest: string } {
+  const directory = resolveWindowsWgcArtifactDirectory(fileURLToPath(import.meta.url));
+  return {
+    executable: path.join(directory, "wgc.exe"),
+    digest: path.join(directory, "wgc.sha256"),
+  };
+}
 
 function regularFile(name: string): boolean {
   try {
@@ -85,5 +94,6 @@ export function verifyWindowsWgcArtifactPair(exePath: string, digestPath: string
 
 export function locateVerifiedWindowsWgcHelper(): string | null {
   if (process.platform !== "win32") return null;
-  return verifyWindowsWgcArtifactPair(EXECUTABLE_PATH, DIGEST_PATH);
+  const { executable, digest } = wgcArtifactPaths();
+  return verifyWindowsWgcArtifactPair(executable, digest);
 }

@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   resolveWindowsWgcArtifactDirectory, verifyWindowsWgcArtifactPair,
@@ -74,6 +76,26 @@ describe("bundled native Windows Graphics Capture artifact integrity",()=>{
       expect(()=>verifyWindowsWgcArtifactPair(exe,sha)).toThrow(/size bounds|checksum/);
     } finally {
       await fs.rm(dir,{recursive:true,force:true});
+    }
+  });
+
+  it("imports without resolving the directory in an unrecognised layout", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "superagent-wgc-import-layout-"));
+    try {
+      const adapterDir = path.join(dir, "core", "desktopUi", "adapters");
+      await fs.mkdir(adapterDir, { recursive: true });
+      const modulePath = path.join(adapterDir, "windowsWgcArtifact.ts");
+      await fs.copyFile(path.join(process.cwd(), "src", "core", "desktopUi", "adapters",
+        "windowsWgcArtifact.ts"), modulePath);
+      await fs.copyFile(path.join(process.cwd(), "src", "core", "desktopUi", "errors.ts"),
+        path.join(dir, "core", "desktopUi", "errors.ts"));
+      const probe = spawnSync(process.execPath, ["-e",
+        `const m = await import(${JSON.stringify(pathToFileURL(modulePath).href)});` +
+        'if (typeof m.locateVerifiedWindowsWgcHelper !== "function") throw Error("missing export");',
+      ], { encoding: "utf8", timeout: 15_000 });
+      expect(probe.status, probe.stderr).toBe(0);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
     }
   });
 });

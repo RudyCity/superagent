@@ -29,7 +29,11 @@ beforeEach(() => {
   // Mock execa to avoid running real shell commands in the unit tests
   vi.spyOn(execaModule, "execa").mockImplementation((cmd, args, options) => {
     const actualArgs = Array.isArray(args) ? args : [];
-    
+
+    // The Windows resolver returns an absolute path (e.g. C:\Program Files\Git\cmd\git.exe)
+    // while POSIX returns plain "git"; accept either by matching the executable basename.
+    const isGitExecutable = typeof cmd === "string" && /(^|[\\/])git(?:\.exe)?$/i.test(cmd);
+
     const isError = typeof cmd === "string" && cmd.includes("invalid_command");
     const mockResult = {
       stdout: isError ? "" : "mocked process stdout",
@@ -37,7 +41,7 @@ beforeEach(() => {
       all: isError ? "command not found" : "mocked process stdout and stderr",
     };
 
-    if (cmd === "git") {
+    if (isGitExecutable) {
       if (actualArgs.includes("status")) {
         mockResult.stdout = "M src/app.tsx";
       } else if (actualArgs.includes("diff")) {

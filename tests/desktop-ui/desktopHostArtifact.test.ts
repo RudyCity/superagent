@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   DESKTOP_HOST_IMAGE_MAX_BYTES,
@@ -165,5 +167,29 @@ describe("desktop host artifact directory resolution", () => {
   it("refuses an unknown tree root instead of probing parent directories", () => {
     const modulePath = path.join(root, "build", "core", "desktopUi", "adapters", "desktopHostArtifact.js");
     expect(() => resolveDesktopHostArtifactDirectory(modulePath)).toThrow(/Unknown Desktop UI host module layout/);
+  });
+
+  it("imports without resolving the directory in an unrecognised layout", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "superagent-desktop-host-import-layout-"));
+    try {
+      const adapterDir = path.join(dir, "core", "desktopUi", "adapters");
+      await mkdir(adapterDir, { recursive: true });
+      const modulePath = path.join(adapterDir, "desktopHostArtifact.ts");
+      await copyFile(
+        path.join(process.cwd(), "src", "core", "desktopUi", "adapters", "desktopHostArtifact.ts"),
+        modulePath,
+      );
+      await copyFile(
+        path.join(process.cwd(), "src", "core", "desktopUi", "errors.ts"),
+        path.join(dir, "core", "desktopUi", "errors.ts"),
+      );
+      const probe = spawnSync(process.execPath, ["-e",
+        `const m = await import(${JSON.stringify(pathToFileURL(modulePath).href)});` +
+        'if (typeof m.locateVerifiedDesktopHost !== "function") throw Error("missing export");',
+      ], { encoding: "utf8", timeout: 15_000 });
+      expect(probe.status, probe.stderr).toBe(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

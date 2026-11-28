@@ -1,3 +1,10 @@
+## [1.14.133] - 2026-11-28
+### Named-launcher bundles: native artifact paths resolve on use, not on import
+- `dist/scripts/mcp-tunnel-anchor.js` crashed at import with `DesktopUiError: Unexpected Core module layout for WGC helper.`, so `tests/mcpNamedOwnerStartupE2E.test.ts` timed out waiting for a lease anchor that could never start. The desktop-live adapters resolved their native artifact directory at module scope via `resolve…ArtifactDirectory(fileURLToPath(import.meta.url))`; inside the launcher bundle that URL is `dist/scripts`, so any consumer threw before running a single line.
+- `windowsWgcArtifact.ts` and the sibling `desktopHostArtifact.ts` — reached next in the same eager init chain — now resolve their directory from a private helper called on first use, inside the existing `process.platform === "win32"` guard. A genuinely wrong layout still fails closed with the same `DesktopUiError` code and message; the normal Core layout resolves to the same `dist/native/...` directories as before.
+- Focused regression tests spawn a child runtime against an unrecognised `…/core/desktopUi/adapters/` tree and assert the module still imports; both fail against the previous code.
+- `tests/tools.test.ts` mocked execa with `cmd === "git"`, while Windows resolves the absolute `C:\Program Files\Git\cmd\git.exe`, so `should run gitActionTool` failed only on developer machines (CI is green because POSIX returns plain `git`). The mock now matches the executable basename.
+
 ## [1.14.132] - 2026-11-28
 ### One runtime log contract for every Core/server host, with an operator escape hatch
 - **Sink and policy in one module.** `src/core/utils/runtimeLog.ts` now owns both the durable sink (`logToSuperAgentServerFile`, previously in `server.ts`, still re-exported from there) and the terminal-echo decision. `serverRuntimeLog(level, ...)` always appends exactly one `[LEVEL] message` line to `~/.superagent-r/superagent-server.log` and echoes only when the host allows it. `setRuntimeLogTerminalEcho(enabled, reason)` records why, and `runtimeLogEchoState()` / `describeRuntimeLogEcho()` expose the effective decision.
