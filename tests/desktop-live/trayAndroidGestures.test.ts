@@ -81,6 +81,12 @@ function setup() {
   vm.runInNewContext(script,{
     document:{readyState:"complete",hidden:false,
       getElementById:get,createElement:create,querySelectorAll:()=>[],
+      // The panel resolves its header with a selector like
+      // "#page-desktop-live .panel-head"; map it onto the stubbed element.
+      querySelector:(selector:string)=>{
+        const match=/#([A-Za-z0-9_-]+)/.exec(selector);
+        return match?get(match[1]):null;
+      },
       addEventListener:()=>{}},
     window:windowStub,Date:{now:()=>now},Math,Number,String,Error,Boolean,Promise,
     performance:{now:()=>now},

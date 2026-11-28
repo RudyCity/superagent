@@ -19,7 +19,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { runToolPreflight } from "../src/core/mcp/mcpToolPreflight.js";
 import { runToolDoctor } from "../src/core/mcp/mcpToolDoctor.js";
-import { doctorCommand } from "../src/core/commands/coreCommands.js";
+import { doctorCommand } from "../src/core/commands/doctorCommand.js";
 import {
   getBaseToolCapability,
   getToolActionCapabilities,
@@ -311,7 +311,8 @@ describe("Tool Doctor Diagnostics", () => {
       addLine: (line: { type: string; content: string }) => lines.push(line),
     };
 
-    await doctorCommand.execute("fast", mockCtx as any);
+    // `/doctor` is a single dispatcher now: the tool audit is `tools <args>`.
+    await doctorCommand.execute("tools fast", mockCtx as any);
 
     expect(lines.length).toBeGreaterThanOrEqual(2);
     const reportLine = lines.find((l) => l.content.includes("SUPERAGENT MCP TOOL DOCTOR AUDIT REPORT"));

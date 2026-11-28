@@ -50,7 +50,9 @@ function loadBridge(options: { attachConflict?: boolean; now?: () => number } = 
       setTitle: async () => {},
     },
   };
-  const context: any = { chrome, console, setTimeout, clearTimeout };
+  // The policy decides privileged URLs with `new URL(...)`; a browser extension
+  // always has it, so the sandbox must provide it too.
+  const context: any = { chrome, console, setTimeout, clearTimeout, URL };
   context.globalThis = context;
   vm.runInNewContext(readFileSync("chrome-extension-delegate/cdpPolicy.js", "utf8"), context);
   vm.runInNewContext(readFileSync("chrome-extension-delegate/cdpBridge.js", "utf8"), context);

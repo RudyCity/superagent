@@ -1,3 +1,10 @@
+## [1.14.131] - 2026-11-28
+### Test harness: the three suites the Vitest EISDIR had been hiding
+- With the sourcemap crash removed, `Bun Runtime Validation` reported for the first time the failures it had been masking. All three were sandbox gaps in the tests, not product defects.
+- `delegateCdpExtension`: the VM sandbox exposed only `chrome`, `console` and timers, so `new URL(...)` threw inside the CDP policy and every tab looked privileged — listing returned `[]` and `assertUrl` refused `https://example.com/`. The sandbox now provides `URL`, as any extension has.
+- `trayAndroidGestures`: the stub `document` had no `querySelector`, so the Desktop Live panel threw while resolving its header. It now maps `#id` selectors onto the stubbed elements.
+- `mcpCapabilityPreflightDoctor`: `/doctor` became one dispatcher, so `doctorCommand` moved to `src/core/commands/doctorCommand.ts` and the tool audit is `tools <args>`; the test now imports the dispatcher and calls `tools fast` instead of the removed `fast` shortcut.
+
 ## [1.14.130] - 2026-11-28
 ### Runtime logs: embedded hosts keep the terminal clean
 - **Symptom.** `runServer()` installed a console wrapper that called `originalLog.apply(...)` for every message before appending it to `superagent-server.log`. While the interactive CLI ran its embedded server (`runServer(7888, true)`), Core/server runtime lines — turn-recovery warnings, `[SERVER ERROR]`, the Delegate bridge warning, stream debug — were painted over the Ink UI even though the host had asked for a silent server. The operator already has SuperAgent Tray for that.
