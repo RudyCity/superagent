@@ -11,6 +11,7 @@ import { requestCoreSupervisor, runCoreSupervisor } from "./coreSupervisor.js";
 import { coreGuardianFile, runCoreGuardian } from "./coreGuardian.js";
 import { auditCoreColdStart } from "./coreColdStartAudit.js";
 import { archiveVerifiedColdRuntimeState } from "./coreColdReset.js";
+import { serverRuntimeLog } from "../utils/runtimeLog.js";
 
 export type CoreBootDecision = "already_running" | "fresh_guard" | "recover_survivors" | "cold_reset" | "refuse";
 export interface CoreBootSnapshot {
@@ -59,18 +60,18 @@ export async function runCoreBoot(options: {
   };
   const decision = decideCoreBoot(snapshot);
   if (decision === "already_running") {
-    console.log("Core boot: verified owner already active; no takeover or restart.");
+    serverRuntimeLog("info", "Core boot: verified owner already active; no takeover or restart.");
     return "already_running";
   }
   const mode = options.clientMode || storedMode || "tline";
   if (decision === "recover_survivors") {
     await runCoreSupervisor(port, mode, true);
-    console.log("Core boot: existing worker(s) verified; checkpoint routing restored.");
+    serverRuntimeLog("info", "Core boot: existing worker(s) verified; checkpoint routing restored.");
     return "recovered";
   }
   if (decision === "cold_reset") {
     const archive = await archiveVerifiedColdRuntimeState(port);
-    console.log("Core boot: verified total runtime loss; stale state archived at " + archive.archiveDir +
+    serverRuntimeLog("info", "Core boot: verified total runtime loss; stale state archived at " + archive.archiveDir +
       ". No previous session or tool effect was replayed.");
     const result = await runCoreGuardian({ port, clientMode: mode });
     if (result.reason !== "stopped") throw new Error("Cold-start Core guardian exited: " + result.reason);

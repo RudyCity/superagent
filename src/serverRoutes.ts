@@ -85,6 +85,7 @@ import { recordAgentTimeline } from "./core/channels/tlineAgentTimeline.js";
 import { readSenopatiReadiness } from "./core/senopatiReadiness.js";
 import { cancelTlineApproval, decideTlineApproval, getTlineApproval, listTlineApprovals } from "./core/channels/tlineApprovalRegistry.js";
 import { getNormalizedProjectPath } from "./core/tools/helpers.js";
+import { serverRuntimeLog } from "./core/utils/runtimeLog.js";
 
 /** Persist an atomic memory under a canonical project/global scope. Never trust a client-supplied project ID. */
 async function saveScopedAtomicMemory(
@@ -4270,7 +4271,7 @@ export async function handleServerRoute(
         await agent.loadHistory(resume);
       } catch (err: any) {
         resumeWarning = `Failed to restore history for session '${resume}': ${err?.message || String(err)}. Session starts with empty context.`;
-        console.warn(`[WARN] ${resumeWarning}`);
+        serverRuntimeLog("warn", `[WARN] ${resumeWarning}`);
       }
     }
 
@@ -6557,7 +6558,7 @@ export async function handleServerRoute(
 
       registerActiveDag(dag);
       if (payload.autoStart !== false) {
-        void executeDagGraph(dag).catch(console.error);
+        void executeDagGraph(dag).catch((error) => serverRuntimeLog("error", "[Motion] DAG execution failed:", error));
       }
       sendJSON(res, 201, { success: true, dag });
     } catch (err: any) {

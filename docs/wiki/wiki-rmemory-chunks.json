@@ -4,42 +4,42 @@
     "document": "00-index.md",
     "section": "Superagent Technical Architecture Wiki",
     "content": "Welcome to the comprehensive technical architecture wiki and developer documentation for **Superagent**.\n\nSuperagent is an interactive, terminal-based AI coding assistant featuring a terminal UI, real-time context token tracking, and a 3-tier multi-agent orchestration system (Master Agent $\\rightarrow$ Superagent $\\rightarrow$ Subagent). It bridges local development with desktop clients ([t-line](file:///d:/backup%20from%20pc%20asus/Documents%20Development/t-line)), remote browser automation, and an MCP server with separately authenticated remote Muse WebSocket coordination.\n\n---",
-    "updatedAt": "2026-11-27T15:53:05.224Z"
+    "updatedAt": "2026-11-28T08:12:27.543Z"
   },
   {
     "id": "wiki-9edf942fd6a8e08e",
     "document": "00-index.md",
     "section": "Architecture Quick Map",
     "content": "```mermaid\ngraph TD\n    classDef master fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff;\n    classDef super fill:#0f172a,stroke:#818cf8,stroke-width:2px,color:#fff;\n    classDef sub fill:#111827,stroke:#34d399,stroke-width:2px,color:#fff;\n    classDef ext fill:#1f2937,stroke:#fbbf24,stroke-width:2px,color:#fff;\n\n    Client[\"💻 Terminal UI / t-line Client / Chrome Extension\"]:::ext\n\n    subgraph Tier1[\"Tier 1: Master Agent\"]\n        MA[\"👑 Master Agent Orchestrator\"]:::master\n        CM[\"🧠 Context Manager & Token Tracker\"]:::master\n        DB[(\"🗄️ SQLite History & FTS5\")]:::master\n    end\n\n    subgraph Tier2[\"Tier 2: Superagents (Isolated Worktrees)\"]\n        SA1[\"🚀 Superagent (Feature A: Branch)\"]:::super\n        SA2[\"🚀 Superagent (Feature B: Branch)\"]:::super\n    end\n\n    subgraph Tier3[\"Tier 3: Ephemeral Subagents\"]\n        SUB1[\"🔍 Researcher Agent\"]:::sub\n        SUB2[\"⚡ Coder Agent\"]:::sub\n        SUB3[\"🧪 Tester Agent\"]:::sub\n        SUB4[\"🌐 Chrome Remote Agent\"]:::sub\n    end\n\n    Client --> MA\n    MA --> CM\n    MA --> DB\n    MA --> SA1\n    MA --> SA2\n    SA1 --> SUB1\n    SA1 --> SUB2\n    SA2 --> SUB3\n    SA2 --> SUB4\n```\n\n---",
-    "updatedAt": "2026-11-27T15:53:05.224Z"
+    "updatedAt": "2026-11-28T08:12:27.543Z"
   },
   {
     "id": "wiki-de32c8d0e04bf34a",
     "document": "00-index.md",
     "section": "Wiki Chapters",
     "content": "| Chapter | File | Core Content |\n|---|---|---|\n| **00** | [00-index.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/00-index.md) | Table of contents, tech stack badges, system map, and key principles |\n| **01** | [01-architecture-overview.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/01-architecture-overview.md) | 3-tier multi-agent hierarchy, C4 context & container diagrams, execution loops, client bridge modes |\n| **02** | [02-domain-models-and-data.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/02-domain-models-and-data.md) | SQLite schema (`history.db`), `model-config.json` schema, context & token tracking models, state machines |\n| **03** | [03-api-and-contracts.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/03-api-and-contracts.md) | CLI commands, MCP tool schemas and permissions, independent multi-project routing (see [operations guide](../mcp/independent-projects.md)), Muse chat envelope contract, Chrome WebSocket bridge, desktop bridge |\n| **04** | [04-features-and-workflows.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/04-features-and-workflows.md) | Multi-agent workflows, context compaction, browser automation, Muse MCP readiness and two-way chat |\n| **05** | [05-infrastructure-and-devops.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/05-infrastructure-and-devops.md) | Node/Bun runtime, TypeScript build pipeline, ~/.superagent-r/ storage layout, logging, error handling |\n| **06** | [06-developer-onboarding.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/06-developer-onboarding.md) | Setup instructions, development commands, testing guidelines, prompt authoring rules (Concepts A, B, C) |\n| **07** | [07-adrs-and-decisions.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/07-adrs-and-decisions.md) | Architecture Decision Records (ADRs) on multi-tier isolation, SQLite transcripts, JSON config, and WebSockets |\n\n---",
-    "updatedAt": "2026-11-27T15:53:05.224Z"
+    "updatedAt": "2026-11-28T08:12:27.543Z"
   },
   {
     "id": "wiki-2c529952e9e6df2f",
     "document": "00-index.md",
     "section": "Technology Stack",
     "content": "| Layer | Technology | Key Details |\n|---|---|---|\n| **Runtime & Execution** | Node.js (v20+ / v22+) & Bun | High-performance CLI runtime, TypeScript execution with `tsx` |\n| **Terminal UI Framework** | React 18 & Ink | Cyberpunk terminal styling, ANSI styling, interactive widgets |\n| **AI SDK & Model Providers** | Vercel AI SDK (`ai`), `@ai-sdk/*` | Multi-provider support: Anthropic Claude, Google Gemini, OpenAI, OpenRouter, DeepSeek, Ollama, Custom API |\n| **Tokenization & Context** | `tiktoken`, `@anthropic-ai/tokenizer` | Model-specific context window tracking, compaction strategies, semantic analysis |\n| **Storage & Persistence** | SQLite (`better-sqlite3` / raw SQL) | `~/.superagent-r/history.db` single source of truth, FTS5 full-text transcript search |\n| **Configuration** | JSON-only (`model-config.json`) | Zero `process.env` pollution, profile switching, tiered model assignments |\n| **Process & Worktrees** | Execa & Git Worktrees | Isolated per-feature branches under `~/.superagent-r/worktrees/` |\n| **Remote Browser Bridge** | WebSocket (`ws`) | Port 9223 serverless bridge connecting CLI with Chrome extension |\n| **Testing** | Vitest | Unit, integration, and anti-regression testing suite in `tests/` |\n\n---",
-    "updatedAt": "2026-11-27T15:53:05.224Z"
+    "updatedAt": "2026-11-28T08:12:27.543Z"
   },
   {
     "id": "wiki-9b276366d7bfb4bb",
     "document": "00-index.md",
     "section": "Core Design Principles",
     "content": "1. **Strict 3-Tier Multi-Agent Separation**: Master Agent plans and orchestrates without directly editing code; Superagents execute feature development in isolated Git worktrees; Subagents perform atomic, ephemeral tasks.\n2. **Zero `process.env` Dependency**: All configurations, API keys, presets, and tier models reside exclusively in `~/.superagent-r/model-config.json`.\n3. **SQLite Single Source of Truth**: Chat transcripts, messages, and session metadata are stored and searched in SQLite (`history.db`) with FTS5. The historical `.json` files are 0-byte structural identifiers.\n4. **Dynamic Context Engine**: Active token tracking prevents context window overflows through predictive summarization, pinning preservation, and semantic pruning.\n5. **English-Only Standard**: All user-facing text, UI labels, log entries, comments, documentation, and prompt strings are strictly written in English.",
-    "updatedAt": "2026-11-27T15:53:05.224Z"
+    "updatedAt": "2026-11-28T08:12:27.543Z"
   },
   {
-    "id": "wiki-69510bac0ab153fc",
+    "id": "wiki-ad8fdf3dbd28a67d",
     "document": "00-index.md",
-    "section": "🕒 Last Sync Event: 2026-11-27 15:53:04 UTC (Multi-Workspace: superagent, t-line)",
-    "content": "| Modified Source File | Impacted Wiki Section | Change Trigger |\n|:---|:---|:---|\n| `package.json` | [01-architecture-overview.md](./01-architecture-overview.md) | Dependencies or Workspace Structure modified |\n| `src/core/mcp/tools/desktopUiMcpTools.ts` | [03-api-and-contracts.md](./03-api-and-contracts.md) | MCP tool schema, registry, or transport contract modified |\n<!-- RECENT_SYNC_LOG_END -->",
-    "updatedAt": "2026-11-27T15:53:05.224Z"
+    "section": "🕒 Last Sync Event: 2026-11-28 08:12:26 UTC (Multi-Workspace: superagent, t-line)",
+    "content": "| Modified Source File | Impacted Wiki Section | Change Trigger |\n|:---|:---|:---|\n| `package.json` | [01-architecture-overview.md](./01-architecture-overview.md) | Dependencies or Workspace Structure modified |\n| `src/server.ts` | [03-api-and-contracts.md](./03-api-and-contracts.md) | API Endpoint Route Handler modified |\n<!-- RECENT_SYNC_LOG_END -->",
+    "updatedAt": "2026-11-28T08:12:27.543Z"
   },
   {
     "id": "wiki-451c413d83686fd8",
@@ -172,140 +172,140 @@
     "document": "03-api-and-contracts.md",
     "section": "03. API & External Contracts",
     "content": "This document catalogs all user interfaces, CLI commands, tool interfaces, WebSocket bridge contracts, and external client integrations.\n\n---",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-dec14fba4dff5dad",
     "document": "03-api-and-contracts.md",
     "section": "Desktop Live Tray management (1.14.99)",
     "content": "Desktop Live is a session-management console in SuperAgent Tray for native OS windows, managed Chrome CDP tabs, and CDP Delegate tabs. Each entry has a verified exact handle and a scoped stop/takeover action that never closes the host application or browser tab. Authenticated agents use the owner-token-bound `superagent_desktop_ui` `live_inventory` and `live_stop` commands.\n\nNative Tray uses allowlisted IPC to a Core local Bearer endpoint that rejects forwarded connections. The **separately enabled remote Tray management-only gateway** binds loopback on a dedicated origin and requires a separate hashed scrypt password, short-lived Secure/HttpOnly cookie and CSRF for mutations. It provides only inventory/stop/logout; **no** screenshot, frame, live video, VNC, input, Chrome debugger, native Tauri IPC, or Core bearer travels through the gateway. Password rotation closes the gateway and revokes existing sessions. Named mode uses an operator-controlled hostname; Quick mode launches a separate, explicitly approved cloudflared child and presents its temporary `*.trycloudflare.com` URL. Neither mode touches MCP ingress or exposes screen frames. External reachability is independently verified before deployment claims.\n\nSee [Desktop Live security contract](../guides/desktop-live-private-viewer-ui.md).",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-9bd1791ef205fe23",
     "document": "03-api-and-contracts.md",
     "section": "Python MCP Client (external integration)",
     "content": "An installable Python 3.11+ client and local stdio bridge lives at [`integrations/python-mcp-client/`](../../integrations/python-mcp-client/README.md). It consumes an existing SuperAgent Streamable HTTP `/mcp` endpoint and exposes dynamically authorized tools, resources, and prompts through stdio for compatible host applications. OAuth PKCE and static Bearer credentials are supported; the bridge does not own or restart Core/MCP services. The endpoint URL, authorization scope and optional Bearer token are supplied by the client environment, separate from SuperAgent model configuration.\n\nBoth `superagent mcp tunnel start` and `/mcp tunnel start`, plus their `tunnel status` views, display the Python MCP package GitHub source URL and one-shot Git installation command separately from the live MCP endpoint URL, PowerShell OAuth login and stdio bridge instructions. The GitHub installation URL resolves the canonical `main` branch package in `integrations/python-mcp-client/` via a Git subdirectory selector, while the separate login command resolves the local packaged client when the SuperAgent checkout includes it. A private OpenAI tunnel ID is never treated as an HTTPS MCP endpoint; fallback URLs are loopback-only. Bootstrap and Bearer secrets are not embedded in the generated one-shot command.",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-503720bb4c9ea7dd",
     "document": "03-api-and-contracts.md",
     "section": "Launch in Single Agent Mode",
     "content": "superagent --single\n```\n\n| Flag | Type | Description | Default |\n|---|---|---|---|\n| `--multi` | boolean | Enables 3-tier Master $\\rightarrow$ Superagent $\\rightarrow$ Subagent orchestration | `false` |\n| `--single` | boolean | Direct single-agent execution without worktrees | `true` |\n| `--server [port]` | number | Starts Superagent as an IPC/WebSocket server | `3000` |\n| `--client-mode [mode]` | string | External client adapter (`tline` \\| `chrome-extension`) | none |\n| `--version` / `-v` | boolean | Displays current version | - |\n| `--help` / `-h` | boolean | Displays command-line help | - |\n\n---",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-7804f96d4f871e73",
     "document": "03-api-and-contracts.md",
     "section": "2. Interactive Slash Commands",
     "content": "Superagent features built-in terminal wizard commands:\n\n| Slash Command | Handler | Description |\n|---|---|---|\n| `/login` | `src/core/config/providers.ts` | Multi-provider credential wizard (add/switch Anthropic, Google, OpenAI, OpenRouter, Ollama) |\n| `/model` | `src/core/config/providers.ts` | Configure tier models, presets, and subagent assignments |\n| `/settings` | `src/core/config/jsonConfig.ts` | Adjust concurrency, streaming, max iterations, and token thresholds |\n| `/clear` | `src/cli.tsx` | Reset session context window while preserving SQLite history |\n| `/compact` | `src/core/context/ContextManager.ts` | Manually trigger LLM-driven context summarization and pruning |\n| `/history` | `src/core/storage/historyDb.ts` | Search previous conversation transcripts using SQLite FTS5 |\n| `/terminal [preset]` | `src/core/tools/systemTools.ts` | Run or initialize terminal automation presets |\n| `/yolo [on\\|off\\|status]` | `src/core/commands/coreCommands.ts` | Toggle scoped YOLO mode (auto-approve actions within project & 1 parent level above) |\n\n---",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-ffe4acd0ae53f359",
     "document": "03-api-and-contracts.md",
     "section": "3. Tier Toolset Contracts",
     "content": "Tools are defined in `src/core/tools/` and mapped to agent tiers in `src/core/tools/toolsets.ts`:",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-90504c33856879e8",
     "document": "03-api-and-contracts.md",
     "section": "Master Agent Toolset (`masterToolset`)",
     "content": "| Tool Name | Parameters | Description |\n|---|---|---|\n| `invokeSuperagentTool` | `{ featureName: string, role: string, instructions: string }` | Spawns a new Superagent in a dedicated Git worktree (`~/.superagent-r/worktrees/<featureName>`). |\n| `awaitSuperagentsTool` | `{ timeoutSeconds?: number }` | Awaits completion of running Superagents and collects their execution reports. |\n| `mergeSuperagentsTool` | `{ featureName: string, targetBranch?: string }` | Verifies and merges a completed Superagent git branch back into the main branch. |\n| `manageSuperagentsTool`| `{ action: 'list' \\| 'kill' \\| 'status', featureName?: string }` | Inspects status or cancels running Superagent processes. |\n| `gitWorktreeTool` | `{ action: 'list' \\| 'prune' \\| 'clean' }` | Inspects and cleans active git worktrees. |",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-9afb293a2220a85b",
     "document": "03-api-and-contracts.md",
     "section": "Superagent Toolset (`superagentToolsets`)",
     "content": "| Tool Name | Parameters | Description |\n|---|---|---|\n| `invokeSubagentTool` | `{ subagentType: string, task: string, files?: string[] }` | Spawns an ephemeral subagent (`researcher`, `coder`, `reviewer`, `tester`, `chrome-agent`). |\n| `manageSubagentsTool` | `{ action: 'list' \\| 'kill', subagentId?: string }` | Monitors or terminates running ephemeral subagents. |\n| `runCommandTool` | `{ command: string, cwd?: string }` | Executes a shell command via `execa` in the isolated worktree directory. |\n| `readFileTool` | `{ filePath: string, startLine?: number, endLine?: number }` | Reads text or code file contents. |\n| `writeToFileTool` | `{ filePath: string, content: string, overwrite?: boolean }` | Creates or writes files in the worktree. |\n| `replaceFileContentTool` | `{ filePath: string, targetContent: string, replacement: string }` | Performs surgical single-block replacements. |\n| `applyPatchTool` | `{ patch: string }` | Applies unified git diff patches. |",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-bb3cc2f96bf2ecf4",
     "document": "03-api-and-contracts.md",
     "section": "Progressive Tool Schema Discovery",
     "content": "Single Mode and Multi Mode Master/worker agents use progressive schema exposure. The authorized tool catalog remains complete inside the Agent, but the model initially receives only the canonical `list_tools` and `describe_tool` schemas.\n\n- `list_tools` searches the current Agent's authorized catalog and returns concise names/descriptions. Listing a tool does not expose its argument schema.\n- `describe_tool` returns full schemas only for names in that authorized catalog. Successfully described schemas are added to that Agent's model-visible set on the next model request.\n- Discovered schemas remain available through the recognized continuation of the current task. An independent top-level task, mode switch, changed catalog fingerprint, or Agent disposal clears discovery state.\n- The Master, Single, and Superagent tiers use this behavior. Specialized Subagents retain their existing full, role-specific toolsets.\n- Discovery is not authorization. The model-visible schema list is separate from the full execution catalog, and `ToolExecutor`/permission checks remain the authority for tool execution.\n- Native tool calling and prompt/XML-based tool calling use the same model-visible schema projection. Runtime capability notices are derived from the authorized catalog so undiscovered shell/write/network tools are not incorrectly reported as disabled.\n- `get_tools` and `describe_tools` are compatibility aliases resolved by the runtime. Model calls must use the canonical schema names actually advertised: `list_tools` and `describe_tool`.\n\nThe first-request schema benchmark against the current declared toolsets was approximately 7,298 to 262 estimated cl100k tokens for the 48-entry Master toolset, and 14,631 to 262 for the 67-entry Superagent toolset. These are serialized-schema estimates, not provider-billed usage; runtime eligibility filters can lower the active tool counts. See `docs/plans/2026-10-14-dynamic-tool-discovery-single-multi-plan.md` for implementation scope and verification details.\n\n---",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-a0500332b8eb3ed9",
     "document": "03-api-and-contracts.md",
     "section": "4. MCP Independent Multi-Project Routing",
     "content": "The MCP gateway can select registered local projects and standalone SSH projects by stable project ID. Workspace Chains are optional and remain reserved for workflows that coordinate multiple nodes.\n\n- Use project registry tools to list, inspect, register, update, and remove project metadata.\n- Pass projectId to supported workspace-scoped operations to route a single tool call; a per-call target does not change the session default.\n- Access grants are bound to the authenticated MCP identity and separated into read, write, execute, Git, worktree, planning, and chain capabilities. Project registry mutations and grant creation require locally enabled Full YOLO; registration does not imply access.\n- Standalone SSH uses a separate connection per registered project and supports workspace inspection, exec, batched file reads/writes, listing/search, and Git. Unsupported operations fail closed instead of falling back to local files.\n- The SSH project root guards supported file operations but does not sandbox shell commands. Execute capability runs with the SSH account's OS privileges. MCP SSH does not prompt interactively for passwords.\n\nSee [Independent MCP Projects](../mcp/independent-projects.md) for tool examples, access setup, routing rules, and security limitations.\n\n---",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-7bcc798eefa9ecb7",
     "document": "03-api-and-contracts.md",
     "section": "5. Remote Chrome WebSocket Bridge API (Port 9223)",
     "content": "Superagent incorporates a serverless WebSocket server (`src/core/tools/remoteChromeBridge.ts`) listening on `ws://127.0.0.1:9223`. Lightweight Chrome extensions connect to this bridge to execute automated browser tasks.",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-e351f822eab18e8c",
     "document": "03-api-and-contracts.md",
     "section": "Message Envelope Specification",
     "content": "All WebSocket frames follow a JSON-RPC 2.0 styled contract:\n\n```typescript\ninterface ChromeBridgeRequest {\n  id: string;             // Unique message UUID\n  action: ChromeAction;   // Action verb\n  params: Record<string, any>;\n}\n\ninterface ChromeBridgeResponse {\n  id: string;\n  success: boolean;\n  data?: any;\n  error?: string;\n}\n```",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-eaaf03b052b29868",
     "document": "03-api-and-contracts.md",
     "section": "Supported Actions",
     "content": "| Action | Parameters | Response Payload | Description |\n|---|---|---|---|\n| `get_tabs` | `{}` | `{ tabs: Array<{ id: number, url: string, title: string }> }` | Lists all active browser tabs. |\n| `navigate` | `{ tabId: number, url: string }` | `{ status: 'loaded', url: string }` | Navigates a tab to target URL. |\n| `get_dom` | `{ tabId: number, selector?: string }` | `{ html: string, text: string }` | Extracts serialized DOM or text content. |\n| `click` | `{ tabId: number, selector: string }` | `{ clicked: true }` | Dispatches native click event to DOM element. |\n| `type` | `{ tabId: number, selector: string, text: string }` | `{ typed: true }` | Fills input field with text value. |\n| `screenshot` | `{ tabId: number, format?: 'png' \\| 'jpeg' }` | `{ base64Image: string }` | Captures viewport screenshot. |\n| `evaluate_js` | `{ tabId: number, script: string }` | `{ result: any }` | Evaluates arbitrary JavaScript in tab context. |\n\n---",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-d1caee2fe9325d43",
     "document": "03-api-and-contracts.md",
     "section": "5. Desktop Bridge Protocol (`t-line`)",
     "content": "When Superagent is launched with `--server 3000 --client-mode tline`, it exposes HTTP endpoints and WebSocket streams for the desktop application:\n\n- **`POST /api/chat`**: Dispatches a new user turn to the active session.\n- **`GET /api/stream`**: Server-Sent Events (SSE) or WebSocket streaming LLM token chunks and tool status updates.\n- **`GET /api/history`**: Retrieves session transcripts from SQLite.\n- **`POST /api/models`**: Updates provider configurations and active presets in `model-config.json`.",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-a1754a0da8af3ed4",
     "document": "03-api-and-contracts.md",
     "section": "6. MCP HTTP Tools & Muse Direct Chat Contract",
     "content": "Superagent exposes MCP over Streamable HTTP. This endpoint is distinct from the Muse WebSocket tunnel: an MCP client calls a registered Superagent tool, while Superagent uses its active authenticated Muse WebSocket watcher to relay direct chat.",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-3f64676cf2aef73b",
     "document": "03-api-and-contracts.md",
     "section": "Remote-agent tool catalog",
     "content": "| Tool | Classification | Contract |\n|---|---|---|\n| `superagent_muse_chat_status` | Safe, read-only | Optional `port`; returns watcher state, transport type, connection state, `canChat`, and a readiness reason when unavailable. It does not send a message. |\n| `superagent_muse_chat` | Dangerous, opt-in | Required `text` (max 12,000 characters), optional `port`, optional `timeoutMs` (1,000-120,000; default 30,000). Returns only after a correlated Muse reply. |\n| `superagent_telegram_send_to_muse` | Dangerous, opt-in | Required `text`. Reports Telegram acceptance only, not that Muse processed or answered the message. |\n| `superagent_muse_tunnel_start` | Dangerous, opt-in | Optional `port`; starts the verified Muse WebSocket watcher and tunnel without exposing the WebSocket token. |\n| `superagent_muse_tunnel_restart` | Dangerous, opt-in | Optional `port`; restarts only the verified Muse tunnel, never the MCP HTTP server. |\n\nThe MCP tool registry and its permission classifications are the source of truth. Disabled tools are filtered from discovery independently of dangerous-tool opt-in. Tool counts must be derived from the list of tools actually exposed to the selected client, not maintained as numeric constants.",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-185a38b2d2e8e987",
     "document": "03-api-and-contracts.md",
     "section": "Correlated chat envelope",
     "content": "Direct chat uses the existing chat envelope with two correlation fields:\n\n```typescript\ninterface ChatEnvelope {\n  v: 1;\n  kind: \"chat\";\n  id?: string;        // Unique ID for this outgoing or response message\n  reply_to?: string;  // Request ID being answered\n  text: string;\n}\n```\n\nThe request receives a unique ID. Muse must respond with a new unique `id` and `reply_to` equal to the request ID. The watcher resolves only the matching pending request. Timeout, send failure, or WebSocket disconnect returns an error; it must not be reported as a successful conversation. Chat requests are not task execution requests; use the existing task envelope workflow when asking Muse to perform project work.\n\nSee [Muse MCP workflow examples](../mcp/muse-chat-workflows.md) for readiness checks, tunnel management, Telegram delivery, and direct chat examples.\n\n---",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-f6a23801a257da99",
     "document": "03-api-and-contracts.md",
     "section": "7. MCP Session Prompt Contract (Tray)",
     "content": "`GET` / `POST /api/desktop/mcp-agent-prompt` is a loopback-only, Core-authenticated Tray route. It stores one operator prompt per profile in `<config>/mcp-agent-prompt.json` (mode `0600`, 6000-character cap, control characters stripped, newest-first change history of the last 10 saves) and reports which running owners were reloaded.\n\n- The saved text is appended to the canonical initialize instructions by `composeMcpSessionInstructions`, so an MCP client receives it at the start of every session. An explicit `McpServerOptions.instructions` value still replaces the whole string for that call site.\n- `POST` reconfigures each verified reloadable managed owner with its existing tool mode and exposure, which closes its sessions. Busy, non-reloadable or unverifiable owners are returned in `skipped` and are never force-restarted.\n- `POST /api/desktop/mcp-agent-prompt/preview` composes a candidate draft with the canonical protocol and returns `effective` plus lengths; it never persists or reloads anything.\n- `history[]` keeps the full text of the last 10 saved versions, newest first, so the Tray can restore a version into the editor or diff it against the current draft. Restoring only fills the editor; nothing is applied to clients until an explicit save.\n- The Tray labels the version equal to the active prompt as `current` (restore disabled for it), lets the operator diff against either the draft or the active saved prompt, and exports the active prompt plus all retained versions as Markdown.\n- The prompt is guidance only. OAuth scopes, Security Approval grants, project grants and host file rules remain independent authorization gates.\n\n---",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-856e249eb22d74e0",
     "document": "03-api-and-contracts.md",
     "section": "🌐 Superagent (Interactive Terminal AI Coding Assistant)",
     "content": "| Method | Endpoint Route | Auth Guard | Description | Source File |\n|:---|:---|:---|:---|:---|",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-e3a259821a8f117b",
     "document": "03-api-and-contracts.md",
     "section": "🌐 t-line (Desktop Client for Superagent)",
     "content": "| Method | Endpoint Route | Auth Guard | Description | Source File |\n|:---|:---|:---|:---|:---|\n\n<!-- API_CATALOG_END -->",
-    "updatedAt": "2026-11-27T15:53:05.213Z"
+    "updatedAt": "2026-11-28T08:12:27.526Z"
   },
   {
     "id": "wiki-d26f5281ae3adce9",
@@ -431,42 +431,49 @@
     "document": "05-infrastructure-and-devops.md",
     "section": "05. Infrastructure, Storage & DevOps",
     "content": "This document details the filesystem layout, runtime configuration, build pipeline, and process management for Superagent.\n\n---",
-    "updatedAt": "2026-08-15T02:10:31.733Z"
+    "updatedAt": "2026-11-28T07:45:59.359Z"
   },
   {
     "id": "wiki-250a43fe50afc170",
     "document": "05-infrastructure-and-devops.md",
     "section": "1. Filesystem & Storage Topology (`~/.superagent-r/`)",
     "content": "Superagent isolates all user state, models, logs, worktrees, and databases in the user's home directory under `~/.superagent-r/`.\n\n```text\n~/.superagent-r/\n├── history.db                     # SQLite database (single source of truth for all sessions & messages)\n├── history.db-wal                 # SQLite Write-Ahead Log\n├── history.db-shm                 # SQLite shared memory index\n├── model-config.json              # Provider credentials, tier assignments, and system settings\n├── superagent.log                 # Rolling process execution log\n├── terminal-presets.json          # User-defined terminal execution shortcuts\n├── worktrees/                     # Git worktrees allocated for Superagents\n│   ├── auth-jwt/                  # Worktree directory for feature/auth-jwt branch\n│   └── ui-dark-theme/             # Worktree directory for feature/ui-dark-theme branch\n└── history/                       # Session workspace artifact directories\n    └── multi/\n        └── sess_1740000000000/\n            ├── plan.md            # Master Agent implementation plan\n            ├── task.md            # Bite-sized task breakdown\n            └── walkthrough.md     # Verification walkthrough summary\n```\n\n---",
-    "updatedAt": "2026-08-15T02:10:31.733Z"
+    "updatedAt": "2026-11-28T07:45:59.359Z"
   },
   {
     "id": "wiki-92d6c29f79a9201f",
     "document": "05-infrastructure-and-devops.md",
     "section": "2. Build & Packaging Pipeline",
     "content": "Superagent is written in TypeScript and compiled to standard CommonJS/ESM executable bundles:\n\n```powershell",
-    "updatedAt": "2026-08-15T02:10:31.733Z"
+    "updatedAt": "2026-11-28T07:45:59.359Z"
   },
   {
     "id": "wiki-acb69cbe7747d09a",
     "document": "05-infrastructure-and-devops.md",
     "section": "Build Scripts in `package.json`",
     "content": "| Script | Command | Purpose |\n|---|---|---|\n| `dev` | `tsx src/cli.tsx` | Run CLI directly with TypeScript on-the-fly execution |\n| `build` | `tsc` | Compile all `src/` TypeScript sources to `dist/` |\n| `test` | `vitest run` | Run all test suites in `tests/` directory |\n| `verify:extension-js` | `node scripts/verify-extension-js.mjs` | Validate Chrome extension bundle integrity |\n| `verify:all` | `bun run build && bun run verify:extension-js && bun run test` | Full pre-commit release verification gate |\n| `ext:css` | `tailwindcss -i chrome-extension/sidepanel.src.css -o chrome-extension/sidepanel.css` | Compile Tailwind CSS for Chrome Extension sidepanel |\n\n---",
-    "updatedAt": "2026-08-15T02:10:31.733Z"
+    "updatedAt": "2026-11-28T07:45:59.359Z"
   },
   {
     "id": "wiki-188e4df942494729",
     "document": "05-infrastructure-and-devops.md",
     "section": "3. Storage Rules & Constraints",
     "content": "1. **Zero `process.env` Rule**:\n   - Environment variables (`process.env.OPENAI_API_KEY`, `process.env.MODEL`, etc.) MUST NEVER be read or written in production code.\n   - All configurations are loaded through `src/core/config/jsonConfig.ts` and `src/core/config/providers.ts`.\n2. **SQLite Transcript Storage**:\n   - Transcripts must only be loaded via `loadSessionFromDb()` and saved via `saveSessionToDb()` in `src/core/storage/historyDb.ts`.\n   - Never write conversation transcripts into `.json` session placeholder files.\n3. **Worktree Directory Management**:\n   - Worktree paths are automatically managed under `~/.superagent-r/worktrees/`.\n   - Stale worktrees are automatically pruned via `gitWorktreeTool(action: \"prune\")`.\n\n---",
-    "updatedAt": "2026-08-15T02:10:31.733Z"
+    "updatedAt": "2026-11-28T07:45:59.359Z"
   },
   {
-    "id": "wiki-f54b663edcbc9a4e",
+    "id": "wiki-2d585db4b596fa34",
     "document": "05-infrastructure-and-devops.md",
     "section": "4. Logging & Diagnostics",
-    "content": "- **Log File**: `~/.superagent-r/superagent.log`\n- Log format: ISO timestamp, process ID, execution tier (`[MASTER]`, `[SUPERAGENT]`, `[SUBAGENT]`), message severity, and payload.\n- Error events are captured with full stack traces and sanitized before rendering user-facing error boxes.",
-    "updatedAt": "2026-08-15T02:10:31.733Z"
+    "content": "Superagent writes two different logs. Confusing them is what makes an operator look at a terminal that was never supposed to receive the message.\n\n| Log | Owner | Written by | Read by |\n|---|---|---|---|\n| `~/.superagent-r/superagent.log` | CLI process | CLI / agent / tool lifecycle events | `/doctor terminal`, incident review |\n| `~/.superagent-r/superagent-server.log` | Core / server host | `src/core/utils/runtimeLog.ts` | SuperAgent Tray → Logs (source `server`), operators |\n\n- **Log File**: `~/.superagent-r/superagent.log`\n- Log format: ISO timestamp, process ID, execution tier (`[MASTER]`, `[SUPERAGENT]`, `[SUBAGENT]`), message severity, and payload.\n- Error events are captured with full stack traces and sanitized before rendering user-facing error boxes.",
+    "updatedAt": "2026-11-28T07:45:59.359Z"
+  },
+  {
+    "id": "wiki-a24e3afe69893298",
+    "document": "05-infrastructure-and-devops.md",
+    "section": "Runtime log contract: file first, terminal only on request",
+    "content": "`src/core/utils/runtimeLog.ts` is the single source of truth for Core/server runtime messages. Every call goes through `serverRuntimeLog(level, ...args)`, which always appends exactly one `[LEVEL] message` line to `superagent-server.log`; the terminal copy is a separate, explicit decision.\n\n| Host | Appends to log file | Echoes to terminal | Host reason |\n|---|---|---|---|\n| Interactive CLI (embedded server, `runServer(port, true)`) | ✅ | ❌ | `embedded host (CLI/Tray-owned/tunnel server)` |\n| Supervised Core worker / Tray-owned / tunnel host | ✅ | ❌ | silent host |\n| Foreground `superagent --server <port>` | ✅ | ✅ | `foreground server` |\n| `superagent core start` in a terminal | ✅ | ✅ | `core supervisor terminal` |\n| `superagent core start` with piped stdio (Tray/daemon) | ✅ | ❌ | `core supervisor piped stdio` |\n\nRules:\n\n1. **Never replace `console` to silence runtime chatter.** A global wrapper also swallows CLI/REPL output (slash commands, tool progress, one-shot answers). Route the specific emission through `serverRuntimeLog()` instead.\n2. **A host records its decision once** with `setRuntimeLogTerminalEcho(enabled, reason)`. The reason string is surfaced by `/doctor terminal`.\n3. **Debugging override**: `SUPERAGENT_RUNTIME_LOG_ECHO=1` forces echo on, `0` forces it off, any other value falls back to the host decision. The override is reported with `source: env`.\n4. **Tray coverage is unaffected** by echo: the file is written either way, and rotating is bounded at 5 MB.",
+    "updatedAt": "2026-11-28T07:45:59.359Z"
   },
   {
     "id": "wiki-7ef1cd2199a4919d",

@@ -4,8 +4,6 @@ import net from "net";
 import { URL } from "url";
 import fs from "fs";
 import path from "path";
-import { tryStatSync } from "./core/tools/helpers.js";
-import os from "os";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
 import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb, generateSessionId, purgeEmptySessions, getPackageRootDir, getInstalledSkills, getSuperAgentVersion, getRootConfigDir } from "./core/config.js";
@@ -21,7 +19,11 @@ import { buildCorsHeaders, ensureServerAuthToken, isRequestAuthorized, isPathIns
 import { isCanonicalMotionWorkspaceAllowed } from "./core/motion/workspaceAccess.js";
 import { shouldDeliverEventToClient } from "./core/utils/sessionEventScope.js";
 import { SessionEventReplay } from "./core/utils/sessionEventReplay.js";
-import { createRuntimeLogger, setRuntimeLogTerminalEcho } from "./core/utils/runtimeLog.js";
+import {
+  logToSuperAgentServerFile,
+  serverRuntimeLog,
+  setRuntimeLogTerminalEcho,
+} from "./core/utils/runtimeLog.js";
 import { appendChatEvent, pruneChatRuntimeLedger, recoverInterruptedChatTurns, replayChatEvents } from "./core/utils/chatRuntimeLedger.js";
 import { recordAgentTimeline, projectAgentTimelineEnvelope, bindTlineRootAgent } from "./core/channels/tlineAgentTimeline.js";
 import { registerTlineApproval } from "./core/channels/tlineApprovalRegistry.js";
@@ -34,53 +36,9 @@ lockEventEmitter.on("tline_bridge_sync", (syncPayload) => {
   });
 });
 
-const SUPERAGENT_SERVER_LOG_FILE = path.join(os.homedir(), ".superagent-r", "superagent-server.log");
-
-export function logToSuperAgentServerFile(message: string) {
-  const timestamp = new Date().toISOString();
-  const logLine = `[${timestamp}] ${message}\n`;
-  try {
-    const dir = path.dirname(SUPERAGENT_SERVER_LOG_FILE);
-    // 1 syscall instead of 2: `mkdirSync({ recursive: true })` is a
-    // no-op when the directory already exists, so we don't need the
-    // existsSync guard.
-    fs.mkdirSync(dir, { recursive: true });
-    // 1 syscall via statSync to check size threshold (skip the read
-    // itself — we just need the size from the stat result).
-    const logStat = tryStatSync(SUPERAGENT_SERVER_LOG_FILE);
-    if (logStat && logStat.size > 5 * 1024 * 1024) {
-      fs.writeFileSync(SUPERAGENT_SERVER_LOG_FILE, `[${timestamp}] [INFO] Log file rotated (exceeded 5MB limit)\n`);
-    }
-    fs.appendFile(SUPERAGENT_SERVER_LOG_FILE, logLine, () => {});
-  } catch (err) {
-    // Ignore logging errors
-  }
-}
-
-// Captured before any host installs its own console wrapper, so runtime echo
-// never recurses through that wrapper and never writes one line twice.
-const originalTerminalConsole = {
-  log: console.log.bind(console),
-  warn: console.warn.bind(console),
-  error: console.error.bind(console),
-};
-
-/**
- * Core/server runtime logger: always appends to `superagent-server.log` (the
- * source SuperAgent Tray reads) and echoes to the terminal only while the
- * host asks for it via `setRuntimeLogTerminalEcho`.
- */
-export const serverRuntimeLog = createRuntimeLogger({
-  append: (line) => logToSuperAgentServerFile(line),
-  echo: (level, text) => {
-    const write = level === "error"
-      ? originalTerminalConsole.error
-      : level === "warn"
-        ? originalTerminalConsole.warn
-        : originalTerminalConsole.log;
-    write(text);
-  },
-});
+// The durable runtime log (SuperAgent Tray renders it) and its terminal-echo
+// policy live in one module so every Core/server host shares the same contract.
+export { logToSuperAgentServerFile, serverRuntimeLog };
 
 // Global Process Crash Handlers to prevent silent crashes and log to superagent-server.log
 process.on('uncaughtException', (err: Error) => {
@@ -826,7 +784,10 @@ export async function runServer(port: number, silent = false, defaultClientMode:
   // keeps runtime messages in the log file only: SuperAgent Tray reads that
   // file, and writing the same lines over the CLI's terminal corrupts the
   // screen the operator is typing into. A foreground `--server` keeps echoing.
-  setRuntimeLogTerminalEcho(!silent);
+  setRuntimeLogTerminalEcho(
+    !silent,
+    silent ? "embedded host (CLI/Tray-owned/tunnel server)" : "foreground server",
+  );
 
   // Override console methods to write server logs to file
   const originalLog = console.log;

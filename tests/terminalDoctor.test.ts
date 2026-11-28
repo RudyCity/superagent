@@ -4,9 +4,20 @@ import {
   formatTerminalDiagnosticsFromDisk,
   parseLastMountRecord,
 } from "../src/core/commands/terminalDoctorView.js";
+import type { RuntimeLogEchoState } from "../src/core/utils/runtimeLog.js";
 
 const ttyStdin = { isTTY: true, isPaused: () => false, setRawMode: () => undefined };
 const ttyStdout = { isTTY: true };
+
+function echoState(overrides: Partial<RuntimeLogEchoState> = {}): RuntimeLogEchoState {
+  return {
+    enabled: false,
+    source: "host",
+    hostEnabled: false,
+    hostReason: "embedded host (CLI/Tray-owned/tunnel server)",
+    ...overrides,
+  };
+}
 
 function logWith(...records: object[]): string {
   return records
@@ -42,7 +53,47 @@ describe("terminal doctor report", () => {
     expect(report).toContain("SUPERAGENT TERMINAL DIAGNOSTICS");
     expect(report).toContain("stdin paused now     : no");
     expect(report).toContain("last mount stdin     : paused=yes resumed=yes");
+    expect(report).toMatch(/ {2}runtime log echo {5}: (on|off) \(host: (on|off) - /);
+    expect(report).not.toContain("Runtime log note:");
     expect(report).toContain("Verdict: interactive input transport looks healthy.");
+  });
+
+  it("reports the injected echo policy instead of the global state", () => {
+    const off = formatTerminalDiagnostics({
+      stdin: ttyStdin,
+      stdout: ttyStdout,
+      echoState: echoState(),
+    });
+    const on = formatTerminalDiagnostics({
+      stdin: ttyStdin,
+      stdout: ttyStdout,
+      echoState: echoState({ enabled: true, hostEnabled: true, hostReason: "foreground server" }),
+    });
+
+    expect(off).toContain(
+      "  runtime log echo     : off (host: off - embedded host (CLI/Tray-owned/tunnel server); source: host; env: unset)"
+    );
+    expect(on).toContain("  runtime log echo     : on (host: on - foreground server; source: host; env: unset)");
+    expect(off).not.toContain("Runtime log note:");
+    expect(on).not.toContain("Runtime log note:");
+  });
+
+  it("explains an environment override that forces echo onto the terminal", () => {
+    const report = formatTerminalDiagnostics({
+      stdin: ttyStdin,
+      stdout: ttyStdout,
+      echoState: echoState({ enabled: true, source: "env", envValue: "1" }),
+    });
+
+    expect(report).toContain('source: env; env: "1"');
+    expect(report).toContain(
+      "Runtime log note: SUPERAGENT_RUNTIME_LOG_ECHO forces runtime logs onto this terminal."
+    );
+    // The env note is appended after the single verdict line, which stays as-is.
+    expect(report).toContain("Verdict: interactive input transport looks healthy.");
+    expect(report.trimEnd().split("\n").at(-1)).toBe(
+      "Runtime log note: SUPERAGENT_RUNTIME_LOG_ECHO forces runtime logs onto this terminal."
+    );
   });
 
   it("flags a non-TTY stdin as unable to receive keys", () => {

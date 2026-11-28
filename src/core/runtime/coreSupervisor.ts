@@ -30,6 +30,7 @@ import {
   decideCoreRestartBridge,
   rollbackCandidates,
 } from "./coreGenerationPolicy.js";
+import { serverRuntimeLog, setRuntimeLogTerminalEcho } from "../utils/runtimeLog.js";
 
 export interface CoreRuntimeStatus {
   /** R4 opt-in desktop attestation. A PID match alone grants no control. */
@@ -885,7 +886,7 @@ export async function runCoreSupervisor(
             if (fromDeadOwner && sessionId) {
               sessionAffinity.restoreRebindAfterFailedCheckpoint(sessionId, fromDeadOwner, worker);
             }
-            console.error("[core] Failed to persist session affinity checkpoint");
+            serverRuntimeLog("error", "[core] Failed to persist session affinity checkpoint");
             res.writeHead(503, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Core session checkpoint unavailable; retry initialization" }));
             return;
@@ -1082,11 +1083,11 @@ export async function runCoreSupervisor(
     void import("./trayAutoLauncher.js")
       .then(({ autoLaunchSuperAgentTray }) => autoLaunchSuperAgentTray())
       .catch(() => {});
-    console.log("Core supervisor listening on http://127.0.0.1:" + port);
-    console.log("Worker PID " + active!.pid + "; use: superagent core restart --port " + port);
-    if (recovered) console.log("Authenticated supervisor recovery completed; old sessions kept on original workers.");
+    serverRuntimeLog("info", "Core supervisor listening on http://127.0.0.1:" + port);
+    serverRuntimeLog("info", "Worker PID " + active!.pid + "; use: superagent core restart --port " + port);
+    if (recovered) serverRuntimeLog("info", "Authenticated supervisor recovery completed; old sessions kept on original workers.");
     scheduleConservativeAutoDrain();
-    console.log("MCP, Muse and Telegram processes are not controlled by this supervisor.");
+    serverRuntimeLog("info", "MCP, Muse and Telegram processes are not controlled by this supervisor.");
   } catch (error) {
     if (autoDrainTimer) clearTimeout(autoDrainTimer);
     clearInterval(failureMonitor);
@@ -1116,8 +1117,34 @@ export function formatCoreSupervisorStatus(value: CoreRuntimeStatus): string {
   ].join("\n");
 }
 
+/** Core actions that own the process instead of printing a short report. */
+export const CORE_SUPERVISOR_LONG_RUNNING_ACTIONS = ["start", "recover", "guard", "boot"] as const;
+
+/**
+ * Terminal echo reason for a long-lived Core action. A Tray/daemon spawn gives
+ * the process a pipe, so the durable log is the only reader; echoing there would
+ * duplicate lines nobody sees.
+ */
+export function coreSupervisorTerminalEchoReason(hasTty: boolean): string {
+  return hasTty ? "core supervisor terminal" : "core supervisor piped stdio";
+}
+
+/**
+ * Runtime lines always reach the Tray-readable log; this flag only decides
+ * whether an operator TTY also sees them. Applies to `start|recover|guard|boot`
+ * and returns false untouched for read-only subcommands, whose printed report is
+ * the product rather than runtime chatter.
+ */
+export function applyCoreRuntimeLogEcho(action: string, hasTty: boolean): boolean {
+  if (!(CORE_SUPERVISOR_LONG_RUNNING_ACTIONS as readonly string[]).includes(action)) return false;
+  setRuntimeLogTerminalEcho(hasTty, coreSupervisorTerminalEchoReason(hasTty));
+  return true;
+}
+
 export async function handleCoreCliCommand(argv: string[]): Promise<void> {
   const action = argv[0]?.toLowerCase() || "status";
+  // Exactly once per invocation, before the first runtime line can be emitted.
+  applyCoreRuntimeLogEcho(action, Boolean(process.stdout.isTTY));
   const portIdx = argv.indexOf("--port");
   const port = portIdx === -1 ? 7888 : Number(argv[portIdx + 1]);
   if (!validPort(port)) throw new Error("Invalid --port");
@@ -1347,7 +1374,7 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     const { readCoreGuardianLease } = await import("./coreGuardian.js");
     const lease = readCoreGuardianLease(port);
     if (!lease) {
-      console.log("Core guardian: NOT REGISTERED. No automatic Core supervisor recovery.");
+      serverRuntimeLog("info", "Core guardian: NOT REGISTERED. No automatic Core supervisor recovery.");
       return;
     }
     let verified = false;
@@ -1356,7 +1383,7 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
       verified = current.publicPort === port && current.supervisorPid !== lease.pid &&
         (lease.supervisorPid === undefined || current.supervisorPid === lease.supervisorPid);
     } catch {}
-    console.log("Core guardian registration: " + (verified ?
+    serverRuntimeLog("info", "Core guardian registration: " + (verified ?
       "REGISTERED; supervised Core is verified" : "REGISTERED; Core unavailable or unverified") +
       " | guardian PID " + lease.pid + " | port " + port +
       " | mode " + lease.clientMode +
@@ -1383,7 +1410,7 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
       adoptRunning: argv.includes("--adopt-running"),
       enableManaged: !argv.includes("--unmanaged"),
     });
-    console.log("Core guardian stopped: " + result.reason + " | checkpoint recoveries: " + result.recoveries);
+    serverRuntimeLog("info", "Core guardian stopped: " + result.reason + " | checkpoint recoveries: " + result.recoveries);
     if (result.reason !== "stopped") throw new Error("Core guardian requires operator review: " + result.reason);
     return;
   }
@@ -1397,5 +1424,5 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     return;
   }
   if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, recycle-plan, recycle, retire-legacy-retained, boot, boot-audit, reconcile, recovery-cases, recovery-canary, ownership-audit, ownership-inventory, rollout-audit, lifecycle-plan, lifecycle-observe, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
-  console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
+  serverRuntimeLog("info", formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }

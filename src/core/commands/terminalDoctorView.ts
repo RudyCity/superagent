@@ -9,6 +9,11 @@ import path from "node:path";
 import { getGlobalConfigDir } from "../config/paths.js";
 import { readFileTail } from "../../utils/logTail.js";
 import { describeCliStdin, type CliStdinLike, type CliStdoutLike } from "../../utils/cliStdin.js";
+import {
+  describeRuntimeLogEcho,
+  runtimeLogEchoState,
+  type RuntimeLogEchoState,
+} from "../utils/runtimeLog.js";
 
 export interface MountRecord {
   stdinIsTTY?: boolean;
@@ -22,6 +27,8 @@ export interface TerminalDiagnosticsOptions {
   stdin?: CliStdinLike;
   stdout?: CliStdoutLike;
   logText?: string;
+  /** Injected echo policy so tests never depend on the process-wide state. */
+  echoState?: RuntimeLogEchoState;
 }
 
 /** Last "App component mounted" record written by the CLI, if any. */
@@ -49,6 +56,7 @@ export function formatTerminalDiagnostics(options: TerminalDiagnosticsOptions = 
   const stdout = options.stdout ?? (process.stdout as unknown as CliStdoutLike);
   const state = describeCliStdin(stdin, stdout);
   const mount = parseLastMountRecord(options.logText ?? "");
+  const echoState = options.echoState ?? runtimeLogEchoState();
 
   const lines = [
     "SUPERAGENT TERMINAL DIAGNOSTICS",
@@ -59,6 +67,7 @@ export function formatTerminalDiagnostics(options: TerminalDiagnosticsOptions = 
     `  last mount stdin     : ${mount
       ? `paused=${yesNo(mount.stdinWasPaused)} resumed=${yesNo(mount.stdinResumed)}`
       : "no mount record in log"}`,
+    `  runtime log echo     : ${describeRuntimeLogEcho(echoState)}`,
   ];
 
   if (!state.stdinIsTTY) {
@@ -71,6 +80,14 @@ export function formatTerminalDiagnostics(options: TerminalDiagnosticsOptions = 
     lines.push("Verdict: the last mount saw a paused stdin and did not resume it. Upgrade to v1.14.126+ and restart.");
   } else {
     lines.push("Verdict: interactive input transport looks healthy.");
+  }
+
+  if (echoState.source === "env") {
+    lines.push(
+      echoState.enabled
+        ? "Runtime log note: SUPERAGENT_RUNTIME_LOG_ECHO forces runtime logs onto this terminal."
+        : "Runtime log note: SUPERAGENT_RUNTIME_LOG_ECHO suppresses runtime logs on this terminal."
+    );
   }
 
   return lines.join("\n");

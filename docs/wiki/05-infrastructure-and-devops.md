@@ -73,6 +73,33 @@ bun run verify:all
 
 ## 4. Logging & Diagnostics
 
+Superagent writes two different logs. Confusing them is what makes an operator look at a terminal that was never supposed to receive the message.
+
+| Log | Owner | Written by | Read by |
+|---|---|---|---|
+| `~/.superagent-r/superagent.log` | CLI process | CLI / agent / tool lifecycle events | `/doctor terminal`, incident review |
+| `~/.superagent-r/superagent-server.log` | Core / server host | `src/core/utils/runtimeLog.ts` | SuperAgent Tray → Logs (source `server`), operators |
+
 - **Log File**: `~/.superagent-r/superagent.log`
 - Log format: ISO timestamp, process ID, execution tier (`[MASTER]`, `[SUPERAGENT]`, `[SUBAGENT]`), message severity, and payload.
 - Error events are captured with full stack traces and sanitized before rendering user-facing error boxes.
+
+### Runtime log contract: file first, terminal only on request
+
+`src/core/utils/runtimeLog.ts` is the single source of truth for Core/server runtime messages. Every call goes through `serverRuntimeLog(level, ...args)`, which always appends exactly one `[LEVEL] message` line to `superagent-server.log`; the terminal copy is a separate, explicit decision.
+
+| Host | Appends to log file | Echoes to terminal | Host reason |
+|---|---|---|---|
+| Interactive CLI (embedded server, `runServer(port, true)`) | ✅ | ❌ | `embedded host (CLI/Tray-owned/tunnel server)` |
+| Supervised Core worker / Tray-owned / tunnel host | ✅ | ❌ | silent host |
+| Foreground `superagent --server <port>` | ✅ | ✅ | `foreground server` |
+| `superagent core start` in a terminal | ✅ | ✅ | `core supervisor terminal` |
+| `superagent core start` with piped stdio (Tray/daemon) | ✅ | ❌ | `core supervisor piped stdio` |
+
+Rules:
+
+1. **Never replace `console` to silence runtime chatter.** A global wrapper also swallows CLI/REPL output (slash commands, tool progress, one-shot answers). Route the specific emission through `serverRuntimeLog()` instead.
+2. **A host records its decision once** with `setRuntimeLogTerminalEcho(enabled, reason)`. The reason string is surfaced by `/doctor terminal`.
+3. **Debugging override**: `SUPERAGENT_RUNTIME_LOG_ECHO=1` forces echo on, `0` forces it off, any other value falls back to the host decision. The override is reported with `source: env`.
+4. **Tray coverage is unaffected** by echo: the file is written either way, and rotating is bounded at 5 MB.
+
