@@ -41,6 +41,7 @@ import { PROVIDER_TEMPLATE_LABELS } from "./core/loginWizardLogic.js";
 import { isMuseRunnerActive } from "./core/remoteAgent/config.js";
 import { isMuseWatcherActive } from "./core/remoteAgent/museWatcher.js";
 import { getDashboardSuggestions } from "./utils/dashboardSuggestions.js";
+import { describeCliStdin, ensureCliStdinFlowing } from "./utils/cliStdin.js";
 import { logCli, logInput, logDispatch, logHang } from "./core/utils/unifiedLogger.js";
 
 // Hook & Component Baru
@@ -394,10 +395,15 @@ export function App({
     }
   }, [activeWizard]);
 
-  // Diagnostic logging for CLI app lifecycle, focus switches, and processing state
+  // Resume the interactive TTY before logging anything about it: Ink never
+  // calls resume(), so a stream paused by an earlier prompt or cleanup stays
+  // paused and the mounted UI ignores every key.
   useEffect(() => {
+    const stdinState = describeCliStdin(process.stdin, process.stdout);
+    const stdinResumed = ensureCliStdinFlowing(process.stdin);
     logCli("App component mounted", {
-      isTTY: process.stdin.isTTY,
+      ...stdinState,
+      stdinResumed,
       initialPromptLength: initialPrompt?.length ?? 0
     });
     return () => {
