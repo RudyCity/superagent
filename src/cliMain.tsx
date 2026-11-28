@@ -13,6 +13,7 @@ import { killProcessTree } from "./core/tools/shellTools.js";
 import { closeMcpServers } from "./core/mcp/McpManager.js";
 import type { Agent as AgentType } from "./core/agent.js";
 import { logCli } from "./core/utils/unifiedLogger.js";
+import { ensureCliStdinFlowing } from "./utils/cliStdin.js";
 
 function cleanupBackgroundTasks() {
   try {
@@ -616,6 +617,10 @@ export async function runCli() {
     let sessionPath = "";
     console.clear();
     hideCursor();
+
+    // Resume the TTY before rendering: the startup checker unmounts and any
+    // readline prompt can leave stdin paused, which makes Ink deaf to keys.
+    ensureCliStdinFlowing(process.stdin);
 
     if (isMulti) {
       const React = (await import("react")).default;

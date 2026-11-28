@@ -413,6 +413,9 @@ export function App({
 
   useEffect(() => {
     logInput(`CLI focusMode changed to: ${focusMode}`);
+    // Returning focus to the input re-arms the stream too: a wizard prompt,
+    // readline question or piped command can leave it paused.
+    if (focusMode === "input") ensureCliStdinFlowing(process.stdin);
   }, [focusMode]);
 
   useEffect(() => {

@@ -1,0 +1,84 @@
+import { describe, expect, it } from "vitest";
+import {
+  formatTerminalDiagnostics,
+  formatTerminalDiagnosticsFromDisk,
+  parseLastMountRecord,
+} from "../src/core/commands/terminalDoctorView.js";
+
+const ttyStdin = { isTTY: true, isPaused: () => false, setRawMode: () => undefined };
+const ttyStdout = { isTTY: true };
+
+function logWith(...records: object[]): string {
+  return records
+    .map((record, index) => `[2026-11-28T04:48:3${index}.000Z] [CLI] App component mounted | ${JSON.stringify(record)}`)
+    .join("\n");
+}
+
+describe("terminal doctor mount record parsing", () => {
+  it("returns the newest mount record", () => {
+    const log = logWith(
+      { stdinWasPaused: true, stdinResumed: true },
+      { stdinWasPaused: false, stdinResumed: true }
+    );
+
+    expect(parseLastMountRecord(log)).toMatchObject({ stdinWasPaused: false, stdinResumed: true });
+  });
+
+  it("ignores missing, malformed or unrelated log text", () => {
+    expect(parseLastMountRecord("")).toBeUndefined();
+    expect(parseLastMountRecord("App component mounted | {oops")).toBeUndefined();
+    expect(parseLastMountRecord("[CLI] App component unmounting")).toBeUndefined();
+  });
+});
+
+describe("terminal doctor report", () => {
+  it("reports a healthy transport with the mount snapshot", () => {
+    const report = formatTerminalDiagnostics({
+      stdin: ttyStdin,
+      stdout: ttyStdout,
+      logText: logWith({ stdinWasPaused: true, stdinResumed: true }),
+    });
+
+    expect(report).toContain("SUPERAGENT TERMINAL DIAGNOSTICS");
+    expect(report).toContain("stdin paused now     : no");
+    expect(report).toContain("last mount stdin     : paused=yes resumed=yes");
+    expect(report).toContain("Verdict: interactive input transport looks healthy.");
+  });
+
+  it("flags a non-TTY stdin as unable to receive keys", () => {
+    const report = formatTerminalDiagnostics({ stdin: { isTTY: false }, stdout: {} });
+    expect(report).toContain("Verdict: stdin is not a TTY");
+  });
+
+  it("flags a terminal without raw mode support", () => {
+    const report = formatTerminalDiagnostics({ stdin: { isTTY: true }, stdout: ttyStdout });
+    expect(report).toContain("Verdict: raw mode is unavailable");
+  });
+
+  it("flags a stream that is paused right now", () => {
+    const report = formatTerminalDiagnostics({
+      stdin: { ...ttyStdin, isPaused: () => true },
+      stdout: ttyStdout,
+    });
+    expect(report).toContain("stdin paused now     : yes");
+    expect(report).toContain("Verdict: stdin is paused right now.");
+  });
+
+  it("flags a legacy mount that saw a paused stdin and never resumed it", () => {
+    const report = formatTerminalDiagnostics({
+      stdin: ttyStdin,
+      stdout: ttyStdout,
+      logText: logWith({ stdinWasPaused: true }),
+    });
+    expect(report).toContain("Verdict: the last mount saw a paused stdin and did not resume it.");
+  });
+
+  it("says so when the log has no mount record", () => {
+    const report = formatTerminalDiagnostics({ stdin: ttyStdin, stdout: ttyStdout, logText: "" });
+    expect(report).toContain("last mount stdin     : no mount record in log");
+  });
+
+  it("reads the on-disk report without throwing when no log exists", () => {
+    expect(formatTerminalDiagnosticsFromDisk()).toContain("SUPERAGENT TERMINAL DIAGNOSTICS");
+  });
+});

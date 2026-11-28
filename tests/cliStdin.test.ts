@@ -81,4 +81,31 @@ describe("interactive CLI stdin contract", () => {
     expect(mountEffect).toContain("describeCliStdin(process.stdin, process.stdout)");
     expect(mountEffect).toContain("App component mounted");
   });
+
+  // Regaining input focus after a wizard, readline prompt or piped command must
+  // re-arm the stream as well; otherwise focus returns but keys stay deaf.
+  it("re-arms stdin when focus returns to the input", () => {
+    const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+    const appSource = readFileSync(path.join(root, "src", "app.tsx"), "utf8");
+    const focusIndex = appSource.indexOf("CLI focusMode changed to");
+    expect(focusIndex).toBeGreaterThan(-1);
+
+    const effectStart = appSource.lastIndexOf("useEffect(", focusIndex);
+    const focusEffect = appSource.slice(effectStart, focusIndex + 300);
+
+    expect(focusEffect).toContain('focusMode === "input"');
+    expect(focusEffect).toContain("ensureCliStdinFlowing(process.stdin)");
+  });
+
+  // The same commit dropped the pre-render resume between hideCursor() and the
+  // first Ink render; restoring only the App mount left that gap open.
+  it("keeps the pre-render resume in the CLI bootstrap", () => {
+    const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+    const cliSource = readFileSync(path.join(root, "src", "cliMain.tsx"), "utf8");
+    const hideIndex = cliSource.indexOf("hideCursor();");
+    expect(hideIndex).toBeGreaterThan(-1);
+
+    const bootstrap = cliSource.slice(hideIndex, hideIndex + 400);
+    expect(bootstrap).toContain("ensureCliStdinFlowing(process.stdin)");
+  });
 });
