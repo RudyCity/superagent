@@ -8,16 +8,6 @@ import crypto from "crypto";
 // session-path behavior set SUPERAGENT_SESSION_PATH explicitly.
 delete process.env.SUPERAGENT_SESSION_PATH;
 
-// TEMP-DIAG: Vitest's sourcemap reader fails with EISDIR for some CI
-// rejections and hides their origin; print the raw stack instead. Removed once
-// the underlying dangling promise is fixed.
-process.on("unhandledRejection", (reason: unknown) => {
-  const error = reason instanceof Error ? reason : new Error(String(reason));
-  try {
-    console.error("[test-unhandled] " + String(error.stack ?? reason));
-  } catch {}
-});
-
 // Keep optional ML/model dependencies deterministic in unit tests. Real model
 // downloads and ONNX initialization belong in explicit integration tests.
 vi.mock("@huggingface/transformers", () => ({

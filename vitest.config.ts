@@ -1,19 +1,5 @@
 import { defineConfig } from "vitest/config";
 import os from "os";
-import fs from "node:fs";
-
-// TEMP-DIAG: Vitest's getSourceMap reads a frame's file directly, so a frame
-// whose "file" is a directory throws EISDIR and hides the real error. Report
-// those frames so the offending test can be fixed. Removed after the fix.
-function logDirectoryFrame(error: unknown, frame: { file?: string }): boolean {
-  try {
-    if (frame.file && fs.existsSync(frame.file) && fs.statSync(frame.file).isDirectory()) {
-      const stack = error instanceof Error ? error.stack : String((error as any)?.stack ?? "");
-      console.error("[dir-frame] " + frame.file + "\n[dir-frame-stack] " + String(stack).slice(0, 1200));
-    }
-  } catch {}
-  return true;
-}
 
 // Avoid both extremes: one worker makes the large suite unnecessarily slow,
 // while one fork per reported CPU can overwhelm Windows and create excess temp homes.
@@ -35,6 +21,5 @@ export default defineConfig({
     pool: "forks",
     maxWorkers,
     minWorkers: 1,
-    onStackTrace: logDirectoryFrame,
   },
 });
