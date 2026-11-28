@@ -21,6 +21,7 @@ import { buildCorsHeaders, ensureServerAuthToken, isRequestAuthorized, isPathIns
 import { isCanonicalMotionWorkspaceAllowed } from "./core/motion/workspaceAccess.js";
 import { shouldDeliverEventToClient } from "./core/utils/sessionEventScope.js";
 import { SessionEventReplay } from "./core/utils/sessionEventReplay.js";
+import { createRuntimeLogger, setRuntimeLogTerminalEcho } from "./core/utils/runtimeLog.js";
 import { appendChatEvent, pruneChatRuntimeLedger, recoverInterruptedChatTurns, replayChatEvents } from "./core/utils/chatRuntimeLedger.js";
 import { recordAgentTimeline, projectAgentTimelineEnvelope, bindTlineRootAgent } from "./core/channels/tlineAgentTimeline.js";
 import { registerTlineApproval } from "./core/channels/tlineApprovalRegistry.js";
@@ -55,6 +56,31 @@ export function logToSuperAgentServerFile(message: string) {
     // Ignore logging errors
   }
 }
+
+// Captured before any host installs its own console wrapper, so runtime echo
+// never recurses through that wrapper and never writes one line twice.
+const originalTerminalConsole = {
+  log: console.log.bind(console),
+  warn: console.warn.bind(console),
+  error: console.error.bind(console),
+};
+
+/**
+ * Core/server runtime logger: always appends to `superagent-server.log` (the
+ * source SuperAgent Tray reads) and echoes to the terminal only while the
+ * host asks for it via `setRuntimeLogTerminalEcho`.
+ */
+export const serverRuntimeLog = createRuntimeLogger({
+  append: (line) => logToSuperAgentServerFile(line),
+  echo: (level, text) => {
+    const write = level === "error"
+      ? originalTerminalConsole.error
+      : level === "warn"
+        ? originalTerminalConsole.warn
+        : originalTerminalConsole.log;
+    write(text);
+  },
+});
 
 // Global Process Crash Handlers to prevent silent crashes and log to superagent-server.log
 process.on('uncaughtException', (err: Error) => {
@@ -464,7 +490,7 @@ function broadcastEvent(event: any) {
     } catch (error) {
       // Temporary journal failure must not silently drop live chat progress.
       data = chatEventReplay.publish(normalizedEvent.sessionId, eventJson);
-      console.warn("[chat] event journal unavailable; using bounded in-memory replay");
+      serverRuntimeLog("warn", "[chat] event journal unavailable; using bounded in-memory replay");
     }
   }
   
@@ -478,11 +504,11 @@ function broadcastEvent(event: any) {
     } else if (normalizedEvent?.event?.type === 'message') {
       const sub = normalizedEvent.event;
       const contentStr = typeof sub.content === 'string' ? sub.content : JSON.stringify(sub.content);
-      console.log(`\n[SuperAgent][Stream Message] [${sub.role || 'assistant'}]: ${contentStr}`);
+      serverRuntimeLog("info", `\n[SuperAgent][Stream Message] [${sub.role || 'assistant'}]: ${contentStr}`);
     } else if (normalizedEvent?.event?.type) {
-      console.log(`\n[SuperAgent][Stream Event] [${normalizedEvent.event.type}]`, JSON.stringify(normalizedEvent.event));
+      serverRuntimeLog("info", `\n[SuperAgent][Stream Event] [${normalizedEvent.event.type}]`, JSON.stringify(normalizedEvent.event));
     } else {
-      console.log(`\n[SuperAgent][Stream Event]`, JSON.stringify(normalizedEvent));
+      serverRuntimeLog("info", `\n[SuperAgent][Stream Event]`, JSON.stringify(normalizedEvent));
     }
   }
   for (const client of sseClients) {
@@ -796,6 +822,12 @@ async function teardownIdleSession(session: AgentSession): Promise<void> {
 }
 
 export async function runServer(port: number, silent = false, defaultClientMode: ClientMode = "tline") {
+  // An embedded server (interactive CLI, supervised worker, tunnel-owned host)
+  // keeps runtime messages in the log file only: SuperAgent Tray reads that
+  // file, and writing the same lines over the CLI's terminal corrupts the
+  // screen the operator is typing into. A foreground `--server` keeps echoing.
+  setRuntimeLogTerminalEcho(!silent);
+
   // Override console methods to write server logs to file
   const originalLog = console.log;
   const originalError = console.error;
@@ -822,8 +854,8 @@ export async function runServer(port: number, silent = false, defaultClientMode:
   const inUse = await isPortInUse(port);
   if (inUse) {
     if (!silent) {
-      console.warn(`\n⚠️ SuperAgent Server is already running on port ${port}.`);
-      console.log(`💡 Exiting to prevent duplicate server instance.\n`);
+      serverRuntimeLog("warn", `\n⚠️ SuperAgent Server is already running on port ${port}.`);
+      serverRuntimeLog("info", `💡 Exiting to prevent duplicate server instance.\n`);
       process.exit(0);
     }
     return null;
@@ -840,7 +872,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       recoverInterruptedChatTurns();
     }
   } catch (err: any) {
-    console.warn("[chat] turn recovery unavailable:", String(err?.message || err));
+    serverRuntimeLog("warn", "[chat] turn recovery unavailable:", String(err?.message || err));
   }
 
   try {
@@ -908,17 +940,17 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       );
       visionServerProcess = execa("python", [scriptPath, "8095"], pythonOpts);
       if (!silent) {
-        console.log("🚀 Starting Python UI-DETR-1 Vision Server on port 8095...");
+        serverRuntimeLog("info", "🚀 Starting Python UI-DETR-1 Vision Server on port 8095...");
       }
 
       visionServerProcess.catch((err: any) => {
         if (!silent) {
-          console.error("[Vision Server Process Terminated/Failed]", err.message);
+          serverRuntimeLog("error", "[Vision Server Process Terminated/Failed]", err.message);
         }
       });
     } catch (err: any) {
       if (!silent) {
-        console.error("Failed to spawn Python Vision Server:", err.message);
+        serverRuntimeLog("error", "Failed to spawn Python Vision Server:", err.message);
       }
     }
     }
@@ -1102,7 +1134,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
             sendJSON(res, 404, { error: "Not Found" });
           }
         } catch (err: any) {
-          console.error("[SERVER ERROR]", err);
+          serverRuntimeLog("error", "[SERVER ERROR]", err);
           logToSuperAgentServerFile(`[SERVER ROUTE ERROR] ${err?.stack || err?.message || String(err)}`);
           sendJSON(res, 500, { error: err.message || String(err) });
         }
@@ -1113,7 +1145,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
   server.on("error", (err: any) => {
     logToSuperAgentServerFile(`[SERVER SOCKET ERROR] ${err?.stack || err?.message || String(err)}`);
     if (!silent) {
-      console.error("[Server Error]", err);
+      serverRuntimeLog("error", "[Server Error]", err);
     }
   });
 
@@ -1151,7 +1183,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
     // on the first delegate tool invocation (which left port 17341 closed).
     void import("./core/delegate/lifecycle.js")
       .then(({ startDelegateBridgeForAgentHost }) => startDelegateBridgeForAgentHost())
-      .catch((error) => console.warn("[Delegate] Bridge bootstrap failed:", error));
+      .catch((error) => serverRuntimeLog("warn", "[Delegate] Bridge bootstrap failed:", error));
     // T-Line's SuperAgent REST core uses this same startup path. Start only
     // the isolated shared-model watchdog; never touch T-Line/MCP/tunnels.
     if(process.env.SUPERAGENT_CORE_WORKER!=="1") {
