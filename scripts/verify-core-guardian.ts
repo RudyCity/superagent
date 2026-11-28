@@ -208,9 +208,14 @@ try {
   const bootAlreadyRunning = spawnSync(process.execPath, [cli, "core", "boot",
     "--port", String(port)], { cwd: workspace, env, encoding: "utf8",
       stdio: "pipe", timeout: 8000, windowsHide: true });
+  // Piped stdio turns the runtime log's terminal echo off by contract, so the
+  // no-op decision is verified through its durable runtime-log line: an
+  // authenticated owner must never be restarted or taken over by boot.
+  const bootLogPath = path.join(root, ".superagent-r", "superagent-server.log");
+  const bootLogTail = fs.existsSync(bootLogPath) ? fs.readFileSync(bootLogPath, "utf8") : "";
   check("boot_noop_when_authenticated_owner_already_running",
     bootAlreadyRunning.status === 0 &&
-      bootAlreadyRunning.stdout.includes("verified owner already active"));
+      bootLogTail.includes("Core boot: verified owner already active"));
   const beforeBootRecovery = await getOwner(port);
   check("boot_crash_injection_targets_owned_supervisor",
     beforeBootRecovery.supervisorPid === recovered.supervisorPid);

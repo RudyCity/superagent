@@ -1,3 +1,9 @@
+## [1.14.134] - 2026-11-28
+### Core guardian acceptance verifies the no-op boot through the runtime log
+- `Core Guardian and Restart Acceptance` failed deterministically (both matrix jobs, re-run reproduced) at `boot_noop_when_authenticated_owner_already_running`, although the boot child exited 0 and took the no-op branch: with `stdio: "pipe"` the supervisor turns the runtime log's terminal echo off by contract (`core supervisor piped stdio`), so `Core boot: verified owner already active` reached only the durable `superagent-server.log`. The assertion still expected it on stdout, from the `console.log` era.
+- The check now reads the decision from that durable runtime-log line, which is the contract the boot path actually promises, and still requires exit status 0 so a boot that restarts or takes over the owner keeps failing closed. `coreBoot.ts` is unchanged — reverting it would break `tests/coreRuntimeLogEcho.test.ts` and the terminal-echo contract.
+- Verified locally: `bun scripts/verify-core-guardian.ts` exit 0 with the full 30-check report (previously exit 1 in 8 s at that check).
+
 ## [1.14.133] - 2026-11-28
 ### Named-launcher bundles: native artifact paths resolve on use, not on import
 - `dist/scripts/mcp-tunnel-anchor.js` crashed at import with `DesktopUiError: Unexpected Core module layout for WGC helper.`, so `tests/mcpNamedOwnerStartupE2E.test.ts` timed out waiting for a lease anchor that could never start. The desktop-live adapters resolved their native artifact directory at module scope via `resolve…ArtifactDirectory(fileURLToPath(import.meta.url))`; inside the launcher bundle that URL is `dist/scripts`, so any consumer threw before running a single line.
