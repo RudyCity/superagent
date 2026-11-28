@@ -1,3 +1,8 @@
+## [1.14.125] - 2026-11-28
+### Code-to-Video: no unhandled rejection from the FFmpeg stall guard
+- `renderStudioBrowserVideo` raced `stdin`'s `drain` against `closed.then(() => { throw ... })`. When the drain won — normal backpressure on a busy runner — the guard promise rejected with no handler, so Vitest reported unhandled rejections and `Bun Runtime Validation` failed with 2 "Test Run Error" entries even though all 1129 test files passed.
+- The guard now attaches a no-op `catch` before the race, so it still fails the render when FFmpeg closes early and never surfaces as an unhandled rejection afterwards.
+
 ## [1.14.124] - 2026-11-28
 ### Windows standalone packaging: host digest without cmdlet dependency
 - `scripts/build-desktop-host.ps1` computed the staged host digest with `Get-FileHash`, which the trusted Windows Actions runner could not resolve, so `bun run installer:prepare` failed with `[standalone] Desktop UI host build failed (code 1, error none)` after the Rust release build had already succeeded. The script now hashes the PE image with `System.Security.Cryptography.SHA256` directly and keeps the same lowercase 64-hex contract consumed by `desktop-host.sha256`, `installer:verify` and `desktopUiHostArtifact`.

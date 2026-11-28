@@ -234,9 +234,15 @@ export async function renderStudioBrowserVideo(
         ? await stage.screenshot({ animations: "allow", timeout: 10000 })
         : await page.screenshot({ animations: "allow", timeout: 10000 });
       cancelled();
-      if (!ffmpeg.stdin?.write(png)) await Promise.race([
-        once(ffmpeg.stdin!, "drain"), closed.then(() => { throw new Error("FFmpeg stopped before all frames were encoded"); }),
-      ]);
+      if (!ffmpeg.stdin?.write(png)) {
+        // The guard rejects only when FFmpeg stops early; when the drain wins,
+        // that rejection must not surface as an unhandled rejection.
+        const stopped = closed.then(() => {
+          throw new Error("FFmpeg stopped before all frames were encoded");
+        });
+        stopped.catch(() => {});
+        await Promise.race([once(ffmpeg.stdin!, "drain"), stopped]);
+      }
       options.onProgress?.(i + 1, profile.frameCount);
     }
     cancelled();
